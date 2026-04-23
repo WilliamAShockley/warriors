@@ -1,11 +1,16 @@
 import { google } from 'googleapis'
 import { db } from './db'
 
+function getCallbackUrl() {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:5820'
+  return `${base}/api/auth/gmail/callback`
+}
+
 export function getOAuthClient() {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    'http://localhost:5820/api/auth/gmail/callback'
+    getCallbackUrl()
   )
 }
 
