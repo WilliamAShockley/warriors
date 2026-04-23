@@ -123,7 +123,7 @@ export async function fetchAllEmailsForContact(
       q: query,
       maxResults: 500,
       pageToken,
-    })
+    }) as { data: { messages?: { id?: string | null; threadId?: string | null }[]; nextPageToken?: string | null } }
     const msgs = listRes.data.messages ?? []
     allMessages.push(...msgs.map((m) => ({ id: m.id!, threadId: m.threadId! })))
     pageToken = listRes.data.nextPageToken ?? undefined
