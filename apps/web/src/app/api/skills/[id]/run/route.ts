@@ -36,7 +36,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           : 'never',
         activities: target.activities.length > 0
           ? target.activities
-              .map(a => `[${a.type.toUpperCase()}] ${new Date(a.date).toLocaleDateString()}: ${a.description}`)
+              .map((a: { type: string; date: Date; description: string }) => `[${a.type.toUpperCase()}] ${new Date(a.date).toLocaleDateString()}: ${a.description}`)
               .join('\n')
           : 'No activity logged',
         brief: target.researchBrief?.content ?? 'No research brief generated yet',
