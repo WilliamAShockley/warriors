@@ -41,7 +41,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           : 'No activity logged',
         brief: target.researchBrief?.content ?? 'No research brief generated yet',
         news: target.newsItems.length > 0
-          ? target.newsItems.map(n => `- ${n.headline} (${n.source})`).join('\n')
+          ? target.newsItems.map((n: { headline: string; source: string }) => `- ${n.headline} (${n.source})`).join('\n')
           : 'No news items yet',
       }
     }
