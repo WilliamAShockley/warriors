@@ -7,8 +7,10 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:5820'
+
   if (!code) {
-    return NextResponse.redirect('http://localhost:5820/settings?gmail=error')
+    return NextResponse.redirect(`${appUrl}/settings?gmail=error`)
   }
 
   const client = getOAuthClient()
@@ -36,5 +38,5 @@ export async function GET(req: Request) {
     },
   })
 
-  return NextResponse.redirect('http://localhost:5820/settings?gmail=connected')
+  return NextResponse.redirect(`${appUrl}/settings?gmail=connected`)
 }
