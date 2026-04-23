@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Target {
+  id            String          @id @default(cuid())
+  name          String
+  company       String
+  email         String?
+  linkedin      String?
+  stage         String          @default("intro_sent")
+  status        String          @default("yellow")
+  lastContacted DateTime?
+  notes         String?
+  aiNextStep    String?
+  industry      String?
+  starred       Boolean         @default(false)
+  starRank      Int?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  activities    Activity[]
+  newsItems     NewsItem[]
+  researchBrief ResearchBrief?
+}
+
+model GmailToken {
+  id           String   @id @default("singleton")
+  accessToken  String
+  refreshToken String
+  expiryDate   BigInt
+  email        String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Activity {
+  id             String   @id @default(cuid())
+  targetId       String
+  type           String
+  description    String
+  date           DateTime @default(now())
+  createdAt      DateTime @default(now())
+  gmailMessageId String?
+  target         Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
+}
+
+model NewsItem {
+  id          String   @id @default(cuid())
+  targetId    String
+  headline    String
+  url         String
+  source      String
+  summary     String   @default("")
+  publishedAt DateTime
+  createdAt   DateTime @default(now())
+  target      Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  prompt      String
+  section     String   @default("targets")
+  model       String   @default("claude-opus-4-6")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ResearchBrief {
+  id          String   @id @default(cuid())
+  targetId    String   @unique
+  content     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  target      Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
+}
