@@ -83,7 +83,7 @@ export async function fetchAndStoreNews(targetId: string): Promise<number> {
     where: { targetId },
     select: { url: true },
   })
-  const existingUrls = new Set(existing.map(n => n.url))
+  const existingUrls = new Set(existing.map((n: { url: string }) => n.url))
 
   const newItems = allItems.filter(item => !existingUrls.has(item.url))
   if (newItems.length === 0) return 0
