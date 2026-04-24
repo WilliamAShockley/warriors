@@ -39,7 +39,7 @@ export async function POST(req: Request) {
         data: {
           accessToken: creds.access_token!,
           refreshToken: creds.refresh_token ?? token.refreshToken,
-          expiryDate: BigInt(creds.expiry_date ?? 0),
+          expiryDate: creds.expiry_date ?? 0,
         },
       })
     }

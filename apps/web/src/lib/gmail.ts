@@ -44,7 +44,7 @@ export async function getAuthedClient() {
         where: { id: 'singleton' },
         data: {
           accessToken: tokens.access_token,
-          expiryDate: BigInt(tokens.expiry_date ?? 0),
+          expiryDate: tokens.expiry_date ?? 0,
         },
       })
     }

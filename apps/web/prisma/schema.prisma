@@ -33,7 +33,7 @@ model GmailToken {
   id           String   @id @default("singleton")
   accessToken  String
   refreshToken String
-  expiryDate   BigInt
+  expiryDate   Float
   email        String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

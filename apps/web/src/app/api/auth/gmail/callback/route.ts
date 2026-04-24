@@ -27,13 +27,13 @@ export async function GET(req: Request) {
       id: 'singleton',
       accessToken: tokens.access_token!,
       refreshToken: tokens.refresh_token!,
-      expiryDate: BigInt(tokens.expiry_date ?? 0),
+      expiryDate: tokens.expiry_date ?? 0,
       email: userInfo.data.email!,
     },
     update: {
       accessToken: tokens.access_token!,
       refreshToken: tokens.refresh_token ?? '',
-      expiryDate: BigInt(tokens.expiry_date ?? 0),
+      expiryDate: tokens.expiry_date ?? 0,
       email: userInfo.data.email!,
     },
   })
