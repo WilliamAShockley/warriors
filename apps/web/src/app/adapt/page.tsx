@@ -13,7 +13,7 @@ type Change = {
 
 type Message =
   | { role: 'user'; content: string }
-  | { role: 'assistant'; summary: string; changes: Change[]; applied?: boolean; error?: string }
+  | { role: 'assistant'; summary: string; changes: Change[]; applied?: boolean; applyMode?: 'local' | 'github'; commitUrl?: string; error?: string }
   | { role: 'thinking' }
 
 export default function AdaptPage() {
@@ -92,12 +92,18 @@ export default function AdaptPage() {
       body: JSON.stringify({ changes }),
     })
     const data = await res.json()
-    const allOk = data.results.every((r: { ok: boolean }) => r.ok)
+    const allOk = !data.error && data.results?.every((r: { ok: boolean }) => r.ok)
 
     setMessages((prev) =>
       prev.map((m, i) =>
         i === msgIndex && m.role === 'assistant'
-          ? { ...m, applied: true, error: allOk ? undefined : 'Some files failed to write.' }
+          ? {
+              ...m,
+              applied: true,
+              applyMode: data.mode,
+              commitUrl: data.commitUrl,
+              error: allOk ? undefined : (data.error ?? 'Some files failed to write.'),
+            }
           : m
       )
     )
@@ -218,7 +224,18 @@ export default function AdaptPage() {
                     )}
                     {msg.applied ? (
                       <span className="flex items-center gap-1.5 text-xs text-emerald-600">
-                        <Check size={13} /> Applied — hot reload in progress
+                        <Check size={13} />
+                        {msg.applyMode === 'github' ? (
+                          msg.commitUrl ? (
+                            <a href={msg.commitUrl} target="_blank" rel="noreferrer" className="underline">
+                              Committed to GitHub — Vercel is deploying
+                            </a>
+                          ) : (
+                            'Committed to GitHub — Vercel is deploying'
+                          )
+                        ) : (
+                          'Applied — hot reload in progress'
+                        )}
                       </span>
                     ) : (
                       <button
