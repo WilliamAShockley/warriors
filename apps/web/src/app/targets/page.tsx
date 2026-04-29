@@ -27,6 +27,12 @@ const STATUS_DOT: Record<string, string> = {
   red: 'bg-red-400',
 }
 
+const STAGE_BADGE: Record<string, string> = {
+  outreach: 'bg-amber-50 text-amber-700',
+  follow_up: 'bg-amber-50 text-amber-700',
+  passed: 'bg-red-50 text-red-600',
+}
+
 export default function TargetsPage() {
   const router = useRouter()
   const [targets, setTargets] = useState<Target[]>([])
@@ -59,6 +65,7 @@ export default function TargetsPage() {
   useEffect(() => { load() }, [])
 
   const filtered = targets.filter((t) =>
+    t.stage !== 'passed' &&
     `${t.name} ${t.company}`.toLowerCase().includes(search.toLowerCase())
   )
 
@@ -73,7 +80,7 @@ export default function TargetsPage() {
           <ArrowLeft size={16} className="text-[#888884]" />
         </button>
         <h1 className="text-lg font-semibold text-[#1A1A1A]">Targets</h1>
-        <span className="text-sm text-[#888884]">{targets.length}</span>
+        <span className="text-sm text-[#888884]">{filtered.length}</span>
         <div className="ml-auto flex items-center gap-2">
           <div className="flex items-center gap-2 bg-white border border-[#E8E7E3] rounded-lg px-3 py-1.5">
             <Search size={13} className="text-[#888884]" />
@@ -134,7 +141,7 @@ export default function TargetsPage() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-[#888884] bg-[#F0EFE9] px-2 py-0.5 rounded-full flex-shrink-0">
+                    <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${STAGE_BADGE[target.stage] ?? 'bg-[#F0EFE9] text-[#888884]'}`}>
                       {STAGES[target.stage] ?? target.stage}
                     </span>
                     <span className="text-sm text-[#888884] truncate italic">

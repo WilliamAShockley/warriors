@@ -52,6 +52,12 @@ const STATUS_LABELS: Record<string, { label: string; classes: string }> = {
   red: { label: 'Needs Attention', classes: 'bg-red-50 text-red-700 border-red-200' },
 }
 
+const STAGE_BADGE: Record<string, string> = {
+  outreach: 'bg-amber-50 text-amber-700',
+  follow_up: 'bg-amber-50 text-amber-700',
+  passed: 'bg-red-50 text-red-600',
+}
+
 const ACTIVITY_ICONS: Record<string, string> = {
   meeting: '📅',
   email: '✉️',
@@ -271,7 +277,7 @@ export default function TargetDetail() {
       <div className="max-w-3xl px-8 py-6 space-y-6">
         {/* Meta row */}
         <div className="flex items-center gap-4 flex-wrap">
-          <span className="text-xs text-[#888884] bg-[#F0EFE9] px-2.5 py-1 rounded-full">
+          <span className={`text-xs px-2.5 py-1 rounded-full ${STAGE_BADGE[target.stage] ?? 'bg-[#F0EFE9] text-[#888884]'}`}>
             {STAGES[target.stage] ?? target.stage}
           </span>
           {target.lastContacted && (
