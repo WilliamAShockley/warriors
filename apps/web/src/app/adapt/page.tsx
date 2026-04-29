@@ -102,7 +102,7 @@ export default function AdaptPage() {
               applied: true,
               applyMode: data.mode,
               commitUrl: data.commitUrl,
-              error: allOk ? undefined : (data.error ?? 'Some files failed to write.'),
+              error: allOk ? undefined : (data.error ?? data.results?.find((r: { ok: boolean; error?: string }) => !r.ok)?.error ?? 'Some files failed to write.'),
             }
           : m
       )

@@ -65,7 +65,8 @@ async function commitToGitHub(changes: Change[]): Promise<{
       }),
     })
     if (!blobRes.ok) {
-      results.push({ file: change.file, ok: false, error: 'Blob creation failed' })
+      const blobErr = await blobRes.text()
+      results.push({ file: change.file, ok: false, error: `Blob failed (${blobRes.status}): ${blobErr}` })
       continue
     }
     const blobSha: string = (await blobRes.json()).sha
