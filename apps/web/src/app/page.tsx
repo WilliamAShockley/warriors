@@ -104,15 +104,15 @@ export default function Home() {
         <div className="max-w-3xl">
           <button
             onClick={() => router.push('/adapt')}
-            className="w-full text-left p-6 rounded-2xl border border-dashed border-[#C8C7C3] hover:border-[#888884] hover:bg-white/50 transition-all duration-150 group"
+            className="w-full text-left p-6 rounded-2xl border bg-white border-[#E8E7E3] hover:border-[#C8C7C3] hover:shadow-sm transition-all duration-150 group cursor-pointer"
           >
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-[#F0EFE9] flex items-center justify-center">
-                <Wand2 size={16} className="text-[#888884] group-hover:text-[#1A1A1A] transition-colors" />
+              <div className="w-8 h-8 rounded-lg bg-[#F7F6F3] flex items-center justify-center">
+                <Wand2 size={16} className="text-[#1A1A1A]" />
               </div>
-              <span className="font-medium text-[#888884] group-hover:text-[#1A1A1A] transition-colors">Adapt</span>
+              <span className="font-medium text-[#1A1A1A]">Adapt</span>
             </div>
-            <p className="text-sm text-[#B0AFAB] group-hover:text-[#888884] transition-colors leading-snug">
+            <p className="text-sm text-[#888884] leading-snug">
               Modify this app in plain language — describe a feature and it gets built in real time
             </p>
           </button>
