@@ -130,11 +130,10 @@ function parseResponse(raw: string): { summary: string; changes: { file: string;
 
   let match
   while ((match = fileRegex.exec(raw)) !== null) {
-    const content = match[3]
-      .trim()
-      .replace(/^```(?:tsx?|jsx?|js|ts|css)?\n?/, '')
-      .replace(/\n?```\s*$/, '')
-      .trim()
+    // Strip opening fence, then cut everything from the first closing fence onward
+    const raw3 = match[3].trim().replace(/^```(?:tsx?|jsx?|js|ts|css|prisma)?\n?/, '')
+    const closingFence = raw3.indexOf('\n```')
+    const content = (closingFence !== -1 ? raw3.slice(0, closingFence) : raw3).trim()
     changes.push({ file: match[1].trim(), description: match[2].trim(), content })
   }
 

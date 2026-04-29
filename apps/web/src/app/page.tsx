@@ -121,6 +121,3 @@ export default function Home() {
     </div>
   )
 }
-```
-
-**⚠️ Important: Run `pnpm db:push` to create the new `ContentLink` table in your database.**
