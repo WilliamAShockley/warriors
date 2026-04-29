@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Target, BookOpen, Newspaper, Archive, Settings, Wand2, Star } from 'lucide-react'
+import { Target, BookOpen, Newspaper, Archive, Settings, Wand2, Star, LinkIcon } from 'lucide-react'
 
 const sections = [
   {
@@ -29,12 +29,12 @@ const sections = [
     active: true,
   },
   {
-    id: 'repo',
-    label: 'Repo',
-    icon: Archive,
-    description: 'Documents, decks, and reference materials',
-    href: '/repo',
-    active: false,
+    id: 'content',
+    label: 'Content',
+    icon: LinkIcon,
+    description: 'Interesting links and resources you find on the internet',
+    href: '/content',
+    active: true,
   },
   {
     id: 'top-companies',
@@ -43,6 +43,14 @@ const sections = [
     description: 'Your ranked list of the top 10 companies you are most excited about',
     href: '/top-companies',
     active: true,
+  },
+  {
+    id: 'repo',
+    label: 'Repo',
+    icon: Archive,
+    description: 'Documents, decks, and reference materials',
+    href: '/repo',
+    active: false,
   },
 ]
 
@@ -113,3 +121,6 @@ export default function Home() {
     </div>
   )
 }
+```
+
+**⚠️ Important: Run `pnpm db:push` to create the new `ContentLink` table in your database.**
