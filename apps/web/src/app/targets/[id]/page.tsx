@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Sparkles, Plus, Trash2, ExternalLink, Mail, RefreshCw, Send, Zap, ChevronDown, Star } from 'lucide-react'
+import { ArrowLeft, Sparkles, Plus, Trash2, ExternalLink, Mail, RefreshCw, Send, Zap, ChevronDown, Star, Copy, Check } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { STAGES, ACTIVITY_TYPES, cn } from '@/lib/utils'
 import LogActivityModal from '@/components/LogActivityModal'
@@ -32,6 +32,18 @@ type Target = {
   createdAt: string
   updatedAt: string
   activities: Activity[]
+}
+
+type OutreachFounder = {
+  name: string
+  role: string
+  emailGuesses: string[]
+}
+
+type OutreachData = {
+  summary: string
+  founders: OutreachFounder[]
+  fundingStage: string
 }
 
 const STATUS_LABELS: Record<string, { label: string; classes: string }> = {
@@ -65,6 +77,9 @@ export default function TargetDetail() {
   const [skills, setSkills] = useState<{ id: string; name: string; description: string; section: string }[]>([])
   const [showSkillsMenu, setShowSkillsMenu] = useState(false)
   const [runningSkill, setRunningSkill] = useState<{ id: string; name: string; description: string; section: string } | null>(null)
+  const [outreachData, setOutreachData] = useState<OutreachData | null>(null)
+  const [outreachLoading, setOutreachLoading] = useState(false)
+  const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
 
   const loadTarget = useCallback(async () => {
     const res = await fetch(`/api/targets/${id}`)
@@ -77,6 +92,34 @@ export default function TargetDetail() {
     fetch('/api/gmail/status').then(r => r.json()).then(d => setGmailConnected(d.connected))
     fetch('/api/skills').then(r => r.json()).then(d => setSkills(d.filter((s: { section: string }) => s.section === 'targets' || s.section === 'global')))
   }, [loadTarget])
+
+  useEffect(() => {
+    if (target?.stage === 'outreach' && !outreachData && !outreachLoading) {
+      setOutreachLoading(true)
+      fetch(`/api/outreach/${id}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { setOutreachData(d); setOutreachLoading(false) })
+        .catch(() => setOutreachLoading(false))
+    }
+  }, [target?.stage, id, outreachData, outreachLoading])
+
+  async function refreshOutreach() {
+    setOutreachLoading(true)
+    setOutreachData(null)
+    const res = await fetch(`/api/outreach/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: true }),
+    })
+    setOutreachData(res.ok ? await res.json() : null)
+    setOutreachLoading(false)
+  }
+
+  function copyEmail(email: string) {
+    navigator.clipboard.writeText(email)
+    setCopiedEmail(email)
+    setTimeout(() => setCopiedEmail(null), 1500)
+  }
 
   async function loadSummary() {
     setSummaryLoading(true)
@@ -285,6 +328,81 @@ export default function TargetDetail() {
           <div className="bg-white border border-[#E8E7E3] rounded-2xl p-5">
             <span className="text-xs font-medium text-[#888884] uppercase tracking-wide block mb-2">Notes</span>
             <p className="text-sm text-[#1A1A1A] leading-relaxed whitespace-pre-wrap">{target.notes}</p>
+          </div>
+        )}
+
+        {/* Outreach Intel */}
+        {target.stage === 'outreach' && (
+          <div className="bg-white border border-[#E8E7E3] rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-medium text-[#888884] uppercase tracking-wide">Outreach Intel</span>
+              <button
+                onClick={refreshOutreach}
+                disabled={outreachLoading}
+                className="flex items-center gap-1.5 text-xs text-[#888884] hover:text-[#1A1A1A] transition-colors disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={outreachLoading ? 'animate-spin' : ''} />
+                {outreachLoading ? 'Researching...' : outreachData ? 'Refresh' : 'Generate'}
+              </button>
+            </div>
+
+            {outreachLoading && (
+              <p className="text-sm text-[#B0AFAB] italic">Claude is researching {target.company}...</p>
+            )}
+
+            {!outreachLoading && !outreachData && (
+              <p className="text-sm text-[#B0AFAB] italic">Generating outreach intel automatically...</p>
+            )}
+
+            {outreachData && (
+              <div className="space-y-4">
+                {/* Summary */}
+                <p className="text-sm text-[#1A1A1A] leading-relaxed">{outreachData.summary}</p>
+
+                {/* Funding stage */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[#888884]">Funding stage:</span>
+                  <span className="text-xs font-medium text-[#1A1A1A] bg-[#F0EFE9] px-2 py-0.5 rounded-full">
+                    {outreachData.fundingStage}
+                  </span>
+                </div>
+
+                {/* Founders */}
+                {outreachData.founders.length > 0 && (
+                  <div>
+                    <span className="text-xs text-[#888884] block mb-2">Founders</span>
+                    <div className="space-y-3">
+                      {outreachData.founders.map((founder) => (
+                        <div key={founder.name} className="border border-[#E8E7E3] rounded-xl p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <span className="text-sm font-medium text-[#1A1A1A]">{founder.name}</span>
+                              <span className="text-xs text-[#888884] ml-2">{founder.role}</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {founder.emailGuesses.map((email) => (
+                              <button
+                                key={email}
+                                onClick={() => copyEmail(email)}
+                                className="flex items-center gap-1 text-xs bg-[#F7F6F3] border border-[#E8E7E3] px-2 py-1 rounded-lg hover:border-[#C8C7C3] transition-colors font-mono"
+                              >
+                                {copiedEmail === email ? (
+                                  <Check size={10} className="text-emerald-500" />
+                                ) : (
+                                  <Copy size={10} className="text-[#888884]" />
+                                )}
+                                {email}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

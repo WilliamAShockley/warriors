@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { generateAndSaveOutreachBrief } from '@/lib/outreachResearch'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -29,6 +30,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ...(body.starRank !== undefined && { starRank: body.starRank }),
     },
   })
+
+  if (body.stage === 'outreach') {
+    generateAndSaveOutreachBrief(id).catch(() => {})
+  }
+
   return NextResponse.json(target)
 }
 

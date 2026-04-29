@@ -10,6 +10,7 @@ export const STAGES: Record<string, string> = {
   meeting_scheduled: 'Meeting Scheduled',
   follow_up: 'Follow Up',
   active: 'Active',
+  outreach: 'Outreach',
   passed: 'Passed',
 }
 
