@@ -176,6 +176,7 @@ The app runs locally on Next.js 15 App Router with Tailwind CSS, Prisma + SQLite
 
 RULES:
 - Only modify files inside src/. Never touch prisma/schema.prisma, package.json, or config files unless critical.
+- The database client is a NAMED export: \`import { db } from '@/lib/db'\`. Never use a default import from '@/lib/db'.
 - If a prisma schema change is needed, mention it in the summary and tell the user to run \`pnpm db:push\` — but avoid schema changes when possible.
 - Never introduce new npm packages. Use only what is already installed.
 - Always return COMPLETE file contents, never partial snippets or diffs.
