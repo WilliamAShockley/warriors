@@ -15,3 +15,16 @@ export const STAGES: Record<string, string> = {
 }
 
 export const ACTIVITY_TYPES = ['meeting', 'email', 'call', 'note', 'research', 'intro']
+
+export function getEffectiveStatus(
+  status: string,
+  lastContacted: string | null,
+  lastActivityDate: string | null,
+): string {
+  const lastDate = lastActivityDate ?? lastContacted
+  if (!lastDate) return status
+  const daysSince = (Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24)
+  if (daysSince > 21) return 'red'
+  if (daysSince > 7) return 'yellow'
+  return 'green'
+}

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Search, Star } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
-import { STAGES } from '@/lib/utils'
+import { STAGES, getEffectiveStatus } from '@/lib/utils'
 import AddTargetModal from '@/components/AddTargetModal'
 
 type Target = {
@@ -23,7 +23,7 @@ type Target = {
 
 const STATUS_DOT: Record<string, string> = {
   green: 'bg-emerald-400',
-  yellow: 'bg-green-300',
+  yellow: 'bg-amber-400',
   red: 'bg-red-400',
 }
 
@@ -125,7 +125,7 @@ export default function TargetsPage() {
               >
                 {/* Status dot */}
                 <div className="mt-1.5 flex-shrink-0">
-                  <div className={`w-2 h-2 rounded-full ${STATUS_DOT[target.status] ?? 'bg-gray-300'}`} />
+                  <div className={`w-2 h-2 rounded-full ${STATUS_DOT[getEffectiveStatus(target.status, target.lastContacted, target.activities[0]?.date ?? null)] ?? 'bg-gray-300'}`} />
                 </div>
 
                 {/* Content */}

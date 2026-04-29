@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, Sparkles, Plus, Trash2, ExternalLink, Mail, RefreshCw, Send, Zap, ChevronDown, Star, Copy, Check } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
-import { STAGES, ACTIVITY_TYPES, cn } from '@/lib/utils'
+import { STAGES, ACTIVITY_TYPES, cn, getEffectiveStatus } from '@/lib/utils'
 import LogActivityModal from '@/components/LogActivityModal'
 import EditTargetModal from '@/components/EditTargetModal'
 import SendEmailModal from '@/components/SendEmailModal'
@@ -48,7 +48,7 @@ type OutreachData = {
 
 const STATUS_LABELS: Record<string, { label: string; classes: string }> = {
   green: { label: 'Recent', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  yellow: { label: 'Nudge', classes: 'bg-green-50 text-green-700 border-green-200' },
+  yellow: { label: 'Nudge', classes: 'bg-amber-50 text-amber-700 border-amber-200' },
   red: { label: 'Needs Attention', classes: 'bg-red-50 text-red-700 border-red-200' },
 }
 
@@ -179,7 +179,12 @@ export default function TargetDetail() {
     )
   }
 
-  const statusInfo = STATUS_LABELS[target.status]
+  const effectiveStatus = getEffectiveStatus(
+    target.status,
+    target.lastContacted,
+    target.activities[0]?.date ?? null,
+  )
+  const statusInfo = STATUS_LABELS[effectiveStatus]
   const canSendEmail = gmailConnected && target.email
 
   return (
@@ -217,7 +222,7 @@ export default function TargetDetail() {
               onClick={() => updateStatus(s)}
               className={cn(
                 'text-xs px-2.5 py-1 rounded-full border transition-all',
-                target.status === s
+                effectiveStatus === s
                   ? STATUS_LABELS[s].classes
                   : 'bg-white border-[#E8E7E3] text-[#888884] hover:border-[#C8C7C3]'
               )}
