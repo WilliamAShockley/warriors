@@ -1,39 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db as prisma } from '@/lib/db'
+import { db } from '@/lib/db'
 
-export async function GET() {
-  try {
-    const links = await prisma.contentLink.findMany({
-      orderBy: { createdAt: 'desc' },
-    })
-    return NextResponse.json(links)
-  } catch (error) {
-    console.error('Failed to fetch content links:', error)
-    return NextResponse.json({ error: 'Failed to fetch content links' }, { status: 500 })
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const folderId = searchParams.get('folderId')
+
+  const where: Record<string, unknown> = {}
+  if (folderId === 'unfiled') {
+    where.folderId = null
+  } else if (folderId) {
+    where.folderId = folderId
   }
+
+  const links = await db.contentLink.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    include: { folder: true },
+  })
+  return NextResponse.json(links)
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json()
-    const { title, url, description, tag } = body
+  const body = await req.json()
+  const { title, url, description, tag, folderId } = body
 
-    if (!title || !url) {
-      return NextResponse.json({ error: 'Title and URL are required' }, { status: 400 })
-    }
-
-    const link = await prisma.contentLink.create({
-      data: {
-        title,
-        url,
-        description: description || null,
-        tag: tag || null,
-      },
-    })
-
-    return NextResponse.json(link)
-  } catch (error) {
-    console.error('Failed to create content link:', error)
-    return NextResponse.json({ error: 'Failed to create content link' }, { status: 500 })
+  if (!title || !url) {
+    return NextResponse.json({ error: 'Title and URL required' }, { status: 400 })
   }
+
+  const link = await db.contentLink.create({
+    data: {
+      title,
+      url,
+      description: description || null,
+      tag: tag || null,
+      folderId: folderId || null,
+    },
+  })
+
+  return NextResponse.json(link)
 }

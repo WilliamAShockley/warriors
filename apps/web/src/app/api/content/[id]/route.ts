@@ -1,42 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db as prisma } from '@/lib/db'
+import { db } from '@/lib/db'
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params
-    await prisma.contentLink.delete({ where: { id } })
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Failed to delete content link:', error)
-    return NextResponse.json({ error: 'Failed to delete content link' }, { status: 500 })
-  }
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const body = await req.json()
+
+  const data: Record<string, unknown> = {}
+  if (body.title !== undefined) data.title = body.title
+  if (body.url !== undefined) data.url = body.url
+  if (body.description !== undefined) data.description = body.description || null
+  if (body.tag !== undefined) data.tag = body.tag || null
+  if (body.folderId !== undefined) data.folderId = body.folderId || null
+
+  const link = await db.contentLink.update({
+    where: { id },
+    data,
+  })
+
+  return NextResponse.json(link)
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params
-    const body = await req.json()
-    const { title, url, description, tag } = body
-
-    const link = await prisma.contentLink.update({
-      where: { id },
-      data: {
-        ...(title !== undefined && { title }),
-        ...(url !== undefined && { url }),
-        ...(description !== undefined && { description }),
-        ...(tag !== undefined && { tag }),
-      },
-    })
-
-    return NextResponse.json(link)
-  } catch (error) {
-    console.error('Failed to update content link:', error)
-    return NextResponse.json({ error: 'Failed to update content link' }, { status: 500 })
-  }
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  await db.contentLink.delete({ where: { id } })
+  return NextResponse.json({ success: true })
 }

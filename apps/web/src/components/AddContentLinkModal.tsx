@@ -1,130 +1,123 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
+
+interface Folder {
+  id: string
+  name: string
+}
 
 interface Props {
   open: boolean
   onClose: () => void
   onCreated: () => void
+  defaultFolderId?: string | null
 }
 
-const TAG_OPTIONS = ['Article', 'Thread', 'Video', 'Podcast', 'Tool', 'Research', 'Other']
-
-export default function AddContentLinkModal({ open, onClose, onCreated }: Props) {
+export default function AddContentLinkModal({ open, onClose, onCreated, defaultFolderId }: Props) {
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
   const [description, setDescription] = useState('')
   const [tag, setTag] = useState('')
+  const [folderId, setFolderId] = useState<string | null>(defaultFolderId ?? null)
+  const [folders, setFolders] = useState<Folder[]>([])
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      fetch('/api/content/folders')
+        .then((r) => r.json())
+        .then(setFolders)
+        .catch(() => {})
+      setFolderId(defaultFolderId ?? null)
+    }
+  }, [open, defaultFolderId])
 
   if (!open) return null
 
-  const handleSave = async () => {
-    if (!title.trim() || !url.trim()) return
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
     setSaving(true)
-    try {
-      await fetch('/api/content', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: title.trim(),
-          url: url.trim(),
-          description: description.trim() || null,
-          tag: tag || null,
-        }),
-      })
-      setTitle('')
-      setUrl('')
-      setDescription('')
-      setTag('')
-      onCreated()
-      onClose()
-    } finally {
-      setSaving(false)
-    }
+    await fetch('/api/content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, url, description, tag, folderId }),
+    })
+    setSaving(false)
+    setTitle('')
+    setUrl('')
+    setDescription('')
+    setTag('')
+    setFolderId(defaultFolderId ?? null)
+    onCreated()
+    onClose()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-lg border border-[#E8E7E3] w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-[#1A1A1A]">Save Link</h2>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-black/5">
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl border border-[#E8E7E3] p-6 w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-[#1A1A1A]">Add Link</h2>
+          <button onClick={onClose} className="p-1 hover:bg-black/5 rounded-lg">
             <X size={16} className="text-[#888884]" />
           </button>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-[#888884] mb-1.5">Title *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Great essay on AI agents"
-              className="w-full px-3 py-2 rounded-lg border border-[#E8E7E3] text-sm focus:outline-none focus:border-[#888884] transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-[#888884] mb-1.5">URL *</label>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://..."
-              className="w-full px-3 py-2 rounded-lg border border-[#E8E7E3] text-sm focus:outline-none focus:border-[#888884] transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-[#888884] mb-1.5">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Why is this interesting?"
-              rows={3}
-              className="w-full px-3 py-2 rounded-lg border border-[#E8E7E3] text-sm focus:outline-none focus:border-[#888884] transition-colors resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-[#888884] mb-1.5">Tag</label>
-            <div className="flex flex-wrap gap-2">
-              {TAG_OPTIONS.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTag(tag === t ? '' : t)}
-                  className={[
-                    'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-                    tag === t
-                      ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]'
-                      : 'bg-white text-[#888884] border-[#E8E7E3] hover:border-[#C8C7C3]',
-                  ].join(' ')}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-6">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 rounded-lg border border-[#E8E7E3] text-sm font-medium text-[#888884] hover:bg-black/5 transition-colors"
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="text"
+            placeholder="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            className="w-full px-3 py-2 rounded-lg border border-[#E8E7E3] text-sm focus:outline-none focus:border-[#C8C7C3]"
+          />
+          <input
+            type="url"
+            placeholder="URL"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            required
+            className="w-full px-3 py-2 rounded-lg border border-[#E8E7E3] text-sm focus:outline-none focus:border-[#C8C7C3]"
+          />
+          <input
+            type="text"
+            placeholder="Description (optional)"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-[#E8E7E3] text-sm focus:outline-none focus:border-[#C8C7C3]"
+          />
+          <input
+            type="text"
+            placeholder="Tag (optional)"
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-[#E8E7E3] text-sm focus:outline-none focus:border-[#C8C7C3]"
+          />
+          <select
+            value={folderId ?? ''}
+            onChange={(e) => setFolderId(e.target.value || null)}
+            className="w-full px-3 py-2 rounded-lg border border-[#E8E7E3] text-sm focus:outline-none focus:border-[#C8C7C3] bg-white"
           >
-            Cancel
-          </button>
+            <option value="">No folder</option>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
           <button
-            onClick={handleSave}
-            disabled={!title.trim() || !url.trim() || saving}
-            className="flex-1 px-4 py-2 rounded-lg bg-[#1A1A1A] text-white text-sm font-medium hover:bg-[#333] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            type="submit"
+            disabled={saving}
+            className="w-full py-2 bg-[#1A1A1A] text-white text-sm rounded-lg hover:bg-[#333] disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? 'Saving…' : 'Add Link'}
           </button>
-        </div>
+        </form>
       </div>
     </div>
   )
