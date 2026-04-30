@@ -14,7 +14,7 @@ const sections = [
   },
   {
     id: 'research',
-    label: 'Research',
+    label: 'I love Tess',
     icon: BookOpen,
     description: 'Auto-generated company briefs for every target',
     href: '/research',
