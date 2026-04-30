@@ -1,92 +1,29 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/claude'
+import { hasGitHubConfig, githubReadFile, githubGetTree, extractPrismaModels, parseAdaptResponse } from '@/lib/github'
 import fs from 'fs'
 import path from 'path'
 
-// ─── GitHub file reading (production) ────────────────────────────────────────
-
-const GH_HEADERS = {
-  Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-  Accept: 'application/vnd.github+json',
-  'X-GitHub-Api-Version': '2022-11-28',
-}
-
-async function githubReadFile(relPath: string): Promise<string | null> {
-  const owner = process.env.GITHUB_OWNER
-  const repo = process.env.GITHUB_REPO
-  const branch = process.env.GITHUB_BRANCH ?? 'main'
-  const appPath = process.env.GITHUB_APP_PATH ?? 'apps/web'
-  const repoPath = appPath ? `${appPath}/${relPath}` : relPath
-
-  try {
-    const res = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/contents/${repoPath}?ref=${branch}`,
-      { headers: GH_HEADERS }
-    )
-    if (!res.ok) return null
-    const data = await res.json()
-    if (data.encoding === 'base64') {
-      return Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf-8')
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
-async function githubGetTree(): Promise<string> {
-  const owner = process.env.GITHUB_OWNER
-  const repo = process.env.GITHUB_REPO
-  const branch = process.env.GITHUB_BRANCH ?? 'main'
-  const appPath = process.env.GITHUB_APP_PATH ?? 'apps/web'
-
-  try {
-    const res = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
-      { headers: GH_HEADERS }
-    )
-    if (!res.ok) return '(unavailable)'
-    const data = await res.json()
-    const prefix = appPath ? `${appPath}/src/` : 'src/'
-    const lines = (data.tree as { path: string; type: string }[])
-      .filter((item) => item.path.startsWith(prefix))
-      .map((item) => item.path.replace(prefix, '  ').replace(/^/, ''))
-    return lines.join('\n')
-  } catch {
-    return '(unavailable)'
-  }
-}
-
-// ─── Local filesystem reading (dev) ──────────────────────────────────────────
-
 const SRC_ROOT = path.join(process.cwd(), 'src')
 
+// ─── Local filesystem fallback (dev) ─────────────────────────────────────────
+
 function localReadFile(relPath: string): string | null {
-  try {
-    return fs.readFileSync(path.join(process.cwd(), relPath), 'utf-8')
-  } catch {
-    return null
-  }
+  try { return fs.readFileSync(path.join(process.cwd(), relPath), 'utf-8') } catch { return null }
 }
 
 function localGetTree(dir: string, indent = ''): string {
   try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true })
-    return entries
+    return fs.readdirSync(dir, { withFileTypes: true })
       .filter((e) => !['node_modules', '.next', '.git'].includes(e.name))
-      .map((e) => {
-        if (e.isDirectory()) {
-          return `${indent}${e.name}/\n${localGetTree(path.join(dir, e.name), indent + '  ')}`
-        }
-        return `${indent}${e.name}`
-      })
+      .map((e) => e.isDirectory()
+        ? `${indent}${e.name}/\n${localGetTree(path.join(dir, e.name), indent + '  ')}`
+        : `${indent}${e.name}`)
       .join('\n')
-  } catch {
-    return '(unavailable)'
-  }
+  } catch { return '(unavailable)' }
 }
 
-// ─── Shared logic ─────────────────────────────────────────────────────────────
+// ─── Context file selection ───────────────────────────────────────────────────
 
 function getRelevantPaths(request: string): string[] {
   const paths = [
@@ -108,95 +45,76 @@ function getRelevantPaths(request: string): string[] {
       'src/components/EditTargetModal.tsx',
     )
   }
-  if (lower.includes('gmail') || lower.includes('sync')) {
-    paths.push('src/lib/gmail.ts', 'src/lib/syncGmail.ts')
+  if (lower.includes('gmail') || lower.includes('sync')) paths.push('src/lib/gmail.ts', 'src/lib/syncGmail.ts')
+  if (lower.includes('settings')) paths.push('src/app/settings/page.tsx')
+  if (lower.includes('summary') || lower.includes('claude') || lower.includes('ai')) paths.push('src/lib/claude.ts')
+  if (lower.includes('content') || lower.includes('link') || lower.includes('folder')) {
+    paths.push('src/app/content/page.tsx', 'src/app/api/content/route.ts', 'src/components/AddContentLinkModal.tsx')
   }
-  if (lower.includes('settings')) {
-    paths.push('src/app/settings/page.tsx')
-  }
-  if (lower.includes('summary') || lower.includes('claude') || lower.includes('ai')) {
-    paths.push('src/lib/claude.ts')
-  }
+  if (lower.includes('todo') || lower.includes('task')) paths.push('src/app/todos/page.tsx')
   return [...new Set(paths)]
 }
 
-// Parse the delimiter-based response format
-function parseResponse(raw: string): { summary: string; changes: { file: string; description: string; content: string }[] } {
-  const summaryMatch = raw.match(/^SUMMARY:\s*([\s\S]*?)(?=\nFILE:|$)/m)
-  const summary = summaryMatch ? summaryMatch[1].trim() : raw.slice(0, 500)
-
-  const changes: { file: string; description: string; content: string }[] = []
-  const fileRegex = /FILE:\s*(.+?)\nDESCRIPTION:\s*(.+?)\n([\s\S]*?)(?=\nFILE:|\n?$)/g
-
-  let match
-  while ((match = fileRegex.exec(raw)) !== null) {
-    // Strip opening fence, then cut everything from the first closing fence onward
-    const raw3 = match[3].trim().replace(/^```(?:tsx?|jsx?|js|ts|css|prisma)?\n?/, '')
-    const closingFence = raw3.indexOf('\n```')
-    const content = (closingFence !== -1 ? raw3.slice(0, closingFence) : raw3).trim()
-    changes.push({ file: match[1].trim(), description: match[2].trim(), content })
-  }
-
-  return { summary, changes }
-}
+// ─── Route ────────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
   const { request, history } = await req.json()
 
-  const hasGitHub = !!(process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER && process.env.GITHUB_REPO)
+  const ghAvailable = hasGitHubConfig()
   const paths = getRelevantPaths(request)
 
   let tree: string
   const files: Record<string, string> = {}
 
-  if (hasGitHub) {
+  if (ghAvailable) {
     const [treeResult, ...fileResults] = await Promise.all([
       githubGetTree(),
       ...paths.map((p) => githubReadFile(p)),
     ])
     tree = treeResult
-    paths.forEach((p, i) => {
-      if (fileResults[i]) files[p] = fileResults[i]!
-    })
+    paths.forEach((p, i) => { if (fileResults[i]) files[p] = fileResults[i]! })
   } else {
     tree = localGetTree(SRC_ROOT)
-    paths.forEach((p) => {
-      const content = localReadFile(p)
-      if (content) files[p] = content
-    })
+    paths.forEach((p) => { const c = localReadFile(p); if (c) files[p] = c })
   }
+
+  // Extract existing Prisma models so Claude never invents new ones
+  const schemaContent = files['prisma/schema.prisma'] ?? ''
+  const existingModels = extractPrismaModels(schemaContent)
+  const modelList = existingModels.length > 0
+    ? existingModels.map((m) => `  - ${m}`).join('\n')
+    : '  (unknown — see schema above)'
 
   const filesBlock = Object.entries(files)
     .map(([p, c]) => `### ${p}\n\`\`\`\n${c}\n\`\`\``)
     .join('\n\n')
 
-  const systemPrompt = `You are an expert Next.js developer embedded inside a VC workflow app called Warriors. Implement features requested by the user by modifying source files directly.
+  const systemPrompt = `You are an expert Next.js developer embedded inside a VC workflow app called Warriors. Implement features by modifying source files directly.
 
-The app runs locally on Next.js 15 App Router with Tailwind CSS, Prisma + SQLite, and the Anthropic SDK. Design language: off-white background (#F7F6F3), white cards, borders (#E8E7E3), muted text (#888884), dark buttons (#1A1A1A). Keep this consistent.
+Stack: Next.js 15 App Router, Tailwind CSS, Prisma 5 + SQLite/Turso, Anthropic SDK.
+Design: background #F7F6F3, white cards, borders #E8E7E3, muted text #888884, dark buttons #1A1A1A.
 
-RULES:
-- Only modify files inside src/. Never touch prisma/schema.prisma, package.json, or config files unless critical.
-- The database client is a NAMED export: \`import { db } from '@/lib/db'\`. Never use a default import from '@/lib/db'.
-- If a prisma schema change is needed, mention it in the summary and tell the user to run \`pnpm db:push\` — but avoid schema changes when possible.
-- Never introduce new npm packages. Use only what is already installed.
-- Always return COMPLETE file contents, never partial snippets or diffs.
-- Be surgical — only change files that need to change.
+STRICT RULES — violating these will break the build:
+1. Only modify files inside src/. Never touch prisma/schema.prisma, package.json, next.config.ts, or any config.
+2. NEVER create new Prisma models. The app's schema cannot be changed through Adapt. Only use the models listed below.
+3. Database import is ALWAYS named: \`import { db } from '@/lib/db'\` — never a default import.
+4. Never add new npm packages. Use only what is installed.
+5. Return COMPLETE file contents — never diffs or partial snippets.
+6. Only change files that actually need to change.
+7. Never put markdown, explanations, or warnings inside a FILE block — only valid source code.
 
-RESPONSE FORMAT (use this exactly — do not use JSON):
+AVAILABLE PRISMA MODELS (these are the ONLY models you may use):
+${modelList}
+
+RESPONSE FORMAT (exact — no deviations):
 
 SUMMARY:
-[Plain English explanation of what you are doing and why. Be specific.]
+[Plain English explanation of what you changed and why.]
 
 FILE: src/path/to/file.tsx
-DESCRIPTION: [one line describing this change]
+DESCRIPTION: [one line]
 \`\`\`tsx
-[complete file content here]
-\`\`\`
-
-FILE: src/path/to/another.tsx
-DESCRIPTION: [one line describing this change]
-\`\`\`tsx
-[complete file content here]
+[complete file content]
 \`\`\`
 
 Current file tree (src/):
@@ -218,7 +136,5 @@ ${filesBlock}`
   })
 
   const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-  const parsed = parseResponse(raw)
-
-  return NextResponse.json(parsed)
+  return NextResponse.json(parseAdaptResponse(raw))
 }

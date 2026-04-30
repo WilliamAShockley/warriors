@@ -92,14 +92,24 @@ model Todo {
   updatedAt DateTime @updatedAt
 }
 
+model ContentFolder {
+  id        String        @id @default(cuid())
+  name      String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  links     ContentLink[]
+}
+
 model ContentLink {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   title       String
   url         String
   description String?
   tag         String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  folderId    String?
+  folder      ContentFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 }
 
 model OutreachBrief {
