@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, CheckCircle, Mail, Unlink, Plus, Pencil, Trash2, Zap } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Mail, Unlink, Plus, Pencil, Trash2, Zap, FileText } from 'lucide-react'
 import { Suspense } from 'react'
 import SkillModal from '@/components/SkillModal'
 
@@ -29,6 +29,9 @@ function SettingsContent() {
   const [disconnecting, setDisconnecting] = useState(false)
   const [skills, setSkills] = useState<Skill[]>([])
   const [skillModal, setSkillModal] = useState<{ open: boolean; skill?: Skill }>({ open: false })
+  const [draftEmail, setDraftEmail] = useState('')
+  const [draftSaving, setDraftSaving] = useState(false)
+  const [draftSaved, setDraftSaved] = useState(false)
 
   const justConnected = searchParams.get('gmail') === 'connected'
 
@@ -42,9 +45,16 @@ function SettingsContent() {
     setSkills(await res.json())
   }
 
+  async function loadDraftEmail() {
+    const res = await fetch('/api/settings/draft-email')
+    const data = await res.json()
+    setDraftEmail(data.value ?? '')
+  }
+
   useEffect(() => {
     loadStatus()
     loadSkills()
+    loadDraftEmail()
   }, [])
 
   async function disconnect() {
@@ -52,6 +62,18 @@ function SettingsContent() {
     await fetch('/api/gmail/status', { method: 'DELETE' })
     await loadStatus()
     setDisconnecting(false)
+  }
+
+  async function saveDraftEmail() {
+    setDraftSaving(true)
+    await fetch('/api/settings/draft-email', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: draftEmail }),
+    })
+    setDraftSaving(false)
+    setDraftSaved(true)
+    setTimeout(() => setDraftSaved(false), 2000)
   }
 
   async function deleteSkill(id: string) {
@@ -125,6 +147,36 @@ function SettingsContent() {
                 Connect Gmail
               </a>
             )}
+          </div>
+        </div>
+
+        {/* Draft Email */}
+        <div className="bg-white border border-[#E8E7E3] rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[#F7F6F3] flex items-center justify-center">
+              <FileText size={15} className="text-[#1A1A1A]" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[#1A1A1A]">Draft Email</p>
+              <p className="text-xs text-[#888884] mt-0.5">Stock cold email template used by background agents</p>
+            </div>
+          </div>
+          <textarea
+            value={draftEmail}
+            onChange={e => { setDraftEmail(e.target.value); setDraftSaved(false) }}
+            rows={8}
+            className="w-full text-sm border border-[#E8E7E3] rounded-lg px-3 py-2 outline-none focus:border-[#1A1A1A] transition-colors resize-none leading-relaxed"
+            placeholder={`Hi {{name}},\n\nI came across {{company}} and was really impressed by...\n\nWould love to connect.\n\nBest,\nWilliam`}
+          />
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-[#B0AFAB]">{'Use {{name}}, {{company}} etc. — filled in at send time'}</p>
+            <button
+              onClick={saveDraftEmail}
+              disabled={draftSaving}
+              className="text-xs bg-[#1A1A1A] text-white px-3 py-1.5 rounded-lg hover:bg-[#333] disabled:opacity-40 transition-colors"
+            >
+              {draftSaved ? 'Saved ✓' : draftSaving ? 'Saving...' : 'Save'}
+            </button>
           </div>
         </div>
 

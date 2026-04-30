@@ -122,3 +122,37 @@ model OutreachBrief {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Agent {
+  id              String     @id @default(cuid())
+  name            String
+  description     String     @default("")
+  prompt          String
+  triggerType     String     @default("manual")
+  intervalSeconds Int?
+  eventType       String?
+  scope           String     @default("global")
+  model           String     @default("claude-opus-4-6")
+  enabled         Boolean    @default(true)
+  lastRunAt       DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  runs            AgentRun[]
+}
+
+model AgentRun {
+  id        String   @id @default(cuid())
+  agentId   String
+  targetId  String?
+  status    String   @default("success")
+  output    String   @default("")
+  trigger   String   @default("manual")
+  createdAt DateTime @default(now())
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+}

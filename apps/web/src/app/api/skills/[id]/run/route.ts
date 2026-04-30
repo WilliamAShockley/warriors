@@ -47,10 +47,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
-  // Replace {{variable}} placeholders in prompt
+  // Replace {{variable}} placeholders in prompt (case-insensitive)
   let filledPrompt = skill.prompt
   for (const [key, value] of Object.entries(context)) {
-    filledPrompt = filledPrompt.replaceAll(`{{${key}}}`, value)
+    filledPrompt = filledPrompt.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'gi'), value)
   }
 
   const message = await anthropic.messages.create({

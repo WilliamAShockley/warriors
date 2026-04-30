@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { syncGmailForTarget } from '@/lib/syncGmail'
 import { fetchAndStoreNews } from '@/lib/news'
 import { generateAndSaveResearchBrief } from '@/lib/research'
+import { triggerEvent } from '@/lib/runAgent'
 
 export async function GET() {
   const targets = await db.target.findMany({
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
   syncGmailForTarget(tid).catch(() => {})
   fetchAndStoreNews(tid).catch(() => {})
   generateAndSaveResearchBrief(tid).catch(() => {})
+  triggerEvent('target.created', tid).catch(() => {})
 
   return NextResponse.json(target, { status: 201 })
 }

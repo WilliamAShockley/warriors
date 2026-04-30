@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { refreshNextStep } from '@/lib/refreshNextStep'
+import { triggerEvent } from '@/lib/runAgent'
 
 export async function POST(req: Request) {
   const body = await req.json()
@@ -21,6 +22,7 @@ export async function POST(req: Request) {
 
   // Regenerate next step in background
   refreshNextStep(body.targetId).catch(() => {})
+  triggerEvent('activity.logged', body.targetId).catch(() => {})
 
   return NextResponse.json(activity, { status: 201 })
 }

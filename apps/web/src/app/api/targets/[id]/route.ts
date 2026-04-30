@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { generateAndSaveOutreachBrief } from '@/lib/outreachResearch'
+import { triggerEvent } from '@/lib/runAgent'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -33,6 +34,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   if (body.stage === 'outreach') {
     generateAndSaveOutreachBrief(id).catch(() => {})
+  }
+
+  if (body.stage !== undefined) {
+    triggerEvent('stage.changed', id).catch(() => {})
   }
 
   return NextResponse.json(target)
