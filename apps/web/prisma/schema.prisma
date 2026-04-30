@@ -83,6 +83,15 @@ model ResearchBrief {
   target      Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
 }
 
+model Todo {
+  id        String   @id @default(cuid())
+  text      String
+  completed Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model ContentLink {
   id          String   @id @default(cuid())
   title       String
