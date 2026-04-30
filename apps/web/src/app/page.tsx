@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Target, BookOpen, Newspaper, Archive, Settings, Wand2, Star, LinkIcon } from 'lucide-react'
+import { Target, BookOpen, Newspaper, Archive, Settings, Wand2, Star, LinkIcon, CheckSquare } from 'lucide-react'
 
 const sections = [
   {
@@ -45,12 +45,12 @@ const sections = [
     active: true,
   },
   {
-    id: 'repo',
-    label: 'Repo',
-    icon: Archive,
-    description: 'Documents, decks, and reference materials',
-    href: '/repo',
-    active: false,
+    id: 'todos',
+    label: 'To-Do',
+    icon: CheckSquare,
+    description: 'Track tasks and check them off as you go',
+    href: '/todos',
+    active: true,
   },
 ]
 
