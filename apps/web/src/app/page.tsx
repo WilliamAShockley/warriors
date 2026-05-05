@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot, FileText } from 'lucide-react'
+import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot, FileText, Lightbulb } from 'lucide-react'
 
 const sections = [
   {
@@ -114,6 +114,24 @@ export default function Home() {
               </button>
             )
           })}
+        </div>
+
+        {/* Market Notes & Insights */}
+        <div className="max-w-3xl">
+          <button
+            onClick={() => router.push('/market-notes')}
+            className="w-full text-left p-6 rounded-2xl border bg-white border-[#E8E7E3] hover:border-[#C8C7C3] hover:shadow-sm transition-all duration-150 group cursor-pointer"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-[#F7F6F3] flex items-center justify-center">
+                <Lightbulb size={16} className="text-[#1A1A1A]" />
+              </div>
+              <span className="font-medium text-[#1A1A1A]">Market Notes &amp; Insights</span>
+            </div>
+            <p className="text-sm text-[#888884] leading-snug">
+              Capture market observations, thesis notes, and investment insights as you go
+            </p>
+          </button>
         </div>
 
         {/* Adapt — meta section */}
