@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot } from 'lucide-react'
+import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot, FileText } from 'lucide-react'
 
 const sections = [
   {
@@ -50,6 +50,14 @@ const sections = [
     icon: CheckSquare,
     description: 'Track tasks and check them off as you go',
     href: '/todos',
+    active: true,
+  },
+  {
+    id: 'email-drafts',
+    label: 'Email Drafts',
+    icon: FileText,
+    description: 'Reusable email templates you send to founders over and over',
+    href: '/email-drafts',
     active: true,
   },
   {
