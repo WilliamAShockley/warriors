@@ -2,20 +2,26 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Search } from 'lucide-react'
-
-type Result = {
-  founder: string
-  error?: string
-  elapsed?: number
-}
+import { ArrowLeft, Search, ChevronDown, ChevronRight } from 'lucide-react'
 
 type CompareResult = {
   url: string
   domain: string
-  exa: Result
-  tavily: Result
-  parallel: Result
+  exa: {
+    results: { findSimilar: unknown[]; search: unknown[] } | null
+    elapsed: number
+    error?: string
+  }
+  tavily: {
+    results: unknown[] | null
+    elapsed: number
+    error?: string
+  }
+  parallel: {
+    results: unknown[] | null
+    elapsed: number
+    error?: string
+  }
 }
 
 const SERVICES = [
@@ -30,6 +36,7 @@ export default function FounderSearchPage() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<CompareResult | null>(null)
   const [error, setError] = useState('')
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   async function run(e: React.FormEvent) {
     e.preventDefault()
@@ -37,7 +44,7 @@ export default function FounderSearchPage() {
     setLoading(true)
     setResult(null)
     setError('')
-
+    setExpanded({})
     try {
       const res = await fetch('/api/founder-search/compare', {
         method: 'POST',
@@ -52,6 +59,17 @@ export default function FounderSearchPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function toggle(key: string) {
+    setExpanded(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  function getResultCount(key: string): number {
+    if (!result) return 0
+    const d = result[key as keyof CompareResult] as any
+    if (key === 'exa') return (d.results?.findSimilar?.length ?? 0) + (d.results?.search?.length ?? 0)
+    return d.results?.length ?? 0
   }
 
   return (
@@ -69,7 +87,7 @@ export default function FounderSearchPage() {
         </div>
       </header>
 
-      <main className="px-10 pb-10 max-w-4xl space-y-6">
+      <main className="px-10 pb-10 max-w-5xl space-y-6">
         <form onSubmit={run} className="flex gap-3">
           <input
             value={url}
@@ -97,10 +115,7 @@ export default function FounderSearchPage() {
           <div className="grid grid-cols-3 gap-4">
             {SERVICES.map(s => (
               <div key={s.key} className="bg-white border border-[#E8E7E3] rounded-2xl p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="font-medium text-sm text-[#1A1A1A]">{s.label}</p>
-                  <span className="text-xs text-[#B0AFAB]">{s.description}</span>
-                </div>
+                <p className="font-medium text-sm text-[#1A1A1A] mb-3">{s.label}</p>
                 <div className="flex items-center gap-2 text-xs text-[#888884]">
                   <div className="w-3 h-3 rounded-full border-2 border-[#888884] border-t-transparent animate-spin" />
                   Searching...
@@ -112,24 +127,42 @@ export default function FounderSearchPage() {
 
         {result && (
           <>
-            <p className="text-xs text-[#B0AFAB]">Results for <span className="font-mono">{result.domain}</span></p>
+            <p className="text-xs text-[#B0AFAB]">Raw results for <span className="font-mono">{result.domain}</span></p>
             <div className="grid grid-cols-3 gap-4">
               {SERVICES.map(s => {
-                const data = result[s.key]
+                const data = result[s.key as keyof CompareResult] as any
+                const isExpanded = expanded[s.key]
+                const count = getResultCount(s.key)
+
                 return (
-                  <div key={s.key} className="bg-white border border-[#E8E7E3] rounded-2xl p-5 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium text-sm text-[#1A1A1A]">{s.label}</p>
-                      {data.elapsed && (
-                        <span className="text-xs text-[#B0AFAB]">{(data.elapsed / 1000).toFixed(1)}s</span>
-                      )}
+                  <div key={s.key} className="bg-white border border-[#E8E7E3] rounded-2xl overflow-hidden">
+                    <div className="px-5 py-4 border-b border-[#F0EFE9] flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-sm text-[#1A1A1A]">{s.label}</p>
+                        <p className="text-xs text-[#B0AFAB] mt-0.5">{s.description}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-[#888884]">{count} results</p>
+                        {data.elapsed && <p className="text-xs text-[#B0AFAB]">{(data.elapsed / 1000).toFixed(1)}s</p>}
+                      </div>
                     </div>
-                    <p className="text-xs text-[#888884]">{s.description}</p>
+
                     {data.error ? (
-                      <p className="text-xs text-red-500 bg-red-50 rounded-lg p-2">{data.error}</p>
+                      <p className="text-xs text-red-500 p-4">{data.error}</p>
                     ) : (
-                      <div className="bg-[#F7F6F3] rounded-xl p-3">
-                        <p className="text-sm font-medium text-[#1A1A1A] whitespace-pre-wrap">{data.founder}</p>
+                      <div className="p-3 space-y-1">
+                        <button
+                          onClick={() => toggle(s.key)}
+                          className="flex items-center gap-1 text-xs text-[#888884] hover:text-[#1A1A1A] transition-colors w-full"
+                        >
+                          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                          {isExpanded ? 'Hide' : 'Show'} raw JSON
+                        </button>
+                        {isExpanded && (
+                          <pre className="text-xs bg-[#F7F6F3] rounded-lg p-3 overflow-auto max-h-96 text-[#333] leading-relaxed">
+                            {JSON.stringify(data.results, null, 2)}
+                          </pre>
+                        )}
                       </div>
                     )}
                   </div>
