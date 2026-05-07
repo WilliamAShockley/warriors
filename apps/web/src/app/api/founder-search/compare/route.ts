@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import Parallel from 'parallel-web'
 
 async function searchExa(url: string, domain: string) {
   const start = Date.now()
@@ -53,20 +54,17 @@ async function searchTavily(url: string, domain: string) {
 async function searchParallel(url: string, domain: string) {
   const start = Date.now()
   try {
-    const res = await fetch('https://api.parallel.ai/v1/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.PARALLEL_API_KEY! },
-      body: JSON.stringify({
-        objective: `Find the first and last name of the founder(s) of the company at ${url} (${domain})`,
-        search_queries: [
-          `${domain} founder name`,
-          `${domain} CEO founder LinkedIn`,
-          `who founded ${domain}`,
-        ],
-      }),
+    const client = new Parallel({ apiKey: process.env.PARALLEL_API_KEY! })
+    const taskRun = await client.taskRun.create({
+      input: `Can you tell me who the founder of ${url} (${domain}) is?`,
+      processor: 'core-fast',
+      task_spec: {
+        input_schema: { type: 'text', description: 'The user request to execute.' },
+        output_schema: { type: 'text', description: 'Return a helpful final answer in clear markdown that addresses the user request.' },
+      },
     })
-    const data = await res.json()
-    return { results: data.results ?? [], elapsed: Date.now() - start }
+    const runResult = await client.taskRun.result(taskRun.run_id)
+    return { results: runResult.output, elapsed: Date.now() - start }
   } catch (e) {
     return { results: null, error: String(e), elapsed: Date.now() - start }
   }
