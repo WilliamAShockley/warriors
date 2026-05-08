@@ -7,9 +7,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const target = await db.target.findUnique({ where: { id }, select: { id: true, websiteUrl: true } })
   if (!target?.websiteUrl) return NextResponse.json({ error: 'no websiteUrl' }, { status: 400 })
   try {
+    console.log(`[founder-retry] Starting search for target ${id}, url: ${target.websiteUrl}`)
     await searchAndSaveFounder(target.id, target.websiteUrl)
-    return NextResponse.json({ ok: true })
-  } catch {
+    const updated = await db.target.findUnique({ where: { id }, select: { founderName: true } })
+    console.log(`[founder-retry] Done for ${id}, founderName: ${updated?.founderName ?? 'null'}`)
+    return NextResponse.json({ ok: true, founderName: updated?.founderName })
+  } catch (err) {
+    console.error(`[founder-retry] Failed for target ${id}:`, err)
     return NextResponse.json({ error: 'search failed' }, { status: 500 })
   }
 }

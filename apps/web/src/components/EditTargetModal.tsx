@@ -8,6 +8,7 @@ type Target = {
   id: string
   name: string
   company: string
+  websiteUrl: string | null
   email: string | null
   linkedin: string | null
   stage: string
@@ -25,6 +26,7 @@ export default function EditTargetModal({ target, onClose, onSaved }: Props) {
   const [form, setForm] = useState({
     name: target.name,
     company: target.company,
+    websiteUrl: target.websiteUrl ?? '',
     email: target.email ?? '',
     linkedin: target.linkedin ?? '',
     stage: target.stage,
@@ -78,6 +80,16 @@ export default function EditTargetModal({ target, onClose, onSaved }: Props) {
                 className="w-full text-sm border border-[#E8E7E3] rounded-lg px-3 py-2 outline-none focus:border-[#1A1A1A] transition-colors"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-[#888884] block mb-1">Website URL</label>
+            <input
+              value={form.websiteUrl}
+              onChange={(e) => set('websiteUrl', e.target.value)}
+              placeholder="https://example.com"
+              className="w-full text-sm border border-[#E8E7E3] rounded-lg px-3 py-2 outline-none focus:border-[#1A1A1A] transition-colors"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

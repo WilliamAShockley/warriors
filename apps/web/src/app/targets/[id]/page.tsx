@@ -21,6 +21,7 @@ type Target = {
   id: string
   name: string
   company: string
+  websiteUrl: string | null
   email: string | null
   linkedin: string | null
   stage: string
