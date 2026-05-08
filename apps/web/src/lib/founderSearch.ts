@@ -2,9 +2,32 @@ import { db } from './db'
 import Parallel from 'parallel-web'
 
 function extractCleanName(content: string): string {
-  const boldMatches = content.match(/\*\*([^*]+)\*\*/g) ?? []
-  const nameMatch = boldMatches.map(m => m.replace(/\*\*/g, '')).find(m => m.includes(' '))
-  return nameMatch ?? content.split('\n').find(l => l.trim() && !l.startsWith('#')) ?? content
+  // Look for bold names that are actual person names (not headers like "Founders of...")
+  const boldMatches = (content.match(/\*\*([^*]+)\*\*/g) ?? [])
+    .map(m => m.replace(/\*\*/g, '').trim())
+    .filter(m => m.includes(' ') && !m.toLowerCase().includes('founder') && !m.endsWith(':'))
+
+  if (boldMatches.length > 0) return boldMatches[0]
+
+  // Look for "- Name" list items (common Parallel format)
+  const listMatch = content.match(/^[-•]\s+(.+?)(?:\s[–—-]\s|$)/m)
+  if (listMatch) {
+    const name = listMatch[1].replace(/\*\*/g, '').trim()
+    if (name.includes(' ') && !name.toLowerCase().includes('founder')) return name
+  }
+
+  // Look for "Name is the founder" pattern
+  const isFounder = content.match(/^(.+?)\s+is\s+the\s+(?:founder|co-founder|ceo)/im)
+  if (isFounder) {
+    const name = isFounder[1].replace(/\*\*/g, '').trim()
+    if (name.includes(' ')) return name
+  }
+
+  // Fallback: first non-heading, non-header line
+  const fallback = content.split('\n')
+    .map(l => l.replace(/[#*_]/g, '').trim())
+    .find(l => l && !l.toLowerCase().includes('founder') && !l.endsWith(':'))
+  return fallback ?? content
 }
 
 function guessEmail(founderName: string, websiteUrl: string): string | null {
