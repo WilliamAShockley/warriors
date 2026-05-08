@@ -1,0 +1,71 @@
+import { db } from './db'
+import Parallel from 'parallel-web'
+
+function extractCleanName(content: string): string {
+  const boldMatches = content.match(/\*\*([^*]+)\*\*/g) ?? []
+  const nameMatch = boldMatches.map(m => m.replace(/\*\*/g, '')).find(m => m.includes(' '))
+  return nameMatch ?? content.split('\n').find(l => l.trim() && !l.startsWith('#')) ?? content
+}
+
+function guessEmail(founderName: string, websiteUrl: string): string | null {
+  try {
+    const firstName = founderName.split(' ')[0].toLowerCase()
+    if (!firstName) return null
+    const hostname = websiteUrl.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+    return `${firstName}@${hostname}`
+  } catch {
+    return null
+  }
+}
+
+export async function searchAndSaveFounder(targetId: string, websiteUrl: string) {
+  const client = new Parallel({ apiKey: process.env.PARALLEL_API_KEY! })
+  const cleanUrl = websiteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')
+
+  try {
+    const existing = await db.target.findUnique({ where: { id: targetId }, select: { email: true } })
+    const hasEmail = !!existing?.email
+
+    const taskRun = await client.taskRun.create({
+      input: `Can you tell me who the founder of ${cleanUrl} is?`,
+      processor: 'core-fast' as const,
+      task_spec: {
+        input_schema: { type: 'text' as const, description: 'The user request to execute.' },
+        output_schema: { type: 'text' as const, description: 'Return a helpful final answer in clear markdown that addresses the user request.' },
+      },
+    })
+    const runResult = await client.taskRun.result(taskRun.run_id)
+    const content: string = (runResult.output as any)?.content ?? JSON.stringify(runResult.output)
+    const confidence: string = (runResult.output as any)?.basis?.[0]?.confidence ?? 'unknown'
+    const name = extractCleanName(content)
+
+    if (name && name !== content) {
+      // Got a clean name — save it and guess the email
+      const email = !hasEmail ? guessEmail(name, websiteUrl) : null
+      await db.target.update({ where: { id: targetId }, data: { founderName: name, ...(email && { email }) } })
+      await db.activity.create({
+        data: {
+          targetId,
+          type: 'founder_identified',
+          description: `Founder identified via Parallel (${confidence}): ${name}${email ? ` (${email})` : ''}`,
+        },
+      })
+    } else if (content) {
+      // Got a response but couldn't extract a clean name — save raw content
+      const fallbackName = content.split('\n').find(l => l.trim())?.replace(/[#*_]/g, '').trim()
+      if (fallbackName) {
+        const email = !hasEmail ? guessEmail(fallbackName, websiteUrl) : null
+        await db.target.update({ where: { id: targetId }, data: { founderName: fallbackName, ...(email && { email }) } })
+        await db.activity.create({
+          data: {
+            targetId,
+            type: 'founder_identified',
+            description: `Founder identified via Parallel (${confidence}): ${fallbackName}${email ? ` (${email})` : ''}`,
+          },
+        })
+      }
+    }
+  } catch (err) {
+    console.error(`Founder search failed for target ${targetId}:`, err)
+  }
+}

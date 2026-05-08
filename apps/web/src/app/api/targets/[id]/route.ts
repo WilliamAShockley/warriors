@@ -23,6 +23,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ...(body.company !== undefined && { company: body.company }),
       ...(body.email !== undefined && { email: body.email }),
       ...(body.linkedin !== undefined && { linkedin: body.linkedin }),
+      ...(body.websiteUrl !== undefined && { websiteUrl: body.websiteUrl }),
+      ...(body.founderName !== undefined && { founderName: body.founderName }),
       ...(body.stage !== undefined && { stage: body.stage }),
       ...(body.status !== undefined && { status: body.status }),
       ...(body.notes !== undefined && { notes: body.notes }),

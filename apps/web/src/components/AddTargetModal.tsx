@@ -9,12 +9,26 @@ type Props = {
   onCreated: () => void
 }
 
+function parseCompanyFromUrl(url: string): string {
+  try {
+    const hostname = url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+    const domainPart = hostname.split('.')[0]
+    return domainPart
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+      .trim()
+  } catch {
+    return ''
+  }
+}
+
 export default function AddTargetModal({ onClose, onCreated }: Props) {
   const [form, setForm] = useState({
     name: '',
     company: '',
     email: '',
     linkedin: '',
+    websiteUrl: '',
     stage: 'intro_sent',
     status: 'yellow',
     notes: '',
@@ -25,9 +39,17 @@ export default function AddTargetModal({ onClose, onCreated }: Props) {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
+  function setUrl(value: string) {
+    const parsed = value.includes('.') ? parseCompanyFromUrl(value) : ''
+    setForm(f => ({
+      ...f,
+      websiteUrl: value,
+      company: f.company === '' && parsed ? parsed : f.company,
+    }))
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.name || !form.company) return
     setLoading(true)
     await fetch('/api/targets', {
       method: 'POST',
@@ -50,21 +72,19 @@ export default function AddTargetModal({ onClose, onCreated }: Props) {
         <form onSubmit={submit} className="px-6 py-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-[#888884] block mb-1">Name *</label>
+              <label className="text-xs text-[#888884] block mb-1">Name</label>
               <input
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
-                required
                 className="w-full text-sm border border-[#E8E7E3] rounded-lg px-3 py-2 outline-none focus:border-[#1A1A1A] transition-colors"
                 placeholder="Colton Swingle"
               />
             </div>
             <div>
-              <label className="text-xs text-[#888884] block mb-1">Company *</label>
+              <label className="text-xs text-[#888884] block mb-1">Company</label>
               <input
                 value={form.company}
                 onChange={(e) => set('company', e.target.value)}
-                required
                 className="w-full text-sm border border-[#E8E7E3] rounded-lg px-3 py-2 outline-none focus:border-[#1A1A1A] transition-colors"
                 placeholder="Antioch"
               />
@@ -91,6 +111,16 @@ export default function AddTargetModal({ onClose, onCreated }: Props) {
                 placeholder="linkedin.com/in/..."
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-[#888884] block mb-1">Website URL</label>
+            <input
+              value={form.websiteUrl}
+              onChange={(e) => setUrl(e.target.value)}
+              className="w-full text-sm border border-[#E8E7E3] rounded-lg px-3 py-2 outline-none focus:border-[#1A1A1A] transition-colors"
+              placeholder="https://antioch.com"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -141,7 +171,7 @@ export default function AddTargetModal({ onClose, onCreated }: Props) {
             </button>
             <button
               type="submit"
-              disabled={loading || !form.name || !form.company}
+              disabled={loading}
               className="flex-1 text-sm py-2 rounded-lg bg-[#1A1A1A] text-white hover:bg-[#333] disabled:opacity-40 transition-colors"
             >
               {loading ? 'Adding...' : 'Add Target'}

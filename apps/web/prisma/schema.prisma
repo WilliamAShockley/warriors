@@ -9,25 +9,37 @@ datasource db {
 }
 
 model Target {
-  id            String          @id @default(cuid())
-  name          String
-  company       String
-  email         String?
-  linkedin      String?
-  stage         String          @default("intro_sent")
-  status        String          @default("yellow")
-  lastContacted DateTime?
-  notes         String?
-  aiNextStep    String?
-  industry      String?
-  starred       Boolean         @default(false)
-  starRank      Int?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  activities    Activity[]
-  newsItems     NewsItem[]
-  researchBrief ResearchBrief?
-  outreachBrief OutreachBrief?
+  id              String          @id @default(cuid())
+  name            String
+  company         String
+  email           String?
+  linkedin        String?
+  websiteUrl      String?
+  founderName     String?
+  stage           String          @default("intro_sent")
+  status          String          @default("yellow")
+  lastContacted   DateTime?
+  notes           String?
+  aiNextStep      String?
+  industry        String?
+  starred         Boolean         @default(false)
+  starRank        Int?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  activities      Activity[]
+  newsItems       NewsItem[]
+  researchBrief   ResearchBrief?
+  outreachBrief   OutreachBrief?
+  founderReviews  FounderReview[]
+}
+
+model FounderReview {
+  id         String   @id @default(cuid())
+  targetId   String
+  candidates String   // JSON array of {output, confidence, run_id}
+  status     String   @default("pending")  // pending | approved | denied
+  createdAt  DateTime @default(now())
+  target     Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
 }
 
 model GmailToken {

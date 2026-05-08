@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Search, Star } from 'lucide-react'
+import { ArrowLeft, Plus, Search, Star, Trash2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { STAGES, getEffectiveStatus } from '@/lib/utils'
 import AddTargetModal from '@/components/AddTargetModal'
@@ -11,6 +11,8 @@ type Target = {
   id: string
   name: string
   company: string
+  websiteUrl: string | null
+  founderName: string | null
   stage: string
   status: string
   lastContacted: string | null
@@ -18,7 +20,17 @@ type Target = {
   aiNextStep: string | null
   starred: boolean
   starRank: number | null
+  createdAt: string
   activities: { id: string; type: string; description: string; date: string }[]
+}
+
+function extractName(founderOutput: string): string {
+  const matches = founderOutput.match(/\*\*([^*]+)\*\*/g)
+  if (matches) {
+    const names = matches.map(m => m.replace(/\*\*/g, '')).filter(m => m.includes(' '))
+    if (names.length > 0) return names[0]
+  }
+  return founderOutput.split('\n')[0].replace(/^#+\s*/, '').trim()
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -39,6 +51,7 @@ export default function TargetsPage() {
   const [search, setSearch] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [loading, setLoading] = useState(true)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   async function toggleStar(e: React.MouseEvent, target: Target) {
     e.stopPropagation()
@@ -60,9 +73,28 @@ export default function TargetsPage() {
     const data = await res.json()
     setTargets(data)
     setLoading(false)
+    // Poll every 8s while any target has a URL but no founder yet
+    const needsPolling = data.some((t: Target) => t.websiteUrl && !t.founderName)
+    if (needsPolling && !pollRef.current) {
+      pollRef.current = setInterval(async () => {
+        const r = await fetch('/api/targets')
+        const d = await r.json()
+        setTargets(d)
+        if (!d.some((t: Target) => t.websiteUrl && !t.founderName)) {
+          clearInterval(pollRef.current!)
+          pollRef.current = null
+        }
+      }, 8000)
+    } else if (!needsPolling && pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [])
 
   const filtered = targets.filter((t) =>
     t.stage !== 'passed' &&
@@ -134,8 +166,10 @@ export default function TargetsPage() {
                   className="flex-1 min-w-0 text-left"
                 >
                   <div className="flex items-baseline gap-2 mb-0.5">
-                    <span className="font-medium text-[#1A1A1A] text-sm">{target.name}</span>
-                    <span className="text-[#888884] text-sm">{target.company}</span>
+                    <span className="font-medium text-[#1A1A1A] text-sm">
+                      {target.founderName ? extractName(target.founderName) : (target.name || '—')}
+                    </span>
+                    <span className="text-[#888884] text-sm">{target.company || target.websiteUrl || '—'}</span>
                     <span className="ml-auto text-xs text-[#B0AFAB] flex-shrink-0">
                       {formatDistanceToNow(new Date(target.updatedAt), { addSuffix: true })}
                     </span>
@@ -144,9 +178,30 @@ export default function TargetsPage() {
                     <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${STAGE_BADGE[target.stage] ?? 'bg-[#F0EFE9] text-[#888884]'}`}>
                       {STAGES[target.stage] ?? target.stage}
                     </span>
-                    <span className="text-sm text-[#888884] truncate italic">
-                      {target.aiNextStep ?? '—'}
-                    </span>
+                    {target.websiteUrl && !target.founderName ? (
+                      Date.now() - new Date(target.createdAt).getTime() > 5 * 60 * 1000 ? (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            await fetch(`/api/founder-search/target/${target.id}`, { method: 'POST' })
+                            // Reset updatedAt to now so polling picks it up as "fresh"
+                            setTargets(prev => prev.map(t => t.id === target.id ? { ...t, createdAt: new Date().toISOString() } : t))
+                          }}
+                          className="text-xs text-amber-600 hover:text-amber-800 italic transition-colors"
+                        >
+                          Search timed out — retry
+                        </button>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-xs text-[#888884] italic">
+                          <span className="w-2.5 h-2.5 rounded-full border-2 border-[#888884] border-t-transparent animate-spin inline-block flex-shrink-0" />
+                          Searching for founder...
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-sm text-[#888884] truncate italic">
+                        {target.aiNextStep ?? '—'}
+                      </span>
+                    )}
                   </div>
                 </button>
 
@@ -164,6 +219,19 @@ export default function TargetsPage() {
                     size={14}
                     className={target.starred ? 'fill-amber-400 text-amber-400' : 'text-[#C8C7C3]'}
                   />
+                </button>
+
+                {/* Delete */}
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    await fetch(`/api/targets/${target.id}`, { method: 'DELETE' })
+                    setTargets(prev => prev.filter(t => t.id !== target.id))
+                  }}
+                  className="mt-1 p-1 rounded-md opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 hover:text-red-500"
+                  title="Delete target"
+                >
+                  <Trash2 size={14} className="text-[#C8C7C3]" />
                 </button>
               </div>
             )
