@@ -35,8 +35,9 @@ export async function searchAndSaveFounder(targetId: string, websiteUrl: string)
       },
     })
     const runResult = await client.taskRun.result(taskRun.run_id)
-    const content: string = (runResult.output as any)?.content ?? JSON.stringify(runResult.output)
-    const confidence: string = (runResult.output as any)?.basis?.[0]?.confidence ?? 'unknown'
+    const out = runResult.output as any
+    const content: string = out?.content ?? out?.output ?? JSON.stringify(out)
+    const confidence: string = out?.basis?.[0]?.confidence ?? 'unknown'
     const name = extractCleanName(content)
 
     if (name && name !== content) {
