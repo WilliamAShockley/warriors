@@ -185,8 +185,9 @@ export default function TargetsPage() {
                           onClick={async (e) => {
                             e.stopPropagation()
                             await fetch(`/api/founder-search/target/${target.id}`, { method: 'POST' })
-                            // Reset updatedAt to now so polling picks it up as "fresh"
+                            // Reset createdAt so spinner shows, then re-load to restart polling
                             setTargets(prev => prev.map(t => t.id === target.id ? { ...t, createdAt: new Date().toISOString() } : t))
+                            load()
                           }}
                           className="text-xs text-amber-600 hover:text-amber-800 italic transition-colors"
                         >
