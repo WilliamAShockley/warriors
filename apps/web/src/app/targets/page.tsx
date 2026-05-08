@@ -161,9 +161,10 @@ export default function TargetsPage() {
                 </div>
 
                 {/* Content */}
-                <button
+                <div
                   onClick={() => router.push(`/targets/${target.id}`)}
-                  className="flex-1 min-w-0 text-left"
+                  role="button"
+                  className="flex-1 min-w-0 text-left cursor-pointer"
                 >
                   <div className="flex items-baseline gap-2 mb-0.5">
                     <span className="font-medium text-[#1A1A1A] text-sm">
@@ -203,7 +204,7 @@ export default function TargetsPage() {
                       </span>
                     )}
                   </div>
-                </button>
+                </div>
 
                 {/* Star */}
                 <button
