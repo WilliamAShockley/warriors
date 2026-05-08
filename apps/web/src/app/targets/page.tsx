@@ -182,12 +182,12 @@ export default function TargetsPage() {
                     {target.websiteUrl && !target.founderName ? (
                       Date.now() - new Date(target.createdAt).getTime() > 5 * 60 * 1000 ? (
                         <button
-                          onClick={async (e) => {
+                          onClick={(e) => {
                             e.stopPropagation()
-                            await fetch(`/api/founder-search/target/${target.id}`, { method: 'POST' })
-                            // Reset createdAt so spinner shows, then re-load to restart polling
+                            // Show spinner immediately
                             setTargets(prev => prev.map(t => t.id === target.id ? { ...t, createdAt: new Date().toISOString() } : t))
-                            load()
+                            // Fire search (backend awaits completion), then reload
+                            fetch(`/api/founder-search/target/${target.id}`, { method: 'POST' }).then(() => load())
                           }}
                           className="text-xs text-amber-600 hover:text-amber-800 italic transition-colors"
                         >
