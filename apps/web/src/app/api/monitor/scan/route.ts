@@ -5,8 +5,8 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
 
   if (body.themeId) {
-    const hits = await scanTheme(body.themeId)
-    return NextResponse.json({ themeId: body.themeId, hits })
+    const result = await scanTheme(body.themeId)
+    return NextResponse.json(result)
   }
 
   const results = await scanAllThemes()

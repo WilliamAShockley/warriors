@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, ChevronDown, ChevronRight, Radar, X, ArrowRight, ArrowDown, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Plus, ChevronDown, ChevronRight, Radar, X, ArrowRight, ArrowDown, ExternalLink, CheckCircle } from 'lucide-react'
 
 type Theme = {
   id: string
@@ -26,6 +26,44 @@ type Hit = {
   theme: { name: string }
 }
 
+type ScanSteps = {
+  queries?: { generated: string[] }
+  sources?: { parallel: number; hackerNews: number; googleNews: number; total: number }
+  evaluation?: { companiesFound: number; companies: { name: string; url: string | null }[] }
+  dedup?: { before: number; duplicatesRemoved: number; after: number }
+  saved?: { newHits: number }
+}
+
+type ScanResult = {
+  themeId: string
+  themeName: string
+  hits: number
+  steps: ScanSteps
+  error?: string
+}
+
+function StepCard({ number, title, status, children }: {
+  number: number
+  title: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="bg-white border border-[#E8E7E3] rounded-2xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-[#F0EFE9] flex items-center gap-3">
+        <span className="text-xs font-mono text-[#B0AFAB] w-5">{number}</span>
+        <span className="text-sm font-medium text-[#1A1A1A] flex-1">{title}</span>
+        {status === 'running' && (
+          <div className="w-3.5 h-3.5 rounded-full border-2 border-[#1A1A1A] border-t-transparent animate-spin" />
+        )}
+        {status === 'done' && <CheckCircle size={14} className="text-green-600" />}
+        {status === 'error' && <span className="text-xs text-red-500 font-medium">Failed</span>}
+      </div>
+      {children && <div className="p-5">{children}</div>}
+    </div>
+  )
+}
+
 export default function MonitorPage() {
   const router = useRouter()
   const [themes, setThemes] = useState<Theme[]>([])
@@ -35,6 +73,8 @@ export default function MonitorPage() {
   const [coldOutbound, setColdOutbound] = useState(false)
   const [scanning, setScanning] = useState<string | null>(null) // themeId or 'all'
   const [acting, setActing] = useState(false)
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null)
+  const [scanResults, setScanResults] = useState<ScanResult[] | null>(null) // for scan-all
 
   // New theme form
   const [showAddForm, setShowAddForm] = useState(false)
@@ -101,11 +141,22 @@ export default function MonitorPage() {
 
   async function scan(themeId?: string) {
     setScanning(themeId ?? 'all')
-    await fetch('/api/monitor/scan', {
+    setScanResult(null)
+    setScanResults(null)
+
+    const res = await fetch('/api/monitor/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(themeId ? { themeId } : {}),
     })
+    const data = await res.json()
+
+    if (themeId) {
+      setScanResult(data as ScanResult)
+    } else {
+      setScanResults(data.results as ScanResult[])
+    }
+
     setScanning(null)
     loadThemes()
     loadHits()
@@ -130,6 +181,50 @@ export default function MonitorPage() {
     if (currentIndex < hits.length - 1) setCurrentIndex(i => i + 1)
   }
 
+  // Step status helper for single-theme scan
+  function stepStatus(step: number): 'pending' | 'running' | 'done' {
+    if (scanning) {
+      // While scanning, show steps progressively
+      if (step === 1) return scanResult?.steps.queries ? 'done' : 'running'
+      if (step <= 4) return 'pending'
+      return 'pending'
+    }
+    if (!scanResult) return 'pending'
+    const s = scanResult.steps
+    if (step === 1) return s.queries ? 'done' : 'pending'
+    if (step === 2) return s.sources ? 'done' : 'pending'
+    if (step === 3) return s.evaluation ? 'done' : 'pending'
+    if (step === 4) return s.dedup ? 'done' : 'pending'
+    if (step === 5) return s.saved ? 'done' : (s.dedup && s.dedup.after === 0 ? 'done' : 'pending')
+    return 'pending'
+  }
+
+  // For scan-all, compute combined steps
+  const combinedResult = scanResults ? {
+    totalHits: scanResults.reduce((sum, r) => sum + r.hits, 0),
+    totalQueries: scanResults.flatMap(r => r.steps.queries?.generated ?? []),
+    totalSources: {
+      parallel: scanResults.reduce((s, r) => s + (r.steps.sources?.parallel ?? 0), 0),
+      hackerNews: scanResults.reduce((s, r) => s + (r.steps.sources?.hackerNews ?? 0), 0),
+      googleNews: scanResults.reduce((s, r) => s + (r.steps.sources?.googleNews ?? 0), 0),
+      total: scanResults.reduce((s, r) => s + (r.steps.sources?.total ?? 0), 0),
+    },
+    totalEvaluated: scanResults.reduce((s, r) => s + (r.steps.evaluation?.companiesFound ?? 0), 0),
+    allCompanies: scanResults.flatMap(r => r.steps.evaluation?.companies ?? []),
+    totalDeduped: scanResults.reduce((s, r) => s + (r.steps.dedup?.duplicatesRemoved ?? 0), 0),
+  } : null
+
+  const activeResult = scanResult ?? (scanResults ? {
+    steps: {
+      queries: combinedResult ? { generated: combinedResult.totalQueries } : undefined,
+      sources: combinedResult?.totalSources,
+      evaluation: combinedResult ? { companiesFound: combinedResult.totalEvaluated, companies: combinedResult.allCompanies } : undefined,
+      dedup: combinedResult ? { before: combinedResult.totalEvaluated, duplicatesRemoved: combinedResult.totalDeduped, after: combinedResult.totalEvaluated - combinedResult.totalDeduped } : undefined,
+      saved: combinedResult ? { newHits: combinedResult.totalHits } : undefined,
+    },
+    hits: combinedResult?.totalHits ?? 0,
+  } : null)
+
   const currentHit = hits[currentIndex]
   const SOURCE_LABELS: Record<string, string> = { parallel: 'Parallel', hackernews: 'Hacker News', google_news: 'Google News' }
   const SOURCE_COLORS: Record<string, string> = {
@@ -137,6 +232,8 @@ export default function MonitorPage() {
     hackernews: 'bg-orange-50 text-orange-700 border-orange-200',
     google_news: 'bg-blue-50 text-blue-700 border-blue-200',
   }
+
+  const showSteps = scanning || activeResult
 
   return (
     <div className="min-h-screen bg-[#F7F6F3]">
@@ -182,8 +279,8 @@ export default function MonitorPage() {
                     onClick={() => toggleTheme(theme)}
                     className="flex-shrink-0 relative inline-flex items-center cursor-pointer"
                   >
-                    <div className={`w-8 h-4.5 rounded-full transition-colors ${theme.enabled ? 'bg-[#1A1A1A]' : 'bg-[#E8E7E3]'}`} style={{ width: 32, height: 18 }} />
-                    <div className={`absolute left-0.5 top-0.5 w-3.5 h-3.5 bg-white rounded-full shadow-sm transition-transform ${theme.enabled ? 'translate-x-3.5' : 'translate-x-0'}`} style={{ width: 14, height: 14 }} />
+                    <div className={`rounded-full transition-colors ${theme.enabled ? 'bg-[#1A1A1A]' : 'bg-[#E8E7E3]'}`} style={{ width: 32, height: 18 }} />
+                    <div className={`absolute left-0.5 top-0.5 bg-white rounded-full shadow-sm transition-transform ${theme.enabled ? 'translate-x-3.5' : 'translate-x-0'}`} style={{ width: 14, height: 14 }} />
                   </button>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -252,6 +349,133 @@ export default function MonitorPage() {
           )}
         </div>
 
+        {/* Scan step cards */}
+        {showSteps && (
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-[#888884] uppercase tracking-wide">
+              {scanning ? 'Scanning…' : 'Last Scan Results'}
+            </p>
+
+            {/* Step 1: Generate queries */}
+            <StepCard
+              number={1}
+              title="Generating search queries…"
+              status={scanning && !activeResult?.steps.queries ? 'running' : activeResult?.steps.queries ? 'done' : 'pending'}
+            >
+              {activeResult?.steps.queries && (
+                <div className="flex flex-wrap gap-1.5">
+                  {activeResult.steps.queries.generated.map((q, i) => (
+                    <span key={i} className="text-xs bg-[#F0EFE9] text-[#555] px-2.5 py-1 rounded-full">
+                      {q}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </StepCard>
+
+            {/* Step 2: Fetch sources */}
+            <StepCard
+              number={2}
+              title="Fetching from Parallel, Hacker News, Google News…"
+              status={scanning && activeResult?.steps.queries && !activeResult?.steps.sources ? 'running' : activeResult?.steps.sources ? 'done' : 'pending'}
+            >
+              {activeResult?.steps.sources && (
+                <div className="flex gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-purple-400" />
+                    <span className="text-xs text-[#555]">Parallel: {activeResult.steps.sources.parallel}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-orange-400" />
+                    <span className="text-xs text-[#555]">HN: {activeResult.steps.sources.hackerNews}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-400" />
+                    <span className="text-xs text-[#555]">Google News: {activeResult.steps.sources.googleNews}</span>
+                  </div>
+                  <span className="text-xs text-[#B0AFAB]">{activeResult.steps.sources.total} total raw hits</span>
+                </div>
+              )}
+            </StepCard>
+
+            {/* Step 3: AI evaluation */}
+            <StepCard
+              number={3}
+              title="AI evaluating & extracting companies…"
+              status={scanning && activeResult?.steps.sources && !activeResult?.steps.evaluation ? 'running' : activeResult?.steps.evaluation ? 'done' : 'pending'}
+            >
+              {activeResult?.steps.evaluation && (
+                <div>
+                  <p className="text-xs text-[#888884] mb-2">{activeResult.steps.evaluation.companiesFound} companies identified</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activeResult.steps.evaluation.companies.map((c, i) => (
+                      <span key={i} className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        {c.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </StepCard>
+
+            {/* Step 4: Dedup */}
+            <StepCard
+              number={4}
+              title="Deduplicating against existing targets…"
+              status={scanning && activeResult?.steps.evaluation && !activeResult?.steps.dedup ? 'running' : activeResult?.steps.dedup ? 'done' : 'pending'}
+            >
+              {activeResult?.steps.dedup && (
+                <p className="text-xs text-[#555]">
+                  {activeResult.steps.dedup.duplicatesRemoved > 0 ? (
+                    <>{activeResult.steps.dedup.duplicatesRemoved} duplicate{activeResult.steps.dedup.duplicatesRemoved !== 1 ? 's' : ''} removed &rarr; <strong>{activeResult.steps.dedup.after}</strong> new</>
+                  ) : (
+                    <>No duplicates found &mdash; all {activeResult.steps.dedup.after} are new</>
+                  )}
+                </p>
+              )}
+            </StepCard>
+
+            {/* Step 5: Save */}
+            <StepCard
+              number={5}
+              title="Saving new hits…"
+              status={
+                scanning && activeResult?.steps.dedup && !activeResult?.steps.saved ? 'running'
+                  : activeResult?.steps.saved ? 'done'
+                  : activeResult?.steps.dedup && activeResult.steps.dedup.after === 0 ? 'done'
+                  : 'pending'
+              }
+            >
+              {(activeResult?.steps.saved || (activeResult?.steps.dedup && activeResult.steps.dedup.after === 0)) && (
+                <p className="text-sm text-[#1A1A1A]">
+                  {activeResult.steps.saved ? (
+                    <><strong>{activeResult.steps.saved.newHits}</strong> new hit{activeResult.steps.saved.newHits !== 1 ? 's' : ''} added to your review queue</>
+                  ) : (
+                    <>No new hits to add</>
+                  )}
+                </p>
+              )}
+            </StepCard>
+
+            {/* Per-theme breakdown for scan-all */}
+            {scanResults && scanResults.length > 1 && (
+              <div className="bg-white border border-[#E8E7E3] rounded-2xl p-5">
+                <p className="text-xs font-medium text-[#888884] mb-3">Per-theme breakdown</p>
+                <div className="space-y-2">
+                  {scanResults.map(r => (
+                    <div key={r.themeId} className="flex items-center justify-between text-sm">
+                      <span className="text-[#1A1A1A]">{r.themeName}</span>
+                      <span className={r.hits > 0 ? 'text-emerald-600 font-medium' : 'text-[#B0AFAB]'}>
+                        {r.hits} new hit{r.hits !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Swipe card */}
         {currentHit ? (
           <div className="space-y-4">
@@ -260,7 +484,6 @@ export default function MonitorPage() {
             </div>
 
             <div className="bg-white rounded-2xl border border-[#E8E7E3] p-6 space-y-4">
-              {/* Header */}
               <div>
                 <h2 className="text-xl font-semibold text-[#1A1A1A]">{currentHit.companyName}</h2>
                 {currentHit.url && (
@@ -275,16 +498,13 @@ export default function MonitorPage() {
                 )}
               </div>
 
-              {/* Description */}
               <p className="text-sm text-[#555] leading-relaxed">{currentHit.description}</p>
 
-              {/* Match reason */}
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
                 <p className="text-xs font-medium text-emerald-800 mb-0.5">Match Reason</p>
                 <p className="text-sm text-emerald-700">{currentHit.matchReason}</p>
               </div>
 
-              {/* Tags */}
               <div className="flex items-center gap-2">
                 <span className={`text-xs border px-2 py-0.5 rounded-full ${SOURCE_COLORS[currentHit.source] ?? 'bg-gray-50 text-gray-700 border-gray-200'}`}>
                   {SOURCE_LABELS[currentHit.source] ?? currentHit.source}
@@ -294,7 +514,6 @@ export default function MonitorPage() {
                 </span>
               </div>
 
-              {/* Cold outbound toggle */}
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -306,7 +525,6 @@ export default function MonitorPage() {
               </label>
             </div>
 
-            {/* Action buttons */}
             <div className="flex items-center justify-center gap-4">
               <button
                 onClick={() => handleAction('rejected')}
@@ -337,10 +555,12 @@ export default function MonitorPage() {
             </div>
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-[#E8E7E3] p-12 text-center">
-            <Radar size={32} className="mx-auto text-[#C8C7C3] mb-3" />
-            <p className="text-sm text-[#888884]">No pending hits. Scan your themes to discover new deals.</p>
-          </div>
+          !showSteps && (
+            <div className="bg-white rounded-2xl border border-[#E8E7E3] p-12 text-center">
+              <Radar size={32} className="mx-auto text-[#C8C7C3] mb-3" />
+              <p className="text-sm text-[#888884]">No pending hits. Scan your themes to discover new deals.</p>
+            </div>
+          )
         )}
       </main>
     </div>

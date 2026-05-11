@@ -167,38 +167,94 @@ function normalizeDomain(url: string): string {
 
 // --- Main scan ---
 
-export async function scanTheme(themeId: string): Promise<number> {
+export type ScanSteps = {
+  queries?: { generated: string[] }
+  sources?: {
+    parallel: number
+    hackerNews: number
+    googleNews: number
+    total: number
+  }
+  evaluation?: {
+    companiesFound: number
+    companies: { name: string; url: string | null }[]
+  }
+  dedup?: {
+    before: number
+    duplicatesRemoved: number
+    after: number
+  }
+  saved?: {
+    newHits: number
+  }
+}
+
+export type ScanResult = {
+  themeId: string
+  themeName: string
+  hits: number
+  steps: ScanSteps
+  error?: string
+}
+
+export async function scanTheme(themeId: string): Promise<ScanResult> {
+  const steps: ScanSteps = {}
+
   const theme = await db.monitorTheme.findUnique({ where: { id: themeId } })
-  if (!theme || !theme.enabled) return 0
+  if (!theme) return { themeId, themeName: '', hits: 0, steps, error: 'Theme not found' }
+  if (!theme.enabled) return { themeId, themeName: theme.name, hits: 0, steps, error: 'Theme is disabled' }
 
   // 1. Generate queries
   const queries = await generateQueries(theme.description, theme.keywords)
+  steps.queries = { generated: queries }
 
   // 2. Fetch from all sources in parallel
+  const querySlice = queries.slice(0, 3)
   const [parallelResults, ...searchResults] = await Promise.all([
     fetchParallel(theme.description),
-    ...queries.slice(0, 3).flatMap(q => [
+    ...querySlice.flatMap(q => [
       fetchHackerNews(q),
       fetchGoogleNews(q),
     ]),
   ])
 
+  // Split search results back into HN and Google News
+  const hnResults: RawHit[] = []
+  const gnResults: RawHit[] = []
+  for (let i = 0; i < searchResults.length; i++) {
+    const items = searchResults[i]
+    if (i % 2 === 0) hnResults.push(...items)
+    else gnResults.push(...items)
+  }
+
   const allRawHits: RawHit[] = [
     ...parallelResults,
-    ...searchResults.flat(),
+    ...hnResults,
+    ...gnResults,
   ]
+
+  steps.sources = {
+    parallel: parallelResults.length,
+    hackerNews: hnResults.length,
+    googleNews: gnResults.length,
+    total: allRawHits.length,
+  }
 
   if (allRawHits.length === 0) {
     await db.monitorTheme.update({ where: { id: themeId }, data: { lastScannedAt: new Date() } })
-    return 0
+    return { themeId, themeName: theme.name, hits: 0, steps }
   }
 
   // 3. AI evaluation
   const evaluated = await evaluateHits(allRawHits, theme.description)
+  steps.evaluation = {
+    companiesFound: evaluated.length,
+    companies: evaluated.map(e => ({ name: e.companyName, url: e.url })),
+  }
 
   if (evaluated.length === 0) {
     await db.monitorTheme.update({ where: { id: themeId }, data: { lastScannedAt: new Date() } })
-    return 0
+    return { themeId, themeName: theme.name, hits: 0, steps }
   }
 
   // 4. Dedup against existing hits + existing targets
@@ -227,9 +283,15 @@ export async function scanTheme(themeId: string): Promise<number> {
     return true
   })
 
+  steps.dedup = {
+    before: evaluated.length,
+    duplicatesRemoved: evaluated.length - newHits.length,
+    after: newHits.length,
+  }
+
   if (newHits.length === 0) {
     await db.monitorTheme.update({ where: { id: themeId }, data: { lastScannedAt: new Date() } })
-    return 0
+    return { themeId, themeName: theme.name, hits: 0, steps }
   }
 
   // 5. Insert
@@ -249,15 +311,17 @@ export async function scanTheme(themeId: string): Promise<number> {
 
   await db.monitorTheme.update({ where: { id: themeId }, data: { lastScannedAt: new Date() } })
 
-  return newHits.length
+  steps.saved = { newHits: newHits.length }
+
+  return { themeId, themeName: theme.name, hits: newHits.length, steps }
 }
 
-export async function scanAllThemes(): Promise<{ themeId: string; name: string; hits: number }[]> {
+export async function scanAllThemes(): Promise<ScanResult[]> {
   const themes = await db.monitorTheme.findMany({ where: { enabled: true } })
-  const results: { themeId: string; name: string; hits: number }[] = []
+  const results: ScanResult[] = []
   for (const theme of themes) {
-    const hits = await scanTheme(theme.id)
-    results.push({ themeId: theme.id, name: theme.name, hits })
+    const result = await scanTheme(theme.id)
+    results.push(result)
   }
   return results
 }
