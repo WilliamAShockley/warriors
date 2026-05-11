@@ -90,7 +90,6 @@ Example output: ["AI trading platforms fintech", "machine learning quantitative 
     const parsed = JSON.parse(text.match(/\[[\s\S]*\]/)?.[0] ?? '[]')
     return Array.isArray(parsed) ? parsed.slice(0, 5) : []
   } catch {
-    // Fallback: use description words as single query
     return [description.slice(0, 100)]
   }
 }
@@ -165,48 +164,30 @@ function normalizeDomain(url: string): string {
   }
 }
 
-// --- Main scan ---
+// --- Step event types ---
 
-export type ScanSteps = {
-  queries?: { generated: string[] }
-  sources?: {
-    parallel: number
-    hackerNews: number
-    googleNews: number
-    total: number
-  }
-  evaluation?: {
-    companiesFound: number
-    companies: { name: string; url: string | null }[]
-  }
-  dedup?: {
-    before: number
-    duplicatesRemoved: number
-    after: number
-  }
-  saved?: {
-    newHits: number
-  }
-}
+export type ScanStepEvent =
+  | { step: 'queries'; data: { generated: string[] } }
+  | { step: 'sources'; data: { parallel: number; hackerNews: number; googleNews: number; total: number } }
+  | { step: 'evaluation'; data: { companiesFound: number; companies: { name: string; url: string | null }[] } }
+  | { step: 'dedup'; data: { before: number; duplicatesRemoved: number; after: number } }
+  | { step: 'saved'; data: { newHits: number } }
+  | { step: 'done'; data: { themeId: string; themeName: string; hits: number } }
+  | { step: 'error'; data: { message: string } }
 
-export type ScanResult = {
-  themeId: string
-  themeName: string
-  hits: number
-  steps: ScanSteps
-  error?: string
-}
+// --- Streaming scan ---
 
-export async function scanTheme(themeId: string): Promise<ScanResult> {
-  const steps: ScanSteps = {}
-
+export async function scanThemeStreaming(
+  themeId: string,
+  emit: (event: ScanStepEvent) => void,
+): Promise<void> {
   const theme = await db.monitorTheme.findUnique({ where: { id: themeId } })
-  if (!theme) return { themeId, themeName: '', hits: 0, steps, error: 'Theme not found' }
-  if (!theme.enabled) return { themeId, themeName: theme.name, hits: 0, steps, error: 'Theme is disabled' }
+  if (!theme) { emit({ step: 'error', data: { message: 'Theme not found' } }); return }
+  if (!theme.enabled) { emit({ step: 'error', data: { message: 'Theme is disabled' } }); return }
 
   // 1. Generate queries
   const queries = await generateQueries(theme.description, theme.keywords)
-  steps.queries = { generated: queries }
+  emit({ step: 'queries', data: { generated: queries } })
 
   // 2. Fetch from all sources in parallel
   const querySlice = queries.slice(0, 3)
@@ -218,7 +199,6 @@ export async function scanTheme(themeId: string): Promise<ScanResult> {
     ]),
   ])
 
-  // Split search results back into HN and Google News
   const hnResults: RawHit[] = []
   const gnResults: RawHit[] = []
   for (let i = 0; i < searchResults.length; i++) {
@@ -227,37 +207,35 @@ export async function scanTheme(themeId: string): Promise<ScanResult> {
     else gnResults.push(...items)
   }
 
-  const allRawHits: RawHit[] = [
-    ...parallelResults,
-    ...hnResults,
-    ...gnResults,
-  ]
+  const allRawHits: RawHit[] = [...parallelResults, ...hnResults, ...gnResults]
 
-  steps.sources = {
+  emit({ step: 'sources', data: {
     parallel: parallelResults.length,
     hackerNews: hnResults.length,
     googleNews: gnResults.length,
     total: allRawHits.length,
-  }
+  }})
 
   if (allRawHits.length === 0) {
     await db.monitorTheme.update({ where: { id: themeId }, data: { lastScannedAt: new Date() } })
-    return { themeId, themeName: theme.name, hits: 0, steps }
+    emit({ step: 'done', data: { themeId, themeName: theme.name, hits: 0 } })
+    return
   }
 
   // 3. AI evaluation
   const evaluated = await evaluateHits(allRawHits, theme.description)
-  steps.evaluation = {
+  emit({ step: 'evaluation', data: {
     companiesFound: evaluated.length,
     companies: evaluated.map(e => ({ name: e.companyName, url: e.url })),
-  }
+  }})
 
   if (evaluated.length === 0) {
     await db.monitorTheme.update({ where: { id: themeId }, data: { lastScannedAt: new Date() } })
-    return { themeId, themeName: theme.name, hits: 0, steps }
+    emit({ step: 'done', data: { themeId, themeName: theme.name, hits: 0 } })
+    return
   }
 
-  // 4. Dedup against existing hits + existing targets
+  // 4. Dedup
   const existingHits = await db.monitorHit.findMany({
     where: { themeId },
     select: { companyName: true, url: true },
@@ -283,15 +261,16 @@ export async function scanTheme(themeId: string): Promise<ScanResult> {
     return true
   })
 
-  steps.dedup = {
+  emit({ step: 'dedup', data: {
     before: evaluated.length,
     duplicatesRemoved: evaluated.length - newHits.length,
     after: newHits.length,
-  }
+  }})
 
   if (newHits.length === 0) {
     await db.monitorTheme.update({ where: { id: themeId }, data: { lastScannedAt: new Date() } })
-    return { themeId, themeName: theme.name, hits: 0, steps }
+    emit({ step: 'done', data: { themeId, themeName: theme.name, hits: 0 } })
+    return
   }
 
   // 5. Insert
@@ -311,17 +290,6 @@ export async function scanTheme(themeId: string): Promise<ScanResult> {
 
   await db.monitorTheme.update({ where: { id: themeId }, data: { lastScannedAt: new Date() } })
 
-  steps.saved = { newHits: newHits.length }
-
-  return { themeId, themeName: theme.name, hits: newHits.length, steps }
-}
-
-export async function scanAllThemes(): Promise<ScanResult[]> {
-  const themes = await db.monitorTheme.findMany({ where: { enabled: true } })
-  const results: ScanResult[] = []
-  for (const theme of themes) {
-    const result = await scanTheme(theme.id)
-    results.push(result)
-  }
-  return results
+  emit({ step: 'saved', data: { newHits: newHits.length } })
+  emit({ step: 'done', data: { themeId, themeName: theme.name, hits: newHits.length } })
 }
