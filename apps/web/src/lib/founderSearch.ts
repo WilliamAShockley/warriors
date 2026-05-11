@@ -1,36 +1,30 @@
 import { db } from './db'
+import { draftColdEmail } from './draftEmail'
+import { anthropic } from './claude'
 import Parallel from 'parallel-web'
 
-function extractCleanName(content: string): string {
-  // Look for bold names that are actual person names (not headers like "Founders of...")
-  const boldMatches = (content.match(/\*\*([^*]+)\*\*/g) ?? [])
-    .map(m => m.replace(/\*\*/g, '').trim())
-    .filter(m => m.includes(' ') && !m.toLowerCase().includes('founder') && !m.endsWith(':'))
+export async function extractFounderName(content: string): Promise<string | null> {
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 50,
+      messages: [{
+        role: 'user',
+        content: `Extract the CEO's full name from this text. If no CEO is explicitly mentioned, pick the founder most likely to be CEO (e.g. "Founder & CEO", "Co-Founder & CEO", or the sole founder). Reply with ONLY the person's name (e.g. "John Smith") and nothing else. If no founder name is found, reply with exactly "NONE".
 
-  if (boldMatches.length > 0) return boldMatches[0]
-
-  // Look for "- Name" list items (common Parallel format)
-  const listMatch = content.match(/^[-•]\s+(.+?)(?:\s[–—-]\s|$)/m)
-  if (listMatch) {
-    const name = listMatch[1].replace(/\*\*/g, '').trim()
-    if (name.includes(' ') && !name.toLowerCase().includes('founder')) return name
+${content}`,
+      }],
+    })
+    const result = message.content[0]
+    const name = result.type === 'text' ? result.text.trim() : null
+    if (!name || name === 'NONE') return null
+    return name
+  } catch {
+    return null
   }
-
-  // Look for "Name is the founder" pattern
-  const isFounder = content.match(/^(.+?)\s+is\s+the\s+(?:founder|co-founder|ceo)/im)
-  if (isFounder) {
-    const name = isFounder[1].replace(/\*\*/g, '').trim()
-    if (name.includes(' ')) return name
-  }
-
-  // Fallback: first non-heading, non-header line
-  const fallback = content.split('\n')
-    .map(l => l.replace(/[#*_]/g, '').trim())
-    .find(l => l && !l.toLowerCase().includes('founder') && !l.endsWith(':'))
-  return fallback ?? content
 }
 
-function guessEmail(founderName: string, websiteUrl: string): string | null {
+export function guessEmail(founderName: string, websiteUrl: string): string | null {
   try {
     const firstName = founderName.split(' ')[0].toLowerCase()
     if (!firstName) return null
@@ -50,7 +44,7 @@ export async function searchAndSaveFounder(targetId: string, websiteUrl: string)
     const hasEmail = !!existing?.email
 
     const taskRun = await client.taskRun.create({
-      input: `Can you tell me who the founder of ${cleanUrl} is?`,
+      input: `Who is the CEO of ${cleanUrl}? If no CEO is listed, who is the founder most likely to be CEO?`,
       processor: 'core-fast' as const,
       task_spec: {
         input_schema: { type: 'text' as const, description: 'The user request to execute.' },
@@ -61,12 +55,14 @@ export async function searchAndSaveFounder(targetId: string, websiteUrl: string)
     const out = runResult.output as any
     const content: string = out?.content ?? out?.output ?? JSON.stringify(out)
     const confidence: string = out?.basis?.[0]?.confidence ?? 'unknown'
-    const name = extractCleanName(content)
+    const name = await extractFounderName(content)
 
-    if (name && name !== content) {
-      // Got a clean name — save it and guess the email
+    if (name) {
+      const nameParts = name.trim().split(/\s+/)
+      const firstName = nameParts[0]
+      const lastName = nameParts.slice(1).join(' ') || null
       const email = !hasEmail ? guessEmail(name, websiteUrl) : null
-      await db.target.update({ where: { id: targetId }, data: { founderName: name, ...(email && { email }) } })
+      await db.target.update({ where: { id: targetId }, data: { founderName: name, founderFirstName: firstName, founderLastName: lastName, ...(email && { email }) } })
       await db.activity.create({
         data: {
           targetId,
@@ -74,20 +70,7 @@ export async function searchAndSaveFounder(targetId: string, websiteUrl: string)
           description: `Founder identified via Parallel (${confidence}): ${name}${email ? ` (${email})` : ''}`,
         },
       })
-    } else if (content) {
-      // Got a response but couldn't extract a clean name — save raw content
-      const fallbackName = content.split('\n').find(l => l.trim())?.replace(/[#*_]/g, '').trim()
-      if (fallbackName) {
-        const email = !hasEmail ? guessEmail(fallbackName, websiteUrl) : null
-        await db.target.update({ where: { id: targetId }, data: { founderName: fallbackName, ...(email && { email }) } })
-        await db.activity.create({
-          data: {
-            targetId,
-            type: 'founder_identified',
-            description: `Founder identified via Parallel (${confidence}): ${fallbackName}${email ? ` (${email})` : ''}`,
-          },
-        })
-      }
+      draftColdEmail(targetId).catch(() => {})
     }
   } catch (err) {
     console.error(`Founder search failed for target ${targetId}:`, err)

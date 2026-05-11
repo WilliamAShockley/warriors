@@ -14,13 +14,15 @@ type Props = {
   targetId: string
   targetName: string
   targetEmail: string
+  initialSubject?: string
+  initialBody?: string
   onClose: () => void
   onSent: () => void
 }
 
-export default function SendEmailModal({ targetId, targetName, targetEmail, onClose, onSent }: Props) {
-  const [subject, setSubject] = useState('')
-  const [body, setBody] = useState('')
+export default function SendEmailModal({ targetId, targetName, targetEmail, initialSubject, initialBody, onClose, onSent }: Props) {
+  const [subject, setSubject] = useState(initialSubject ?? '')
+  const [body, setBody] = useState(initialBody ?? '')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [drafts, setDrafts] = useState<EmailDraft[]>([])
@@ -66,7 +68,7 @@ export default function SendEmailModal({ targetId, targetName, targetEmail, onCl
           targetId,
           to: targetEmail,
           subject: subject.trim(),
-          body: body.trim(),
+          bodyText: body.trim(),
         }),
       })
 

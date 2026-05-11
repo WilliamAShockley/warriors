@@ -16,25 +16,26 @@ export async function generateTargetSummary(target: {
     target.activities.length > 0
       ? target.activities
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .slice(0, 5)
           .map((a) => `- [${a.type.toUpperCase()}] ${new Date(a.date).toLocaleDateString()}: ${a.description}`)
           .join('\n')
-      : 'No activity logged yet.'
+      : 'No prior activity.'
 
-  const prompt = `You are an assistant to a venture capitalist. Based on the following information about a target contact, write a concise, actionable briefing (3-5 sentences max). Focus on where things stand and the most important next step. Be direct and specific — avoid filler language.
+  const prompt = `You are an assistant to a venture capitalist. Summarize this target in 2-3 sentences covering: who they are, current relationship status, and suggested next action.
 
 Contact: ${target.name} at ${target.company}
 Stage: ${target.stage.replace(/_/g, ' ')}
-Last Contacted: ${target.lastContacted ? new Date(target.lastContacted).toLocaleDateString() : 'Not yet'}
+Last Contacted: ${target.lastContacted ? new Date(target.lastContacted).toLocaleDateString() : 'Never'}
 Notes: ${target.notes || 'None'}
 
-Activity Log:
+Recent Activity:
 ${activitiesText}
 
-Write the briefing now:`
+Brief summary:`
 
   const message = await anthropic.messages.create({
-    model: 'claude-opus-4-6',
-    max_tokens: 300,
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 200,
     messages: [{ role: 'user', content: prompt }],
   })
 

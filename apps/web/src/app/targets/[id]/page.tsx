@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Sparkles, Plus, Trash2, ExternalLink, Mail, RefreshCw, Send, Zap, ChevronDown, Star } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, ExternalLink, Mail, RefreshCw, Send, Zap, ChevronDown, Star } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { STAGES, ACTIVITY_TYPES, cn, getEffectiveStatus } from '@/lib/utils'
 import LogActivityModal from '@/components/LogActivityModal'
@@ -61,8 +61,9 @@ export default function TargetDetail() {
   const { id } = useParams<{ id: string }>()
 
   const [target, setTarget] = useState<Target | null>(null)
-  const [summary, setSummary] = useState<string>('')
-  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [draftEmail, setDraftEmail] = useState<{ subject: string; body: string } | null>(null)
+  const [emailLoading, setEmailLoading] = useState(false)
+  const [showSendDraft, setShowSendDraft] = useState(false)
   const [showLogActivity, setShowLogActivity] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [showSendEmail, setShowSendEmail] = useState(false)
@@ -78,19 +79,30 @@ export default function TargetDetail() {
     setTarget(await res.json())
   }, [id, router])
 
+  const loadDraft = useCallback(async () => {
+    const res = await fetch(`/api/targets/${id}/summary`)
+    if (res.ok) {
+      const data = await res.json()
+      setDraftEmail(data.draft)
+    }
+  }, [id])
+
   useEffect(() => {
     loadTarget()
+    loadDraft()
     fetch('/api/gmail/status').then(r => r.json()).then(d => setGmailConnected(d.connected))
     fetch('/api/skills').then(r => r.json()).then(d => setSkills(d.filter((s: { section: string }) => s.section === 'targets' || s.section === 'global')))
-  }, [loadTarget])
+  }, [loadTarget, loadDraft])
 
-  async function loadSummary() {
-    setSummaryLoading(true)
-    setSummary('')
-    const res = await fetch(`/api/targets/${id}/summary`)
-    const data = await res.json()
-    setSummary(data.summary)
-    setSummaryLoading(false)
+  async function regenerateDraft() {
+    setEmailLoading(true)
+    setDraftEmail(null)
+    const res = await fetch(`/api/targets/${id}/summary`, { method: 'POST' })
+    if (res.ok) {
+      const data = await res.json()
+      setDraftEmail(data.draft)
+    }
+    setEmailLoading(false)
   }
 
   async function syncGmail() {
@@ -267,26 +279,40 @@ export default function TargetDetail() {
           )}
         </div>
 
-        {/* AI Summary */}
+        {/* Draft Cold Email */}
         <div className="bg-white border border-[#E8E7E3] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-medium text-[#888884] uppercase tracking-wide">Summary</span>
-            <button
-              onClick={loadSummary}
-              disabled={summaryLoading}
-              className="flex items-center gap-1.5 text-xs text-[#888884] hover:text-[#1A1A1A] transition-colors disabled:opacity-50"
-            >
-              <Sparkles size={12} />
-              {summaryLoading ? 'Generating...' : summary ? 'Refresh' : 'Generate with Claude'}
-            </button>
+            <span className="text-xs font-medium text-[#888884] uppercase tracking-wide">Draft Cold Email</span>
+            <div className="flex items-center gap-2">
+              {draftEmail && canSendEmail && (
+                <button
+                  onClick={() => setShowSendDraft(true)}
+                  className="flex items-center gap-1.5 text-xs text-white bg-[#1A1A1A] hover:bg-[#333] px-2.5 py-1 rounded-lg transition-colors"
+                >
+                  <Send size={12} />
+                  Send
+                </button>
+              )}
+              <button
+                onClick={regenerateDraft}
+                disabled={emailLoading}
+                className="flex items-center gap-1.5 text-xs text-[#888884] hover:text-[#1A1A1A] transition-colors disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={emailLoading ? 'animate-spin' : ''} />
+                {emailLoading ? 'Drafting...' : draftEmail ? 'Regenerate' : 'Draft with Template'}
+              </button>
+            </div>
           </div>
-          {summary ? (
-            <p className="text-sm text-[#1A1A1A] leading-relaxed">{summary}</p>
+          {draftEmail ? (
+            <div>
+              <p className="text-xs text-[#888884] mb-1">Subject: <span className="text-[#1A1A1A]">{draftEmail.subject}</span></p>
+              <pre className="text-sm text-[#1A1A1A] leading-relaxed whitespace-pre-wrap font-sans mt-2">{draftEmail.body}</pre>
+            </div>
           ) : (
             <p className="text-sm text-[#B0AFAB] italic">
-              {summaryLoading
-                ? 'Claude is thinking...'
-                : 'Click "Generate with Claude" to get a briefing on this contact.'}
+              {emailLoading
+                ? 'Generating draft from template...'
+                : 'Click "Draft with Template" to generate from template 001, or drafts auto-generate after enrichment.'}
             </p>
           )}
         </div>
@@ -412,6 +438,18 @@ export default function TargetDetail() {
           targetEmail={target.email}
           onClose={() => setShowSendEmail(false)}
           onSent={() => { setShowSendEmail(false); loadTarget() }}
+        />
+      )}
+
+      {showSendDraft && target.email && draftEmail && (
+        <SendEmailModal
+          targetId={target.id}
+          targetName={target.name}
+          targetEmail={target.email}
+          initialSubject={draftEmail.subject}
+          initialBody={draftEmail.body}
+          onClose={() => setShowSendDraft(false)}
+          onSent={() => { setShowSendDraft(false); loadTarget() }}
         />
       )}
 

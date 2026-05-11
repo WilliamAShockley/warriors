@@ -54,12 +54,22 @@ export default function AgentsPage() {
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set())
   const [running, setRunning] = useState<Set<string>>(new Set())
 
+  const [pendingHits, setPendingHits] = useState(0)
+
   const load = useCallback(async () => {
     const res = await fetch('/api/agents')
     if (res.ok) setAgents(await res.json())
   }, [])
 
-  useEffect(() => { load() }, [load])
+  const loadPendingHits = useCallback(async () => {
+    const res = await fetch('/api/monitor/hits')
+    if (res.ok) {
+      const data = await res.json()
+      setPendingHits(data.length)
+    }
+  }, [])
+
+  useEffect(() => { load(); loadPendingHits() }, [load, loadPendingHits])
 
   async function toggle(agent: Agent) {
     await fetch(`/api/agents/${agent.id}`, {
@@ -120,6 +130,61 @@ export default function AgentsPage() {
       </header>
 
       <main className="px-10 pb-10 space-y-3 max-w-3xl">
+        {/* Built-in workflow: Deal Monitor */}
+        <div className="bg-white rounded-2xl border border-[#E8E7E3]">
+          <div className="p-5">
+            <div className="flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-[#1A1A1A]">Deal Monitor</span>
+                  <span className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+                    Workflow
+                  </span>
+                  {pendingHits > 0 && (
+                    <span className="text-xs bg-red-50 text-red-600 border border-red-200 px-1.5 py-0.5 rounded-full">
+                      {pendingHits}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-[#888884] mt-0.5 leading-snug">
+                  Scan sources &rarr; discover companies &rarr; swipe to approve
+                </p>
+              </div>
+              <button
+                onClick={() => router.push('/agents/monitor')}
+                className="flex items-center gap-1 text-xs text-white bg-[#1A1A1A] px-3 py-1.5 rounded-lg hover:bg-[#333] transition-colors flex-shrink-0"
+              >
+                Open
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Built-in workflow: Cold Outbound */}
+        <div className="bg-white rounded-2xl border border-[#E8E7E3]">
+          <div className="p-5">
+            <div className="flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-[#1A1A1A]">Cold Outbound</span>
+                  <span className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+                    Workflow
+                  </span>
+                </div>
+                <p className="text-sm text-[#888884] mt-0.5 leading-snug">
+                  URL &rarr; founder &rarr; email &rarr; draft from template 001
+                </p>
+              </div>
+              <button
+                onClick={() => router.push('/agents/cold-outbound')}
+                className="flex items-center gap-1 text-xs text-white bg-[#1A1A1A] px-3 py-1.5 rounded-lg hover:bg-[#333] transition-colors flex-shrink-0"
+              >
+                Open
+              </button>
+            </div>
+          </div>
+        </div>
+
         {agents.length === 0 && (
           <div className="text-center py-16 text-[#888884] text-sm">
             No agents yet. Create one to get started.

@@ -16,6 +16,8 @@ model Target {
   linkedin        String?
   websiteUrl      String?
   founderName     String?
+  founderFirstName String?
+  founderLastName  String?
   stage           String          @default("intro_sent")
   status          String          @default("yellow")
   lastContacted   DateTime?
@@ -24,6 +26,9 @@ model Target {
   industry        String?
   starred         Boolean         @default(false)
   starRank        Int?
+  draftEmailSubject     String?
+  draftEmailBody        String?
+  draftEmailGeneratedAt DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   activities      Activity[]
@@ -139,6 +144,35 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+model MonitorTheme {
+  id            String       @id @default(cuid())
+  name          String
+  description   String
+  keywords      String?
+  enabled       Boolean      @default(true)
+  lastScannedAt DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  hits          MonitorHit[]
+}
+
+model MonitorHit {
+  id          String        @id @default(cuid())
+  themeId     String
+  companyName String
+  url         String?
+  description String
+  matchReason String
+  source      String
+  sourceUrl   String?
+  status      String        @default("pending")
+  targetId    String?
+  rawData     String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  theme       MonitorTheme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
 }
 
 model Agent {

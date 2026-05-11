@@ -7,7 +7,7 @@ export async function POST(req: Request) {
 
   const cleanUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '')
   const requestPayload = {
-    input: `Can you tell me who the founder of ${cleanUrl} is?`,
+    input: `Who is the CEO of ${cleanUrl}? If no CEO is listed, who is the founder most likely to be CEO?`,
     processor: 'core-fast' as const,
     task_spec: {
       input_schema: { type: 'text' as const, description: 'The user request to execute.' },
