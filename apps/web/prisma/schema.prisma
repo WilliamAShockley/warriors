@@ -36,6 +36,7 @@ model Target {
   researchBrief   ResearchBrief?
   outreachBrief   OutreachBrief?
   founderReviews  FounderReview[]
+  documents       Document[]
 }
 
 model FounderReview {
@@ -201,4 +202,33 @@ model AgentRun {
   trigger   String   @default("manual")
   createdAt DateTime @default(now())
   agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+}
+
+model Document {
+  id        String          @id @default(cuid())
+  title     String
+  type      String          // "note" | "file" | "indexed"
+  content   String?         // markdown body for notes; extracted text for indexed
+  mimeType  String?
+  fileUrl   String?         // Vercel Blob URL
+  fileSize  Int?            // bytes
+  targetId  String?
+  target    Target?         @relation(fields: [targetId], references: [id], onDelete: SetNull)
+  chunks    DocumentChunk[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model DocumentChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content    String
+  ordinal    Int
+  // Voyage AI embedding stored as libSQL F32_BLOB. Vector index is created
+  // out-of-band by scripts/setup-vector-index.ts since Prisma can't model it.
+  embedding  Bytes?
+  createdAt  DateTime @default(now())
+
+  @@index([documentId, ordinal])
 }
