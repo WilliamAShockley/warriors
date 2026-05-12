@@ -6,7 +6,6 @@ export async function GET() {
     const todos = await db.todo.findMany({
       orderBy: [
         { completed: 'asc' },
-        { sortOrder: 'asc' },
         { createdAt: 'desc' },
       ],
     })
