@@ -3,7 +3,10 @@ import { runEmbeddingPipeline, embedAllTargets } from '@/lib/hermes/embedding-pi
 import { runEntityResolution } from '@/lib/hermes/entity-resolution'
 import { runScoring } from '@/lib/hermes/scoring'
 import { runClustering } from '@/lib/hermes/clustering'
-import type { StepEvent } from '@/lib/hermes/types'
+import { runIngestion, runMultiSourceIngestion } from '@/lib/hermes/ingestion'
+import { runEnrichment } from '@/lib/hermes/enrichment'
+import { runOutreach } from '@/lib/hermes/outreach'
+import type { StepEvent, IngestionSource } from '@/lib/hermes/types'
 
 // Step definitions per block (mirrors the frontend BLOCKS constant)
 const BLOCK_STEPS: Record<string, string[]> = {
@@ -215,7 +218,7 @@ function stubOutput(block: string, stepIdx: number): Record<string, unknown> {
 }
 
 // Blocks that have real pipeline implementations
-const REAL_BLOCKS = new Set(['embedding', 'clustering', 'entity_resolution', 'scoring'])
+const REAL_BLOCKS = new Set(['ingestion', 'enrichment', 'embedding', 'clustering', 'entity_resolution', 'scoring', 'outreach'])
 
 /**
  * Run a real pipeline block, streaming step events as NDJSON.
@@ -225,6 +228,7 @@ async function runRealBlock(
   block: string,
   controller: ReadableStreamDefaultController,
   encoder: TextEncoder,
+  body: Record<string, any>,
 ): Promise<{ allEvents: StepEvent[]; hasFailed: boolean }> {
   const allEvents: StepEvent[] = []
   let hasFailed = false
@@ -237,8 +241,46 @@ async function runRealBlock(
 
   try {
     switch (block) {
+      case 'ingestion': {
+        // Accept queries + sources from request body
+        const queries: string[] = body.queries ?? []
+        const sources: IngestionSource[] = body.sources ?? ['hackernews', 'google_news', 'techcrunch']
+
+        if (queries.length === 0) {
+          emit({ block, step: 0, name: 'No queries provided', status: 'error', durationMs: 0, error: 'Provide at least one search query via the thesis decomposer' })
+          break
+        }
+
+        // Build configs: each query x each source
+        const configs = queries.flatMap(query =>
+          sources.map(source => ({ source, query, maxResults: 10 }))
+        )
+
+        emit({ block, step: 0, name: 'Pipeline started', status: 'success', durationMs: 0, output: { totalConfigs: configs.length, queries, sources } as any })
+        await runMultiSourceIngestion(configs, emit)
+        break
+      }
+
+      case 'enrichment': {
+        const targetId = body.targetId as string | undefined
+        if (targetId) {
+          await runEnrichment(targetId, emit)
+        } else {
+          // Enrich all targets missing synthesized blobs
+          const targets = await db.target.findMany({
+            where: { synthesizedBlob: null },
+            select: { id: true, company: true },
+            take: 10,
+          })
+          emit({ block, step: 0, name: 'Batch enrichment started', status: 'success', durationMs: 0, output: { targetsToEnrich: targets.length } as any })
+          for (const t of targets) {
+            await runEnrichment(t.id, emit)
+          }
+        }
+        break
+      }
+
       case 'embedding': {
-        // Batch embed all targets that need it
         emit({ block, step: 1, name: 'Find targets needing embeddings', status: 'running', durationMs: 0 })
         const t0 = Date.now()
         const result = await embedAllTargets()
@@ -265,6 +307,16 @@ async function runRealBlock(
       case 'scoring':
         await runScoring(emit)
         break
+
+      case 'outreach': {
+        const targetId = body.targetId as string | undefined
+        if (targetId) {
+          await runOutreach(targetId, emit)
+        } else {
+          emit({ block, step: 0, name: 'No target specified', status: 'error', durationMs: 0, error: 'Provide a targetId to generate outreach' })
+        }
+        break
+      }
     }
   } catch (err: any) {
     hasFailed = true
@@ -285,7 +337,7 @@ async function runRealBlock(
 }
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ block: string }> }
 ) {
   const { block } = await params
@@ -293,6 +345,14 @@ export async function POST(
   const steps = BLOCK_STEPS[block]
   if (!steps) {
     return Response.json({ error: `Unknown block: ${block}` }, { status: 400 })
+  }
+
+  // Parse request body for real block params (queries, targetId, sources, etc.)
+  let body: Record<string, any> = {}
+  try {
+    body = await req.json()
+  } catch {
+    // No body is fine for blocks that don't need params
   }
 
   const encoder = new TextEncoder()
@@ -305,7 +365,7 @@ export async function POST(
 
       if (REAL_BLOCKS.has(block)) {
         // ---------- Real pipeline execution ----------
-        const result = await runRealBlock(block, controller, encoder)
+        const result = await runRealBlock(block, controller, encoder, body)
         allEvents = result.allEvents
         hasFailed = result.hasFailed
       } else {
