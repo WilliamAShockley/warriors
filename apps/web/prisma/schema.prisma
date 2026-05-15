@@ -1,11 +1,13 @@
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DATABASE_URL_UNPOOLED")
+  extensions = [vector]
 }
 
 model Target {
@@ -29,21 +31,107 @@ model Target {
   draftEmailSubject     String?
   draftEmailBody        String?
   draftEmailGeneratedAt DateTime?
+
+  // Hermes additions
+  embedding       Unsupported("vector(1024)")?
+  synthesizedBlob String?         // text blob for embedding
+  score           Float?          // algorithmic relevance score
+  sourceType      String?         // linkedin_company, vc_website, techcrunch, etc.
+  sourceUrl       String?         // originating URL
+  ingestedAt      DateTime?       // first ingestion timestamp
+  onChainAddress  String?         // token contract or wallet
+  clusterId       String?         // FK to Cluster
+
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+
   activities      Activity[]
   newsItems       NewsItem[]
   researchBrief   ResearchBrief?
   outreachBrief   OutreachBrief?
   founderReviews  FounderReview[]
   documents       Document[]
+  persons         Person[]
+  fundingRounds   FundingRound[]
+  cluster         Cluster?        @relation(fields: [clusterId], references: [id])
+
+  @@index([sourceType])
+  @@index([clusterId])
+  @@index([score])
+  @@index([ingestedAt])
+}
+
+model Person {
+  id            String   @id @default(cuid())
+  name          String
+  currentRole   String?
+  currentCompany String?
+  careerHistory String?  // JSON array of {employer, role, years}
+  linkedinUrl   String?
+  twitterHandle String?
+  email         String?
+  bio           String?
+  embedding     Unsupported("vector(1024)")?
+  synthesizedBlob String?
+  score         Float?
+  sourceType    String?  // linkedin_founder, linkedin_mutuals, twitter_follower
+  sourceUrl     String?
+  targetId      String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  target        Target?  @relation(fields: [targetId], references: [id], onDelete: SetNull)
+
+  @@index([targetId])
+  @@index([sourceType])
+}
+
+model FundingRound {
+  id            String   @id @default(cuid())
+  targetId      String
+  amount        String?  // e.g. "$25M"
+  stage         String?  // seed, series_a, series_b, etc.
+  date          DateTime?
+  leadInvestor  String?
+  coInvestors   String?  // JSON array of investor names
+  sourceUrl     String?
+
+  createdAt     DateTime @default(now())
+
+  target        Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@index([targetId])
+}
+
+model Cluster {
+  id              String   @id @default(cuid())
+  label           String
+  description     String?
+  embedding       Unsupported("vector(1024)")?
+  memberCount     Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  targets         Target[]
+}
+
+model HermesRun {
+  id          String    @id @default(cuid())
+  block       String    // ingestion, enrichment, embedding, clustering, entity_resolution, scoring, search, outreach
+  status      String    // running, passed, failed
+  steps       String    // JSON array of step events
+  durationMs  Int?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
 }
 
 model FounderReview {
   id         String   @id @default(cuid())
   targetId   String
-  candidates String   // JSON array of {output, confidence, run_id}
-  status     String   @default("pending")  // pending | approved | denied
+  candidates String
+  status     String   @default("pending")
   createdAt  DateTime @default(now())
   target     Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
 }
@@ -160,20 +248,21 @@ model MonitorTheme {
 }
 
 model MonitorHit {
-  id          String        @id @default(cuid())
-  themeId     String
-  companyName String
-  url         String?
-  description String
-  matchReason String
-  source      String
-  sourceUrl   String?
-  status      String        @default("pending")
-  targetId    String?
-  rawData     String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  theme       MonitorTheme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  id           String        @id @default(cuid())
+  themeId      String
+  companyName  String
+  url          String?
+  description  String
+  matchReason  String
+  source       String
+  sourceUrl    String?
+  status       String        @default("pending")
+  targetId     String?
+  rawData      String?
+  autoPromoted Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  theme        MonitorTheme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
 }
 
 model Agent {

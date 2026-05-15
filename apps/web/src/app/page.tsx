@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot, FileText, Lightbulb } from 'lucide-react'
+import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot, FileText, Lightbulb, Footprints } from 'lucide-react'
 
 const sections = [
   {
@@ -148,6 +148,26 @@ export default function Home() {
             </div>
             <p className="text-sm text-[#888884] leading-snug">
               Modify this app in plain language — describe a feature and it gets built in real time
+            </p>
+          </button>
+        </div>
+
+        {/* Hermes — pipeline debug tool */}
+        <div className="max-w-3xl">
+          <button
+            onClick={() => router.push('/hermes')}
+            className="w-full text-left p-6 rounded-2xl border bg-white border-[#E8E7E3] hover:border-amber-300 hover:shadow-sm transition-all duration-150 group cursor-pointer relative overflow-hidden"
+          >
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                <Footprints size={16} className="text-amber-700" />
+              </div>
+              <span className="font-medium text-[#1A1A1A]">Hermes</span>
+              <span className="text-[10px] uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium">Debug</span>
+            </div>
+            <p className="text-sm text-[#888884] leading-snug">
+              Pipeline debugger — run and inspect each data processing block step by step
             </p>
           </button>
         </div>
