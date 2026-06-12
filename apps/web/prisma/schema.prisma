@@ -198,6 +198,51 @@ model Todo {
   updatedAt DateTime @updatedAt
 }
 
+model FocusTask {
+  id          String    @id @default(cuid())
+  text        String
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Project {
+  id        String           @id @default(cuid())
+  name      String
+  status    String           @default("idea")
+  notes     String?
+  sortOrder Int              @default(0)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  subtasks  ProjectSubtask[]
+  links     ProjectLink[]
+}
+
+model ProjectSubtask {
+  id        String   @id @default(cuid())
+  projectId String
+  text      String
+  completed Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model ProjectLink {
+  id        String   @id @default(cuid())
+  projectId String
+  url       String
+  label     String?
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
 model ContentFolder {
   id        String        @id @default(cuid())
   name      String
