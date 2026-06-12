@@ -1,8 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, Crosshair, Trash2, Pencil, ChevronDown, ChevronRight } from 'lucide-react'
+import { CheckCircle2, Crosshair, Trash2, Pencil, ChevronDown, ChevronRight, MessageSquare, Plus, X } from 'lucide-react'
 import { format } from 'date-fns'
+
+interface FocusTaskComment {
+  id: string
+  taskId: string
+  text: string
+  createdAt: string
+}
 
 interface FocusTask {
   id: string
@@ -11,6 +18,33 @@ interface FocusTask {
   completedAt: string | null
   createdAt: string
   updatedAt: string
+  comments: FocusTaskComment[]
+}
+
+const URL_REGEX = /(https?:\/\/[^\s]+)/g
+
+function LinkifiedText({ text }: { text: string }) {
+  const parts = text.split(URL_REGEX)
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^https?:\/\//.test(part) ? (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline break-all"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {part}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  )
 }
 
 export default function NeedToDoSection() {
@@ -20,6 +54,7 @@ export default function NeedToDoSection() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingText, setEditingText] = useState('')
   const [showArchive, setShowArchive] = useState(true)
+  const [newComment, setNewComment] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
 
@@ -68,7 +103,7 @@ export default function NeedToDoSection() {
         const task = await res.json()
         // Move any current active task to completed in local state
         setTasks(prev => [
-          task,
+          { ...task, comments: task.comments ?? [] },
           ...prev.map(t => t.completed ? t : { ...t, completed: true, completedAt: new Date().toISOString() }),
         ])
       }
@@ -143,6 +178,42 @@ export default function NeedToDoSection() {
     }
   }
 
+  const addComment = async (taskId: string) => {
+    const trimmed = newComment.trim()
+    if (!trimmed) return
+
+    setNewComment('')
+    try {
+      const res = await fetch(`/api/focus-tasks/${taskId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: trimmed }),
+      })
+      if (res.ok) {
+        const comment = await res.json()
+        setTasks(prev => prev.map(t =>
+          t.id === taskId ? { ...t, comments: [...t.comments, comment] } : t
+        ))
+      }
+    } catch (e) {
+      console.error('Failed to add comment:', e)
+      fetchTasks()
+    }
+  }
+
+  const deleteComment = async (taskId: string, commentId: string) => {
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, comments: t.comments.filter(c => c.id !== commentId) } : t
+    ))
+
+    try {
+      await fetch(`/api/focus-tasks/${taskId}/comments/${commentId}`, { method: 'DELETE' })
+    } catch (e) {
+      console.error('Failed to delete comment:', e)
+      fetchTasks()
+    }
+  }
+
   if (loading) {
     return <div className="text-center py-16 text-sm text-[#888884]">Loading...</div>
   }
@@ -201,6 +272,55 @@ export default function NeedToDoSection() {
             >
               <Trash2 size={14} />
             </button>
+          </div>
+
+          {/* Notes & links */}
+          <div className="mt-5 pt-4 border-t border-[#F0EFEB]">
+            <div className="flex items-center gap-2 mb-2">
+              <MessageSquare size={12} className="text-[#A8A7A3]" />
+              <span className="text-xs font-medium text-[#A8A7A3] uppercase tracking-wide">Notes</span>
+            </div>
+
+            {activeTask.comments.length > 0 && (
+              <div className="space-y-1.5 mb-3">
+                {activeTask.comments.map(comment => (
+                  <div
+                    key={comment.id}
+                    className="group flex items-start gap-2 bg-[#F7F6F3] rounded-lg px-3 py-2"
+                  >
+                    <span className="flex-1 min-w-0 text-sm text-[#555550] leading-relaxed whitespace-pre-wrap">
+                      <LinkifiedText text={comment.text} />
+                    </span>
+                    <button
+                      onClick={() => deleteComment(activeTask.id, comment.id)}
+                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-[#C8C7C3] hover:text-red-400 transition-all mt-0.5"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addComment(activeTask.id)
+                }}
+                placeholder="Add a note or link..."
+                className="flex-1 bg-[#F7F6F3] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] placeholder:text-[#C8C7C3] outline-none border border-transparent focus:border-[#C8C7C3] transition-colors"
+              />
+              <button
+                onClick={() => addComment(activeTask.id)}
+                disabled={!newComment.trim()}
+                className="p-2 text-[#888884] hover:text-[#1A1A1A] hover:bg-[#F7F6F3] rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
           </div>
 
           <p className="text-xs text-[#A8A7A3] mt-4">
@@ -285,6 +405,15 @@ export default function NeedToDoSection() {
                       <p className="text-xs text-[#A8A7A3] mt-0.5">
                         Completed {format(new Date(task.completedAt), 'MMM d, yyyy')}
                       </p>
+                    )}
+                    {task.comments.length > 0 && (
+                      <div className="mt-1.5 space-y-0.5">
+                        {task.comments.map(comment => (
+                          <p key={comment.id} className="text-xs text-[#A8A7A3] leading-relaxed whitespace-pre-wrap">
+                            <LinkifiedText text={comment.text} />
+                          </p>
+                        ))}
+                      </div>
                     )}
                   </div>
                   <button

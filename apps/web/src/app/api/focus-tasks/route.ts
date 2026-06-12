@@ -5,6 +5,7 @@ export async function GET() {
   try {
     const tasks = await db.focusTask.findMany({
       orderBy: { createdAt: 'desc' },
+      include: { comments: { orderBy: { createdAt: 'asc' } } },
     })
     return NextResponse.json(tasks)
   } catch (error) {
