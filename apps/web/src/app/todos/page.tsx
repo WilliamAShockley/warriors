@@ -2,14 +2,16 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckSquare, Crosshair, FolderKanban } from 'lucide-react'
+import { ArrowLeft, CheckSquare, Crosshair, FolderKanban, Sunrise } from 'lucide-react'
 import TodosSection from './TodosSection'
 import NeedToDoSection from './NeedToDoSection'
 import ProjectsSection from './ProjectsSection'
+import MorningReportSection from './MorningReportSection'
 
-type Section = 'todos' | 'needtodo' | 'projects'
+type Section = 'report' | 'todos' | 'needtodo' | 'projects'
 
 const NAV_ITEMS: { id: Section; label: string; icon: typeof CheckSquare }[] = [
+  { id: 'report', label: 'Morning Report', icon: Sunrise },
   { id: 'todos', label: "To-Do's", icon: CheckSquare },
   { id: 'needtodo', label: 'Need to Do', icon: Crosshair },
   { id: 'projects', label: 'Projects', icon: FolderKanban },
@@ -17,7 +19,7 @@ const NAV_ITEMS: { id: Section; label: string; icon: typeof CheckSquare }[] = [
 
 export default function TodosPage() {
   const router = useRouter()
-  const [activeSection, setActiveSection] = useState<Section>('todos')
+  const [activeSection, setActiveSection] = useState<Section>('report')
 
   return (
     <div className="min-h-screen bg-[#F7F6F3]">
@@ -67,6 +69,7 @@ export default function TodosPage() {
 
           {/* Content */}
           <div className="flex-1 min-w-0">
+            {activeSection === 'report' && <MorningReportSection />}
             {activeSection === 'todos' && <TodosSection />}
             {activeSection === 'needtodo' && <NeedToDoSection />}
             {activeSection === 'projects' && <ProjectsSection />}

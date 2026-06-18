@@ -291,6 +291,70 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
+// ── Morning Report ─────────────────────────────────────────────
+// A daily snapshot of every open item across To-Do's, Need to Do,
+// and Project subtasks — triaged and (where possible) pre-drafted.
+
+model MorningReport {
+  id        String       @id @default(cuid())
+  date      DateTime     @default(now())
+  status    String       @default("generating") // generating | ready | failed
+  summary   String       @default("") // AI "here's your day" blurb
+  itemCount Int          @default(0)
+  error     String?
+  createdAt DateTime     @default(now())
+  items     ReportItem[]
+
+  @@index([date])
+}
+
+model ReportItem {
+  id            String        @id @default(cuid())
+  reportId      String
+  report        MorningReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sourceType    String // todo | focus_task | project_subtask
+  sourceId      String
+  sourceText    String // snapshot of the item text at report time
+  sourceContext String? // e.g. parent project name
+  category      String        @default("manual") // email_reply | calendar | follow_up | manual
+  priority      Int           @default(0) // higher = more urgent
+  reasoning     String? // why it was categorized/prioritized this way
+  createdAt     DateTime      @default(now())
+  draft         ActionDraft?
+
+  @@index([reportId])
+}
+
+model ActionDraft {
+  id           String     @id @default(cuid())
+  reportItemId String     @unique
+  reportItem   ReportItem @relation(fields: [reportItemId], references: [id], onDelete: Cascade)
+  type         String // email | calendar | follow_up
+
+  // email / follow_up fields
+  emailTo       String?
+  emailThreadId String?
+  emailSubject  String?
+  emailBody     String?
+
+  // calendar fields
+  eventTitle       String?
+  eventStart       DateTime?
+  eventEnd         DateTime?
+  eventAttendees   String? // JSON array of emails
+  eventLocation    String?
+  eventDescription String?
+
+  // lifecycle / autonomy gate
+  status          String    @default("pending") // pending | approved | executed | dismissed | failed
+  autoExecuted    Boolean   @default(false)
+  executedAt      DateTime?
+  executionResult String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model MonitorTheme {
   id            String       @id @default(cuid())
   name          String
