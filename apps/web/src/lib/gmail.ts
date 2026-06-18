@@ -22,6 +22,7 @@ export function getAuthUrl() {
     scope: [
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/calendar.events',
       'https://www.googleapis.com/auth/userinfo.email',
     ],
   })
@@ -52,6 +53,48 @@ export async function getAuthedClient() {
   })
 
   return client
+}
+
+// Send an email as the authed user. Unlike /api/gmail/send this is not tied
+// to a Target — it's used by the Morning Report autonomy pipeline. Pass a
+// threadId to keep a reply in the original conversation.
+export async function sendEmail(args: {
+  to: string
+  subject: string
+  bodyText: string
+  threadId?: string | null
+}): Promise<{ id: string; threadId: string }> {
+  const client = await getAuthedClient()
+  if (!client) throw new Error('Gmail not connected')
+
+  const token = await db.gmailToken.findUnique({ where: { id: 'singleton' } })
+  const fromEmail = token?.email ?? 'me'
+
+  const gmail = google.gmail({ version: 'v1', auth: client })
+
+  const messageParts = [
+    `From: ${fromEmail}`,
+    `To: ${args.to}`,
+    `Subject: ${args.subject}`,
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    args.bodyText,
+  ]
+  const encodedMessage = Buffer.from(messageParts.join('\r\n'))
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+
+  const res = await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: {
+      raw: encodedMessage,
+      ...(args.threadId ? { threadId: args.threadId } : {}),
+    },
+  })
+
+  return { id: res.data.id ?? '', threadId: res.data.threadId ?? '' }
 }
 
 export type GmailMessage = {
