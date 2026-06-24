@@ -254,6 +254,33 @@ model ProjectLink {
   @@index([projectId])
 }
 
+// People to recruit into Nazare, tracked through a hiring pipeline.
+model Recruit {
+  id        String        @id @default(cuid())
+  name      String
+  role      String? // role they'd fill at Nazare
+  company   String? // where they are now
+  email     String?
+  linkedin  String?
+  status    String        @default("prospect") // prospect | reached_out | in_conversation | interviewing | offer | joined | passed
+  notes     String?
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  links     RecruitLink[]
+}
+
+model RecruitLink {
+  id        String   @id @default(cuid())
+  recruitId String
+  url       String
+  label     String?
+  createdAt DateTime @default(now())
+  recruit   Recruit  @relation(fields: [recruitId], references: [id], onDelete: Cascade)
+
+  @@index([recruitId])
+}
+
 model ContentFolder {
   id        String        @id @default(cuid())
   name      String

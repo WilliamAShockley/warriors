@@ -2,19 +2,21 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckSquare, Crosshair, FolderKanban, Sunrise } from 'lucide-react'
+import { ArrowLeft, CheckSquare, Crosshair, FolderKanban, Sunrise, Users } from 'lucide-react'
 import TodosSection from './TodosSection'
 import NeedToDoSection from './NeedToDoSection'
 import ProjectsSection from './ProjectsSection'
 import MorningReportSection from './MorningReportSection'
+import RecruitingSection from './RecruitingSection'
 
-type Section = 'report' | 'todos' | 'needtodo' | 'projects'
+type Section = 'report' | 'todos' | 'needtodo' | 'projects' | 'recruiting'
 
 const NAV_ITEMS: { id: Section; label: string; icon: typeof CheckSquare }[] = [
   { id: 'report', label: 'Morning Report', icon: Sunrise },
   { id: 'todos', label: "To-Do's", icon: CheckSquare },
   { id: 'needtodo', label: 'Need to Do', icon: Crosshair },
   { id: 'projects', label: 'Projects', icon: FolderKanban },
+  { id: 'recruiting', label: 'Recruiting', icon: Users },
 ]
 
 export default function TodosPage() {
@@ -73,6 +75,7 @@ export default function TodosPage() {
             {activeSection === 'todos' && <TodosSection />}
             {activeSection === 'needtodo' && <NeedToDoSection />}
             {activeSection === 'projects' && <ProjectsSection />}
+            {activeSection === 'recruiting' && <RecruitingSection />}
           </div>
         </div>
       </main>
