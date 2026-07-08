@@ -7,7 +7,8 @@ import clsx from 'clsx'
 import Analyst from './Analyst'
 
 const tabs = [
-  { href: '/', label: 'Brief' },
+  { href: '/', label: 'Home' },
+  { href: '/brief', label: 'Brief' },
   { href: '/research', label: 'Research' },
   { href: '/book', label: 'Book' },
   { href: '/notes', label: 'Notes' },

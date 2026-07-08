@@ -1,5 +1,7 @@
 // All content is in-memory mock data for the v1 prototype.
 
+export const userName = 'William'
+
 export type Thesis = {
   slug: string
   name: string
@@ -18,6 +20,8 @@ export type Deal = {
   oneLiner: string
   stage: string
   thesis: string
+  status: 'live' | 'prospect'
+  next: string
 }
 
 export type Segment = 'LPs' | 'Founders' | 'Co-investors' | 'Advisors'
@@ -259,6 +263,8 @@ export const deals: Deal[] = [
     oneLiner: 'Issuer-agnostic stablecoin treasury operations for mid-market CFOs.',
     stage: 'Term sheet drafted · SPV II forming',
     thesis: 'stablecoin-treasury',
+    status: 'live',
+    next: 'Answer Jonah’s split-lead proposal; term sheet expires Friday.',
   },
   {
     id: 'keyring',
@@ -266,13 +272,8 @@ export const deals: Deal[] = [
     oneLiner: 'Paymaster and bundler infrastructure for sponsored transactions.',
     stage: 'Diligence · fraud-loss data requested',
     thesis: 'account-abstraction',
-  },
-  {
-    id: 'vane',
-    name: 'Vane Research',
-    oneLiner: 'Risk tooling for on-chain market makers and perp-venue vaults.',
-    stage: 'Second meeting · pricing discussion',
-    thesis: 'onchain-perps',
+    status: 'live',
+    next: 'Cohort data from Dev lands Thursday. Pricing call waits for it.',
   },
   {
     id: 'bluebonnet',
@@ -280,6 +281,44 @@ export const deals: Deal[] = [
     oneLiner: 'Clinician-equity roll-up of outpatient behavioral clinics, Texas triangle.',
     stage: 'LOI review · QoE scheduled',
     thesis: 'behavioral-health',
+    status: 'live',
+    next: 'QoE kicks off 15 July. Priya’s observer role needs Sam’s nod first.',
+  },
+  {
+    id: 'vane',
+    name: 'Vane Research',
+    oneLiner: 'Risk tooling for on-chain market makers and perp-venue vaults.',
+    stage: 'Second meeting · pricing discussion',
+    thesis: 'onchain-perps',
+    status: 'prospect',
+    next: 'Draft a structure before the pricing conversation, not during it.',
+  },
+  {
+    id: 'clearline',
+    name: 'Clearline Attestation',
+    oneLiner: 'Continuous attestation and reserve proofs for bank deposit tokens.',
+    stage: 'First call Thursday',
+    thesis: 'stablecoin-treasury',
+    status: 'prospect',
+    next: 'Sarah Kim’s regulatory read would sharpen the first call. Ask her.',
+  },
+  {
+    id: 'kestrel',
+    name: 'Kestrel Vaults',
+    oneLiner: 'Independent vault manager for perp-venue liquidity, institutional wrapper.',
+    stage: 'Sourcing · via Lily Zhao',
+    thesis: 'onchain-perps',
+    status: 'prospect',
+    next: 'Lily owes context from the Toronto meeting. Intro follows Vane pricing.',
+  },
+  {
+    id: 'fairwater',
+    name: 'Fairwater Capital',
+    oneLiner: 'First-time specialty-insurance GP; a candidate for a GP-stake seed.',
+    stage: 'Second meeting scheduled',
+    thesis: 'gp-economics',
+    status: 'prospect',
+    next: 'Ask for the management-company model, not the fund deck.',
   },
 ]
 
@@ -527,6 +566,162 @@ export const notes: Note[] = [
       { type: 'contact', ref: 'tom-okafor', label: 'Tom Okafor' },
       { type: 'thesis', ref: 'gp-economics', label: 'GP Economics' },
     ],
+  },
+]
+
+// ————————————————————————————————————————————— To Do's
+
+export type Todo = {
+  id: string
+  text: string
+  meta: string
+  href?: string
+  group: 'This Week' | 'Waiting On' | 'The Horizon'
+}
+
+export const todos: Todo[] = [
+  {
+    id: 't1',
+    text: 'Answer Jonah’s split-lead proposal',
+    meta: 'Before Ana’s Friday deadline · Osprey Treasury',
+    href: '/book/jonah-price',
+    group: 'This Week',
+  },
+  {
+    id: 't2',
+    text: 'Send Marguerite the SPV II fee terms',
+    meta: 'Wednesday, once Gene’s docs land · Halloran',
+    href: '/book/marguerite-chen',
+    group: 'This Week',
+  },
+  {
+    id: 't3',
+    text: 'Ask Sarah Kim for her read on the Circle console',
+    meta: 'Shapes the stablecoin memo revision',
+    href: '/book/sarah-kim',
+    group: 'This Week',
+  },
+  {
+    id: 't4',
+    text: 'Revise the stablecoin memo for the Circle news',
+    meta: 'This weekend · mid-market case only',
+    href: '/research/stablecoin-treasury',
+    group: 'This Week',
+  },
+  {
+    id: 't5',
+    text: 'Keyring fraud-loss cohorts from Dev',
+    meta: 'Due Thursday · pricing call held until then',
+    href: '/book/dev-chandra',
+    group: 'Waiting On',
+  },
+  {
+    id: 't6',
+    text: 'SPV II formation docs from Gene',
+    meta: 'Promised Wednesday',
+    href: '/book/gene-marchetti',
+    group: 'Waiting On',
+  },
+  {
+    id: 't7',
+    text: 'Ashbourne’s emerging-manager DDQ from Tom',
+    meta: 'Nudge gently mid-July',
+    href: '/book/tom-okafor',
+    group: 'Waiting On',
+  },
+  {
+    id: 't8',
+    text: 'Confirm Priya’s observer seat with Sam',
+    meta: 'Before the QoE kickoff, 15 July',
+    href: '/book/sam-whitlock',
+    group: 'The Horizon',
+  },
+  {
+    id: 't9',
+    text: 'Owe Lily an intro to Vane',
+    meta: 'After the pricing discussion settles',
+    href: '/book/lily-zhao',
+    group: 'The Horizon',
+  },
+]
+
+export const todoGroups = ['This Week', 'Waiting On', 'The Horizon'] as const
+
+// ————————————————————————————————————————————— News
+
+export type NewsItem = {
+  source: string
+  age: string
+  headline: string
+  dek: string
+  thesis?: string
+  chip?: string
+}
+
+export const newsItems: NewsItem[] = [
+  {
+    source: 'Company announcement',
+    age: 'This morning',
+    headline: 'Circle previews a native treasury console for USDC corporates',
+    dek: 'Free above $25m in balances. The mid-market — Osprey’s market — is conspicuously absent.',
+    thesis: 'stablecoin-treasury',
+    chip: 'Stablecoin Treasury',
+  },
+  {
+    source: 'Artemis',
+    age: '3h',
+    headline: 'Corporate stablecoin balances reach $48bn, up 3.1× on the year',
+    dek: 'Growth concentrates in $50m–$500m revenue companies.',
+    thesis: 'stablecoin-treasury',
+    chip: 'Stablecoin Treasury',
+  },
+  {
+    source: 'Protocol changelog',
+    age: 'Yesterday',
+    headline: 'Coinbase Smart Wallet defaults all new retail accounts to 4337',
+    dek: 'The education cost of smart accounts moves to someone else’s income statement.',
+    thesis: 'account-abstraction',
+    chip: 'Account Abstraction',
+  },
+  {
+    source: 'Governance forum',
+    age: 'Yesterday',
+    headline: 'HIP-4 opens builder-deployed perp markets to third parties',
+    dek: 'Long-tail listing risk rises — and with it, the value of independent risk tooling.',
+    thesis: 'onchain-perps',
+    chip: 'On-chain Perps',
+  },
+  {
+    source: 'CMS final rule',
+    age: '2d',
+    headline: 'CMS finalizes a 3.4% uplift for outpatient behavioral codes',
+    dek: 'Directly accretive to the Bluebonnet base case; underwriting assumed flat.',
+    thesis: 'behavioral-health',
+    chip: 'Behavioral Health',
+  },
+  {
+    source: 'American Banker',
+    age: '2d',
+    headline: 'Second US regional bank launches deposit-token rails',
+    dek: 'Issuer fragmentation continues — supportive of issuer-agnostic reconciliation.',
+    thesis: 'stablecoin-treasury',
+    chip: 'Stablecoin Treasury',
+  },
+  {
+    source: 'Preqin',
+    age: '1w',
+    headline: 'First-time fund count hits a nine-year low; median size rises',
+    dek: 'LPs consolidating into managers with visible operational spine.',
+    thesis: 'gp-economics',
+    chip: 'GP Economics',
+  },
+  {
+    source: 'Desk wire',
+    age: '1w',
+    headline: 'CME solana perps make the on-chain basis trade boring again',
+    dek: 'Basis compression pushes prop flow toward venue-adjacent yield.',
+    thesis: 'onchain-perps',
+    chip: 'On-chain Perps',
   },
 ]
 

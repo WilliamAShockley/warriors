@@ -1,87 +1,55 @@
 import Link from 'next/link'
-import { briefLead, briefItems } from '@/lib/data'
+import Greeting from '@/components/Greeting'
+import { deals, theses, todos, newsItems } from '@/lib/data'
 
 export const dynamic = 'force-dynamic'
 
 function todayLine() {
-  const now = new Date()
-  const date = new Intl.DateTimeFormat('en-GB', {
+  return new Intl.DateTimeFormat('en-GB', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-  }).format(now)
-  return date
+  }).format(new Date())
 }
 
-export default function BriefPage() {
+export default function HomePage() {
+  const prospects = deals.filter((d) => d.status === 'prospect')
+  const live = deals.filter((d) => d.status === 'live')
+
+  const menu = [
+    { label: 'To Do’s', href: '/todos', note: `${todos.length} open` },
+    { label: 'Prospects', href: '/prospects', note: `${prospects.length} names` },
+    { label: 'Live Deals', href: '/deals', note: `${live.length} in motion` },
+    { label: 'Research', href: '/research', note: `${theses.length} theses` },
+    { label: 'News', href: '/news', note: `${newsItems.length} on the wire` },
+  ]
+
   return (
-    <main className="pt-14">
-      {/* Masthead */}
-      <header className="text-center">
-        <p className="eyebrow">{todayLine()} · Private Circulation</p>
-        <h1 className="mt-3 font-serif text-[40px] font-semibold leading-none tracking-tight">
-          The Allocator
-        </h1>
-        <p className="dek mt-2">The morning brief, prepared for one reader.</p>
+    <main className="relative h-[calc(100dvh-3.5rem)]">
+      <header className="pt-16">
+        <p className="eyebrow">{todayLine()}</p>
+        <div className="mt-4">
+          <Greeting />
+        </div>
+        <Link href="/brief" className="dek mt-4 inline-block underline decoration-hairline underline-offset-4">
+          The morning brief is ready. →
+        </Link>
       </header>
 
-      <div className="rule-masthead mt-6" />
-
-      {/* Lead story */}
-      <article className="pt-8">
-        <p className="eyebrow text-oxblood">{briefLead.eyebrow}</p>
-        <h2 className="mt-3 font-serif text-[30px] font-medium leading-[1.12] tracking-tight">
-          {briefLead.headline}
-        </h2>
-        <p className="dek mt-4">{briefLead.dek}</p>
-        <div className="mt-5 space-y-4">
-          {briefLead.body.map((para, i) => (
-            <p key={i} className="body-copy">
-              {para}
-            </p>
-          ))}
-        </div>
-        <p className="eyebrow mt-5">{briefLead.source}</p>
-      </article>
-
-      <div className="rule mt-9" />
-
-      {/* The digest */}
-      <section className="pt-8">
-        <p className="eyebrow-ink">Below the Fold</p>
-        <ul className="mt-2">
-          {briefItems.map((item) => {
-            const inner = (
-              <div className="py-6">
-                <p className="eyebrow">{item.eyebrow}</p>
-                <h3 className="mt-2 font-serif text-[19px] font-medium leading-snug tracking-tight">
-                  {item.headline}
-                </h3>
-                <p className="mt-1.5 font-serif text-[14px] italic leading-relaxed text-stone">
-                  {item.dek}
-                </p>
-                <p className="eyebrow mt-3 text-faint">{item.source}</p>
-              </div>
-            )
-            return (
-              <li key={item.headline} className="rule first:border-t-0">
-                {item.href ? <Link href={item.href}>{inner}</Link> : inner}
-              </li>
-            )
-          })}
-        </ul>
-      </section>
-
-      <div className="rule mt-2" />
-
-      {/* Sign-off — a paper you finish */}
-      <footer className="pb-6 pt-10 text-center">
-        <p className="font-serif text-[15px] italic text-stone">
-          That is everything that matters this morning.
-        </p>
-        <p className="eyebrow mt-3">The next edition arrives tomorrow</p>
-      </footer>
+      {/* The contents — begins three-fifths down, ends at the fourth fifth */}
+      <nav className="absolute inset-x-0 top-[60%] flex h-[20%] min-h-[13rem] flex-col justify-between">
+        {menu.map((item) => (
+          <Link key={item.href} href={item.href} className="group flex items-baseline gap-3">
+            <span className="font-serif text-[24px] font-medium leading-none tracking-tight">
+              {item.label}
+            </span>
+            <span className="eyebrow text-faint transition-colors duration-300 ease-editorial group-hover:text-stone">
+              {item.note}
+            </span>
+          </Link>
+        ))}
+      </nav>
     </main>
   )
 }
