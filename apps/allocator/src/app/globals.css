@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  @apply bg-paper text-ink;
+}
+
+@layer components {
+  /* Small-caps eyebrow label — the workhorse of the hierarchy */
+  .eyebrow {
+    @apply font-sans text-[10px] font-medium uppercase tracking-[0.18em] text-stone;
+  }
+
+  .eyebrow-ink {
+    @apply font-sans text-[10px] font-medium uppercase tracking-[0.18em] text-ink;
+  }
+
+  /* Hairline rule between editorial sections */
+  .rule {
+    @apply border-t border-hairline;
+  }
+
+  /* Double masthead rule: heavy over hair */
+  .rule-masthead {
+    border-top: 2px solid theme('colors.ink');
+    position: relative;
+  }
+  .rule-masthead::after {
+    content: '';
+    display: block;
+    margin-top: 2px;
+    border-top: 1px solid theme('colors.ink');
+  }
+
+  .dek {
+    @apply font-serif italic text-[15px] leading-relaxed text-stone;
+  }
+
+  .body-copy {
+    @apply font-serif text-[15px] leading-[1.7] text-ink;
+  }
+}
+
+::selection {
+  background: #e8e2d4;
+}
