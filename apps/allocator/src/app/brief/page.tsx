@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { briefLead, briefItems } from '@/lib/data'
+import { getBrief } from '@/lib/brief'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +14,9 @@ function todayLine() {
   return date
 }
 
-export default function BriefPage() {
+export default async function BriefPage() {
+  const { lead, items, schedule } = await getBrief()
+
   return (
     <main className="pt-14">
       {/* Masthead */}
@@ -30,20 +32,63 @@ export default function BriefPage() {
 
       {/* Lead story */}
       <article className="pt-8">
-        <p className="eyebrow text-oxblood">{briefLead.eyebrow}</p>
+        <p className="eyebrow text-oxblood">{lead.eyebrow}</p>
         <h2 className="mt-3 font-serif text-[30px] font-medium leading-[1.12] tracking-tight">
-          {briefLead.headline}
+          {lead.headline}
         </h2>
-        <p className="dek mt-4">{briefLead.dek}</p>
+        <p className="dek mt-4">{lead.dek}</p>
         <div className="mt-5 space-y-4">
-          {briefLead.body.map((para, i) => (
+          {lead.body.map((para, i) => (
             <p key={i} className="body-copy">
               {para}
             </p>
           ))}
         </div>
-        <p className="eyebrow mt-5">{briefLead.source}</p>
+        <p className="eyebrow mt-5">{lead.source}</p>
       </article>
+
+      {/* Tomorrow's schedule — times and titles verbatim from the calendar */}
+      {schedule && schedule.length > 0 && (
+        <>
+          <div className="rule mt-9" />
+          <section className="pt-8">
+            <p className="eyebrow-ink">Tomorrow</p>
+            <ul className="mt-2">
+              {schedule.map((s) => (
+                <li key={s.eventId} className="rule py-5 first:border-t-0">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <h3 className="font-serif text-[17px] font-medium leading-snug tracking-tight">
+                      {s.title}
+                    </h3>
+                    <p className="eyebrow shrink-0 text-faint">{s.time}</p>
+                  </div>
+                  {(s.attendees.length > 0 || s.location) && (
+                    <p className="eyebrow mt-1.5">
+                      {[s.attendees.join(' · '), s.location].filter(Boolean).join(' — ')}
+                    </p>
+                  )}
+                  {s.prep && (
+                    <p className="dek mt-2.5 border-l border-oxblood pl-4 text-[14px]">
+                      {s.noteUrl ? (
+                        <a
+                          href={s.noteUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline decoration-hairline underline-offset-4"
+                        >
+                          {s.prep}
+                        </a>
+                      ) : (
+                        s.prep
+                      )}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
 
       <div className="rule mt-9" />
 
@@ -51,7 +96,7 @@ export default function BriefPage() {
       <section className="pt-8">
         <p className="eyebrow-ink">Below the Fold</p>
         <ul className="mt-2">
-          {briefItems.map((item) => {
+          {items.map((item) => {
             const inner = (
               <div className="py-6">
                 <p className="eyebrow">{item.eyebrow}</p>

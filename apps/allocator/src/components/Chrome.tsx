@@ -18,6 +18,9 @@ export default function Chrome() {
   const pathname = usePathname()
   const [analystOpen, setAnalystOpen] = useState(false)
 
+  // The gate has no navigation — nothing behind it is reachable anyway.
+  if (pathname === '/login') return null
+
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href)
 

@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+// Singleton Google OAuth token, mirroring apps/web's GmailToken pattern.
+model GoogleToken {
+  id           String   @id @default("singleton")
+  accessToken  String
+  refreshToken String
+  expiryDate   Float
+  email        String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CalendarEvent {
+  id          String        @id // Google event id; recurring instances are unique with singleEvents=true
+  title       String
+  start       DateTime
+  end         DateTime
+  allDay      Boolean       @default(false)
+  location    String?
+  attendees   String? // JSON string [{name,email}]
+  description String?
+  source      String        @default("google")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  notes       MeetingNote[]
+
+  @@index([start])
+}
+
+model MeetingNote {
+  id                 String         @id // Granola note id (not_…)
+  title              String
+  summary            String
+  attendees          String? // JSON string [{name,email}]
+  calendarEventTitle String?
+  calendarEventStart DateTime?
+  noteUrl            String?
+  raw                String? // full API payload
+  granolaCreatedAt   DateTime?
+  linkedEventId      String?
+  linkedEvent        CalendarEvent? @relation(fields: [linkedEventId], references: [id])
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([granolaCreatedAt])
+}
+
+// One row per local date — the daily job upserts, so re-runs are idempotent.
+model BriefEdition {
+  date         String   @id // YYYY-MM-DD in APP_TIMEZONE
+  leadJson     String
+  itemsJson    String
+  scheduleJson String
+  generatedAt  DateTime @default(now())
+}

@@ -1,0 +1,72 @@
+# The Allocator
+
+A private morning brief for a solo alternative-asset manager. Mobile-first, editorial by design. Runs fully mocked with zero configuration; with the backend configured, The Brief (`/brief`) carries tomorrow's real schedule with meeting-prep notes drawn from Granola.
+
+## Running it
+
+```bash
+pnpm install
+pnpm dev          # http://localhost:5821 — mocked edition, no env vars needed
+```
+
+With no `DATABASE_URL`, every surface serves the seeded mock content and the middleware stays open in dev. Production **fails closed** without `APP_PASSWORD`.
+
+## Backend setup (calendar + Granola → the daily edition)
+
+### 1. Database — Neon Postgres via Vercel Marketplace
+
+On the `warriors-allocator` Vercel project: **Storage → Create Database → Neon**. This auto-provisions `DATABASE_URL` and `DATABASE_URL_UNPOOLED`. Then locally:
+
+```bash
+cd apps/allocator
+vercel link --scope william-shockleys-projects --project warriors-allocator
+vercel env pull .env   # brings DATABASE_URL etc. into local dev
+pnpm db:push           # creates the four tables (no migrations dir — db push, as in apps/web)
+```
+
+### 2. Environment variables
+
+```bash
+vercel env add APP_PASSWORD        # access gate — the app is unusable in prod without it
+vercel env add CRON_SECRET         # protects /api/cron/brief (Vercel sends it automatically)
+vercel env add ANTHROPIC_API_KEY   # brief assembly
+vercel env add GOOGLE_CLIENT_ID    # same "Warriors Local" OAuth client as apps/web
+vercel env add GOOGLE_CLIENT_SECRET
+vercel env add GRANOLA_API_KEY     # starts with grn_ — Granola workspace settings (Business plan)
+vercel env add NEXT_PUBLIC_APP_URL # prod URL, no trailing slash
+vercel env add APP_TIMEZONE        # e.g. America/New_York (defaults to it)
+```
+
+Mirror the same keys in `.env` for local dev (`.env.example` lists them all).
+
+### 3. Google Cloud Console — one-time
+
+The "Warriors Local" OAuth client already has the calendar scope in use. Add the allocator's redirect URIs under **APIs & Services → Credentials → Warriors Local → Authorized redirect URIs**:
+
+- `http://localhost:5821/api/auth/google/callback`
+- `https://<your-prod-domain>/api/auth/google/callback`
+
+Then visit `/api/auth/google` (once, from a logged-in session) and grant read-only calendar access. The token lives in the `GoogleToken` singleton row and refreshes itself.
+
+### 4. The daily edition
+
+`vercel.json` schedules `GET /api/cron/brief` at **09:00 UTC** — 5 a.m. New York in summer, 4 a.m. in winter (Vercel cron is UTC-only; shift to `0 10 * * *` for the winter months if the hour matters to you).
+
+The job is idempotent: calendar events upsert by Google event id, Granola notes by note id, and the edition row is keyed by local date — re-running simply overwrites today's edition.
+
+**Manual sync / testing:**
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<prod-domain>/api/cron/brief
+# or locally:
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:5821/api/cron/brief
+```
+
+The response reports each step: `{ calendar: {...}, granola: {...}, brief: {...} }`. Steps degrade independently — a Granola failure still leaves you a calendar-only edition, and any assembly failure leaves `/brief` serving the previous (or mock) edition. It never breaks the page.
+
+## Architecture notes
+
+- **Patterns are copied from `apps/web`**, per the monorepo rule against shared packages: the lazy-Proxy Prisma client (`src/lib/db.ts`), OAuth state-cookie flow (`src/lib/google.ts`), retry-with-backoff (`src/lib/retry.ts`), the `APP_PASSWORD` middleware, and the cron shape.
+- **Granola**: official public API (`public-api.granola.ai/v1`), cursor pagination, last 7 days, sequential requests under the 5 req/s limit, 429s retried with backoff. Notes without a generated summary are skipped. Action items aren't a discrete API field — they're extracted from summaries by Claude at assembly time.
+- **Linking**: a note attaches to a calendar event on matching title + start (±15 min), else attendee-email overlap. The "last time with this person" context in the Brief comes from these links plus attendee-shared recent notes.
+- **Times are never written by the model.** The schedule section renders verbatim from the database; Claude only writes the editorial layer (lead, digest, one prep line per meeting).
