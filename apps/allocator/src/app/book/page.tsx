@@ -6,7 +6,10 @@ import AddContact from '@/components/AddContact'
 export const dynamic = 'force-dynamic'
 
 export default async function BookPage() {
-  const dbContacts = await listDbContacts()
+  const { live, contacts: dbContacts } = await listDbContacts()
+  // With the database live the Book is the reader's own; the seeded cast
+  // remains only as the zero-env demo, like Research and the Docket.
+  const seededCast = live ? [] : contacts
 
   return (
     <main className="pt-14">
@@ -23,7 +26,7 @@ export default async function BookPage() {
       <div className="rule-masthead mt-6" />
 
       {segments.map((segment) => {
-        const seeded = contacts.filter((c) => c.segment === segment)
+        const seeded = seededCast.filter((c) => c.segment === segment)
         const added = dbContacts.filter((c) => c.segment === segment)
         if (seeded.length === 0 && added.length === 0) return null
         return (

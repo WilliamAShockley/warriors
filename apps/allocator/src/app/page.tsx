@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Greeting from '@/components/Greeting'
 import { deals, theses, newsItems } from '@/lib/data'
 import { countOpenTodos } from '@/lib/todos'
+import { listDbTheses } from '@/lib/theses'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,13 +18,14 @@ function todayLine() {
 export default async function HomePage() {
   const prospects = deals.filter((d) => d.status === 'prospect')
   const live = deals.filter((d) => d.status === 'live')
-  const openTodos = await countOpenTodos()
+  const [openTodos, dbTheses] = await Promise.all([countOpenTodos(), listDbTheses()])
+  const thesisCount = dbTheses.live ? dbTheses.theses.length : theses.length
 
   const menu = [
     { label: 'To Do’s', href: '/todos', note: `${openTodos} open` },
     { label: 'Prospects', href: '/prospects', note: `${prospects.length} names` },
     { label: 'Live Deals', href: '/deals', note: `${live.length} in motion` },
-    { label: 'Research', href: '/research', note: `${theses.length} theses` },
+    { label: 'Research', href: '/research', note: `${thesisCount} thes${thesisCount === 1 ? 'is' : 'es'}` },
     { label: 'News', href: '/news', note: `${newsItems.length} on the wire` },
   ]
 
