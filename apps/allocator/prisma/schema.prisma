@@ -74,5 +74,44 @@ model BriefEdition {
   leadJson     String
   itemsJson    String
   scheduleJson String
+  recallJson   String? // Worth Reciting cues drawn from yesterday's Margin
   generatedAt  DateTime @default(now())
+}
+
+// Freeform thinking filed below the news wire; the desk replies inline.
+model MarginEntry {
+  id        String   @id @default(cuid())
+  text      String
+  reply     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// A reader-defined research theme, born from the intake interview.
+model ResearchThesis {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  chip      String
+  stance    String
+  summary   String // paragraphs joined by \n\n
+  charter   String // the built research prompt
+  status    String   @default("active") // active | retired
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BookContact {
+  id           String   @id @default(cuid())
+  name         String
+  role         String
+  firm         String
+  segment      String // LPs | Founders | Co-investors | Advisors
+  context      String
+  relationship String?
+  followUp     String?
+  location     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

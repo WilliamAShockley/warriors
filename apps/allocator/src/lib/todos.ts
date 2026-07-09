@@ -121,6 +121,22 @@ export async function createTodo(input: {
   }
 }
 
+// A short slice of the open docket, for the morning Brief.
+export async function openTodosPreview(limit = 6): Promise<{ text: string; group: string }[]> {
+  if (!hasDb()) return seedTodos.slice(0, limit).map((t) => ({ text: t.text, group: t.group }))
+  try {
+    const db = await getDb()
+    const rows = await db.todo.findMany({
+      where: { status: 'open' },
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+    })
+    return rows.map((r) => ({ text: r.text, group: r.group }))
+  } catch {
+    return []
+  }
+}
+
 export async function countOpenTodos(): Promise<number> {
   if (!hasDb()) return seedTodos.length
   try {

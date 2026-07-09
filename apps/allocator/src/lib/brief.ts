@@ -1,14 +1,21 @@
 import { briefLead, briefItems, type BriefItem } from './data'
-import type { ScheduleEntry } from './assembleBrief'
+import type { RecallCue, ScheduleEntry } from './assembleBrief'
 
 export type BriefData = {
   lead: typeof briefLead
   items: BriefItem[]
   schedule: ScheduleEntry[] | null
+  recall: RecallCue[]
   live: boolean
 }
 
-const mockEdition: BriefData = { lead: briefLead, items: briefItems, schedule: null, live: false }
+const mockEdition: BriefData = {
+  lead: briefLead,
+  items: briefItems,
+  schedule: null,
+  recall: [],
+  live: false,
+}
 
 // Today's edition from the database, or the seeded mock when the backend
 // isn't configured / hasn't produced one. The mock path must never touch
@@ -28,6 +35,7 @@ export async function getBrief(): Promise<BriefData> {
       lead: JSON.parse(edition.leadJson),
       items: JSON.parse(edition.itemsJson),
       schedule: JSON.parse(edition.scheduleJson),
+      recall: edition.recallJson ? JSON.parse(edition.recallJson) : [],
       live: true,
     }
   } catch {

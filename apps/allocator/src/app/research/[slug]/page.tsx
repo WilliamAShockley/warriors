@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { theses, thesisBySlug, deals } from '@/lib/data'
+import { getDbThesis } from '@/lib/theses'
 import DeepDive from '@/components/DeepDive'
+import RetireThesis from '@/components/RetireThesis'
 
 export function generateStaticParams() {
   return theses.map((t) => ({ slug: t.slug }))
@@ -10,7 +12,53 @@ export function generateStaticParams() {
 export default async function ThesisPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const thesis = thesisBySlug(slug)
-  if (!thesis) notFound()
+
+  // Reader-established theses live in the database, with their own layout.
+  if (!thesis) {
+    const own = await getDbThesis(slug)
+    if (!own) notFound()
+    return (
+      <main className="pt-14">
+        <Link href="/research" className="eyebrow underline decoration-hairline underline-offset-4">
+          ← The Desk
+        </Link>
+
+        <header className="pt-6">
+          <p className="eyebrow text-oxblood">Thesis</p>
+          <h1 className="mt-2 font-serif text-[28px] font-semibold leading-[1.15] tracking-tight">
+            {own.name}
+          </h1>
+          <p className="dek mt-3">{own.stance}</p>
+          <p className="eyebrow mt-4 text-faint">Established {own.createdAt}</p>
+        </header>
+
+        <div className="rule mt-7" />
+
+        <section className="pt-7">
+          <p className="eyebrow-ink">The View, As Filed</p>
+          <div className="mt-4 space-y-4">
+            {own.summary.split('\n\n').map((p, i) => (
+              <p key={i} className="body-copy">
+                {p}
+              </p>
+            ))}
+          </div>
+        </section>
+
+        <section className="pt-8">
+          <p className="eyebrow-ink">The Research Charter</p>
+          <div className="mt-4 border border-hairline p-5">
+            <p className="font-serif text-[14px] italic leading-relaxed text-stone">{own.charter}</p>
+          </div>
+          <p className="eyebrow mt-4 text-faint">
+            The standing instruction — developments will file against it as the desk reads
+          </p>
+        </section>
+
+        <RetireThesis slug={own.slug} />
+      </main>
+    )
+  }
 
   const linkedDeals = deals.filter((d) => d.thesis === thesis.slug)
 

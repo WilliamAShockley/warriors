@@ -2,6 +2,15 @@
 
 A private morning brief for a solo alternative-asset manager. Mobile-first, editorial by design. Runs fully mocked with zero configuration; with the backend configured, The Brief (`/brief`) carries tomorrow's real schedule with meeting-prep notes drawn from Granola.
 
+Meant to travel: fork it, set `NEXT_PUBLIC_READER_NAME` and your own keys, and it's your brief. Everything degrades to seeded mock content without a database, so the demo works before any setup.
+
+**The interactive layer** (all database-backed, all optional):
+
+- **The Docket** (`/todos`) — add, clear, restore; cleared items file to the record at local midnight, and open items appear in the morning Brief.
+- **The Margin** (bottom of `/news`) — think aloud or dictate; the desk replies inline in the house voice. Yesterday's entries return each morning as **Worth Reciting** recall cues in the Brief — active recall for things worth retaining.
+- **Research intake** (`/research/new`) — a new thesis begins with a short interview; the desk asks a few questions, then drafts the research charter and files it. Theses can be retired from their page. With a database connected, Research starts as a blank slate.
+- **The Book** — add contacts from the app; they persist alongside the seeded cast.
+
 ## Running it
 
 ```bash

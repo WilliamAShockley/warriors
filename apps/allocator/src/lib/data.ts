@@ -1,6 +1,7 @@
 // All content is in-memory mock data for the v1 prototype.
 
-export const userName = 'William'
+// Configurable for other readers — this is meant to travel.
+export const userName = process.env.NEXT_PUBLIC_READER_NAME || 'William'
 
 export type Thesis = {
   slug: string

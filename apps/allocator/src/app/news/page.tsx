@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { newsItems } from '@/lib/data'
+import Margin from '@/components/Margin'
 
 export default function NewsPage() {
   return (
@@ -39,7 +40,11 @@ export default function NewsPage() {
         ))}
       </ul>
 
-      <p className="eyebrow pb-6 pt-6 text-center text-faint">End of the wire</p>
+      <p className="eyebrow pt-6 text-center text-faint">End of the wire</p>
+
+      <div className="rule mt-8" />
+
+      <Margin />
     </main>
   )
 }

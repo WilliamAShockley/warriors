@@ -3,6 +3,8 @@ import { anthropic } from './claude'
 import { parseLLMJsonObject } from './retry'
 import { addDays, localDateString, zonedMidnight } from './calendar'
 import { briefLead as mockLead, briefItems as mockItems } from './data'
+import { yesterdaysMargin } from './margin'
+import { openTodosPreview } from './todos'
 
 const TZ = process.env.APP_TIMEZONE ?? 'America/New_York'
 
@@ -16,10 +18,13 @@ export type ScheduleEntry = {
   noteUrl: string | null
 }
 
+export type RecallCue = { cue: string; source: string }
+
 export type AssembleResult = {
   date: string
   events: number
   notesUsed: number
+  recallCues: number
   skipped: boolean
 }
 
@@ -56,8 +61,12 @@ export async function assembleBrief(): Promise<AssembleResult> {
     orderBy: { start: 'asc' },
     include: { notes: true },
   })
+  const marginEntries = await yesterdaysMargin()
+  const openDocket = await openTodosPreview(8)
 
-  if (events.length === 0) return { date: today, events: 0, notesUsed: 0, skipped: true }
+  if (events.length === 0 && marginEntries.length === 0) {
+    return { date: today, events: 0, notesUsed: 0, recallCues: 0, skipped: true }
+  }
 
   // Context per event: its linked notes, plus recent notes sharing attendees.
   const recentNotes = await db.meetingNote.findMany({
@@ -104,17 +113,25 @@ ${registerExamples.map((h) => `- ${h}`).join('\n')}
 Tomorrow's calendar, with prior meeting notes where they exist:
 ${JSON.stringify(eventContexts, null, 2)}
 
+The open docket (the reader's standing to-dos):
+${openDocket.length ? openDocket.map((t) => `- [${t.group}] ${t.text}`).join('\n') : '- (empty)'}
+
+What the reader filed in the margin yesterday — thoughts and things learned:
+${marginEntries.length ? marginEntries.map((m) => `- ${m}`).join('\n') : '- (nothing)'}
+
 Write JSON with exactly this shape:
 {
   "lead": { "eyebrow": "The Lead · Schedule", "headline": "...", "dek": "...", "body": ["...", "..."], "source": "From the desk · calendar and filed notes" },
   "items": [ { "eyebrow": "...", "headline": "...", "dek": "...", "source": "..." } ],
-  "preps": { "<eventId>": "one-line prep note" }
+  "preps": { "<eventId>": "one-line prep note" },
+  "recall": [ { "cue": "...", "source": "The Margin · yesterday" } ]
 }
 
 Rules:
-- "lead": the single most important thing about tomorrow (the day's shape, the meeting that matters most, or a conflict worth noticing). Two short body paragraphs.
-- "items": 2-4 digest entries drawn from the schedule and prior notes — open threads, things promised last time, patterns across meetings. Eyebrows are short small-caps labels like "Follow Up" or "Worth Rereading".
+- "lead": the single most important thing about tomorrow (the day's shape, the meeting that matters most, a docket deadline colliding with the calendar, or a conflict worth noticing). Two short body paragraphs.
+- "items": 2-4 digest entries drawn from the schedule, the docket, and prior notes — open threads, things promised last time, patterns across meetings. Eyebrows are short small-caps labels like "Follow Up" or "Worth Rereading".
 - "preps": for EVERY event id, one line. Where prior notes exist, surface the sharpest carry-over (an unresolved question, an action item mentioned in the summary, what was agreed). Where none exist, one useful orienting line. Extract action items from the note summaries yourself.
+- "recall": the reader retains information by reciting it. From yesterday's margin entries, write 1-3 recital cues — imperatives that make them reproduce the substance from memory ("Recite the mechanism by which…", "State the three reasons you noted for…"). Test the idea, not the wording. If the margin was empty, return [].
 - Do not invent facts not present in the data. Do not restate times or attendee lists in preps — the schedule shows those already.
 Return only the JSON.`
 
@@ -128,9 +145,11 @@ Return only the JSON.`
     lead: typeof mockLead | null
     items: typeof mockItems
     preps: Record<string, string>
-  }>(text, { lead: null, items: [], preps: {} })
+    recall: RecallCue[]
+  }>(text, { lead: null, items: [], preps: {}, recall: [] })
 
   if (!parsed.lead) throw new Error('Brief assembly: model returned unparseable output')
+  const recall = Array.isArray(parsed.recall) ? parsed.recall.slice(0, 3) : []
 
   // Schedule is built from the database, not the model — times and titles verbatim.
   const schedule: ScheduleEntry[] = events.map((ev) => ({
@@ -150,14 +169,16 @@ Return only the JSON.`
       leadJson: JSON.stringify(parsed.lead),
       itemsJson: JSON.stringify(parsed.items),
       scheduleJson: JSON.stringify(schedule),
+      recallJson: JSON.stringify(recall),
     },
     update: {
       leadJson: JSON.stringify(parsed.lead),
       itemsJson: JSON.stringify(parsed.items),
       scheduleJson: JSON.stringify(schedule),
+      recallJson: JSON.stringify(recall),
       generatedAt: new Date(),
     },
   })
 
-  return { date: today, events: events.length, notesUsed, skipped: false }
+  return { date: today, events: events.length, notesUsed, recallCues: recall.length, skipped: false }
 }

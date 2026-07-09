@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { contacts, contactById, dealById, notesByIds } from '@/lib/data'
+import { getDbContact } from '@/lib/book'
 
 export function generateStaticParams() {
   return contacts.map((c) => ({ id: c.id }))
@@ -9,7 +10,50 @@ export function generateStaticParams() {
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const contact = contactById(id)
-  if (!contact) notFound()
+
+  // Reader-added contacts live in the database with a leaner card.
+  if (!contact) {
+    const own = await getDbContact(id)
+    if (!own) notFound()
+    return (
+      <main className="pt-14">
+        <Link href="/book" className="eyebrow underline decoration-hairline underline-offset-4">
+          ← The Book
+        </Link>
+
+        <header className="pt-6">
+          <p className="eyebrow text-oxblood">{own.segment}</p>
+          <h1 className="mt-2 font-serif text-[30px] font-semibold leading-[1.1] tracking-tight">
+            {own.name}
+          </h1>
+          <p className="eyebrow mt-3">
+            {own.role} · {own.firm}
+          </p>
+          <p className="eyebrow mt-1.5 text-faint">
+            {own.location ? `${own.location} · ` : ''}Filed {own.addedOn}
+          </p>
+        </header>
+
+        <div className="rule mt-7" />
+
+        <section className="pt-7">
+          <p className="eyebrow-ink">The Relationship</p>
+          <p className="body-copy mt-3">{own.relationship ?? own.context}</p>
+        </section>
+
+        {own.followUp && (
+          <section className="pt-7">
+            <p className="eyebrow-ink">Worth Remembering</p>
+            <p className="dek mt-2 border-l border-oxblood pl-4">{own.followUp}</p>
+          </section>
+        )}
+
+        <p className="dek pb-6 pt-10 text-center text-faint">
+          Notes and deals will gather here as they are filed.
+        </p>
+      </main>
+    )
+  }
 
   const linkedDeals = contact.dealIds.map((d) => dealById(d)).filter(Boolean)
   const linkedNotes = notesByIds(contact.noteIds)

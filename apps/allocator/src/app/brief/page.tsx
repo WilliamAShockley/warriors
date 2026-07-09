@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { getBrief } from '@/lib/brief'
+import { openTodosPreview } from '@/lib/todos'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +16,10 @@ function todayLine() {
 }
 
 export default async function BriefPage() {
-  const { lead, items, schedule } = await getBrief()
+  const [{ lead, items, schedule, recall }, docket] = await Promise.all([
+    getBrief(),
+    openTodosPreview(5),
+  ])
 
   return (
     <main className="pt-14">
@@ -86,6 +90,50 @@ export default async function BriefPage() {
                 </li>
               ))}
             </ul>
+          </section>
+        </>
+      )}
+
+      {/* Worth Reciting — yesterday's margin, returned as recall cues */}
+      {recall.length > 0 && (
+        <>
+          <div className="rule mt-9" />
+          <section className="pt-8">
+            <p className="eyebrow text-oxblood">Worth Reciting</p>
+            <p className="dek mt-1.5 text-[13px]">
+              From yesterday’s margin. Say each aloud before reading on.
+            </p>
+            <ul className="mt-2">
+              {recall.map((r) => (
+                <li key={r.cue} className="rule py-5 first:border-t-0">
+                  <p className="font-serif text-[17px] font-medium leading-snug tracking-tight">
+                    {r.cue}
+                  </p>
+                  <p className="eyebrow mt-2 text-faint">{r.source}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
+
+      {/* On the Docket — open commitments, verbatim */}
+      {docket.length > 0 && (
+        <>
+          <div className="rule mt-9" />
+          <section className="pt-8">
+            <p className="eyebrow-ink">On the Docket</p>
+            <ul className="mt-2">
+              {docket.map((t) => (
+                <li key={t.text} className="rule flex items-baseline justify-between gap-4 py-3.5 first:border-t-0">
+                  <span className="font-serif text-[15px] leading-snug">{t.text}</span>
+                  <span className="eyebrow shrink-0 text-faint">{t.group}</span>
+                </li>
+              ))}
+            </ul>
+            <Link href="/todos" className="eyebrow mt-4 inline-block text-faint underline decoration-hairline underline-offset-4">
+              The full docket →
+            </Link>
           </section>
         </>
       )}
