@@ -33,14 +33,14 @@ const toRecord = (r: any): BookRecord => ({
   addedOn: r.createdAt.toISOString().slice(0, 10),
 })
 
-export async function listDbContacts(): Promise<BookRecord[]> {
-  if (!hasDb()) return []
+export async function listDbContacts(): Promise<{ live: boolean; contacts: BookRecord[] }> {
+  if (!hasDb()) return { live: false, contacts: [] }
   try {
     const db = await getDb()
     const rows = await db.bookContact.findMany({ orderBy: { createdAt: 'asc' } })
-    return rows.map(toRecord)
+    return { live: true, contacts: rows.map(toRecord) }
   } catch {
-    return []
+    return { live: false, contacts: [] }
   }
 }
 

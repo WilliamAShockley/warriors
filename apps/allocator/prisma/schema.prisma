@@ -102,6 +102,16 @@ model ResearchThesis {
   updatedAt DateTime @updatedAt
 }
 
+// A thought filed to The File (/notes). First line is the title.
+model FiledNote {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model BookContact {
   id           String   @id @default(cuid())
   name         String
