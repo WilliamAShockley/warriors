@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Greeting from '@/components/Greeting'
-import { deals, theses, todos, newsItems } from '@/lib/data'
+import { deals, theses, newsItems } from '@/lib/data'
+import { countOpenTodos } from '@/lib/todos'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,12 +14,13 @@ function todayLine() {
   }).format(new Date())
 }
 
-export default function HomePage() {
+export default async function HomePage() {
   const prospects = deals.filter((d) => d.status === 'prospect')
   const live = deals.filter((d) => d.status === 'live')
+  const openTodos = await countOpenTodos()
 
   const menu = [
-    { label: 'To Do’s', href: '/todos', note: `${todos.length} open` },
+    { label: 'To Do’s', href: '/todos', note: `${openTodos} open` },
     { label: 'Prospects', href: '/prospects', note: `${prospects.length} names` },
     { label: 'Live Deals', href: '/deals', note: `${live.length} in motion` },
     { label: 'Research', href: '/research', note: `${theses.length} theses` },

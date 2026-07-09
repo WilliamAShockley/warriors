@@ -587,62 +587,6 @@ export const todos: Todo[] = [
     href: '/book/jonah-price',
     group: 'This Week',
   },
-  {
-    id: 't2',
-    text: 'Send Marguerite the SPV II fee terms',
-    meta: 'Wednesday, once Gene’s docs land · Halloran',
-    href: '/book/marguerite-chen',
-    group: 'This Week',
-  },
-  {
-    id: 't3',
-    text: 'Ask Sarah Kim for her read on the Circle console',
-    meta: 'Shapes the stablecoin memo revision',
-    href: '/book/sarah-kim',
-    group: 'This Week',
-  },
-  {
-    id: 't4',
-    text: 'Revise the stablecoin memo for the Circle news',
-    meta: 'This weekend · mid-market case only',
-    href: '/research/stablecoin-treasury',
-    group: 'This Week',
-  },
-  {
-    id: 't5',
-    text: 'Keyring fraud-loss cohorts from Dev',
-    meta: 'Due Thursday · pricing call held until then',
-    href: '/book/dev-chandra',
-    group: 'Waiting On',
-  },
-  {
-    id: 't6',
-    text: 'SPV II formation docs from Gene',
-    meta: 'Promised Wednesday',
-    href: '/book/gene-marchetti',
-    group: 'Waiting On',
-  },
-  {
-    id: 't7',
-    text: 'Ashbourne’s emerging-manager DDQ from Tom',
-    meta: 'Nudge gently mid-July',
-    href: '/book/tom-okafor',
-    group: 'Waiting On',
-  },
-  {
-    id: 't8',
-    text: 'Confirm Priya’s observer seat with Sam',
-    meta: 'Before the QoE kickoff, 15 July',
-    href: '/book/sam-whitlock',
-    group: 'The Horizon',
-  },
-  {
-    id: 't9',
-    text: 'Owe Lily an intro to Vane',
-    meta: 'After the pricing discussion settles',
-    href: '/book/lily-zhao',
-    group: 'The Horizon',
-  },
 ]
 
 export const todoGroups = ['This Week', 'Waiting On', 'The Horizon'] as const

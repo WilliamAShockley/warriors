@@ -54,6 +54,20 @@ model MeetingNote {
   @@index([granolaCreatedAt])
 }
 
+model Todo {
+  id        String    @id @default(cuid())
+  text      String
+  meta      String
+  href      String?
+  group     String
+  status    String    @default("open") // open | cleared (today, undoable) | done (filed at end of day)
+  clearedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([status])
+}
+
 // One row per local date — the daily job upserts, so re-runs are idempotent.
 model BriefEdition {
   date         String   @id // YYYY-MM-DD in APP_TIMEZONE
