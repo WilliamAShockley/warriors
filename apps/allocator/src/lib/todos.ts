@@ -97,6 +97,30 @@ export async function toggleTodo(id: string): Promise<boolean> {
   }
 }
 
+export async function createTodo(input: {
+  text: string
+  group: string
+  meta?: string
+}): Promise<TodoRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.todo.create({
+      data: { text: input.text, meta: input.meta ?? '', group: input.group },
+    })
+    return {
+      id: row.id,
+      text: row.text,
+      meta: row.meta,
+      href: row.href,
+      group: row.group,
+      status: 'open',
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function countOpenTodos(): Promise<number> {
   if (!hasDb()) return seedTodos.length
   try {

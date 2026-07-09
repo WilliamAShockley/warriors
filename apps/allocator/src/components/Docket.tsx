@@ -19,6 +19,8 @@ const seedUi: UiTodo[] = seedTodos.map((t) => ({ ...t, status: 'open' }))
 export default function Docket() {
   const [items, setItems] = useState<UiTodo[]>(seedUi)
   const [live, setLive] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [draftGroup, setDraftGroup] = useState<string>(todoGroups[0])
 
   // Reconcile with the database when there is one; otherwise the seed stands.
   useEffect(() => {
@@ -48,11 +50,72 @@ export default function Docket() {
     }
   }
 
+  const add = async () => {
+    const text = draft.trim()
+    if (!text) return
+    setDraft('')
+    if (live) {
+      try {
+        const res = await fetch('/api/todos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, group: draftGroup }),
+        })
+        const data = await res.json()
+        if (data?.todo) {
+          setItems((prev) => [...prev, data.todo])
+          return
+        }
+      } catch {}
+    }
+    // Mock mode (or a failed write): the item still lands, session-only.
+    setItems((prev) => [
+      ...prev,
+      { id: `local-${prev.length}-${text.length}`, text, meta: '', group: draftGroup, status: 'open' },
+    ])
+  }
+
   const open = items.filter((t) => t.status === 'open')
   const cleared = items.filter((t) => t.status === 'cleared')
 
   return (
     <>
+      {/* Capture */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          add()
+        }}
+        className="mt-7 border border-hairline focus-within:border-ink"
+      >
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Put something on the docket…"
+          className="w-full bg-transparent p-4 font-serif text-[15px] leading-relaxed text-ink placeholder:italic placeholder:text-faint focus:outline-none"
+        />
+        <div className="flex items-center justify-between border-t border-hairline px-4 py-2.5">
+          <div className="flex gap-3">
+            {todoGroups.map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setDraftGroup(g)}
+                className={clsx(
+                  'font-sans text-[9px] font-medium uppercase tracking-[0.14em] transition-colors duration-300 ease-editorial',
+                  draftGroup === g ? 'text-ink underline decoration-hairline underline-offset-4' : 'text-faint'
+                )}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+          <button type="submit" className="eyebrow-ink underline decoration-hairline underline-offset-4">
+            Add It
+          </button>
+        </div>
+      </form>
+
       {open.length === 0 && cleared.length === 0 && (
         <p className="dek pt-10 text-center">The docket is clear. Enjoy it while it lasts.</p>
       )}
@@ -74,16 +137,17 @@ export default function Docket() {
                     />
                     <div className="min-w-0">
                       <p className="font-serif text-[17px] leading-snug text-ink">{t.text}</p>
-                      {t.href ? (
-                        <Link
-                          href={t.href}
-                          className="eyebrow mt-1.5 inline-block text-faint underline decoration-hairline underline-offset-4"
-                        >
-                          {t.meta}
-                        </Link>
-                      ) : (
-                        <p className="eyebrow mt-1.5 text-faint">{t.meta}</p>
-                      )}
+                      {t.meta &&
+                        (t.href ? (
+                          <Link
+                            href={t.href}
+                            className="eyebrow mt-1.5 inline-block text-faint underline decoration-hairline underline-offset-4"
+                          >
+                            {t.meta}
+                          </Link>
+                        ) : (
+                          <p className="eyebrow mt-1.5 text-faint">{t.meta}</p>
+                        ))}
                     </div>
                   </div>
                 </li>
@@ -115,7 +179,7 @@ export default function Docket() {
                     <p className="font-serif text-[17px] leading-snug text-faint line-through decoration-hairline">
                       {t.text}
                     </p>
-                    <p className="eyebrow mt-1.5 text-faint">{t.meta}</p>
+                    {t.meta && <p className="eyebrow mt-1.5 text-faint">{t.meta}</p>}
                   </div>
                 </div>
               </li>
