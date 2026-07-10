@@ -25,6 +25,7 @@ export default function WorkingPapers({ id }: { id: string }) {
 
   useEffect(() => {
     let stopped = false
+    let timer: ReturnType<typeof setInterval> | null = null
     const load = async () => {
       try {
         const res = await fetch(`/api/apollo/${id}`)
@@ -41,14 +42,15 @@ export default function WorkingPapers({ id }: { id: string }) {
       }
     }
     load().then((busy) => {
-      if (!busy) return
-      const timer = setInterval(async () => {
+      if (!busy || stopped) return
+      timer = setInterval(async () => {
         const stillBusy = await load()
-        if (!stillBusy) clearInterval(timer)
+        if (!stillBusy && timer) clearInterval(timer)
       }, 3000)
     })
     return () => {
       stopped = true
+      if (timer) clearInterval(timer)
     }
   }, [id])
 

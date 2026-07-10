@@ -134,7 +134,7 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
       }
 
       case 'read_book': {
-        const dbContacts = await listDbContacts()
+        const { contacts: dbContacts } = await listDbContacts()
         const all = [
           ...seedContacts.map((c) => ({ id: c.id, name: c.name, role: c.role, firm: c.firm, segment: c.segment, context: c.context })),
           ...dbContacts.map((c) => ({ id: c.id, name: c.name, role: c.role, firm: c.firm, segment: c.segment, context: c.context })),
@@ -156,7 +156,7 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
             step: { kind: 'tool', name: 'Read the Book', detail: seed.name },
           }
         }
-        const dbContacts = await listDbContacts()
+        const { contacts: dbContacts } = await listDbContacts()
         const hit = dbContacts.find((c) => c.id === q || c.name.toLowerCase().includes(q))
         return hit
           ? { output: JSON.stringify(hit), step: { kind: 'tool', name: 'Read the Book', detail: hit.name } }
