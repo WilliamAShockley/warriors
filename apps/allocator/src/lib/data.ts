@@ -728,6 +728,46 @@ export const briefItems: BriefItem[] = [
   },
 ]
 
+// ————————————————————————————————————————————— Apollo (mock-mode example)
+
+// One worked example so the zero-env demo shows what Apollo does.
+// Typed loosely here to avoid a circular import with lib/apollo/store.
+export const apolloExample = {
+  id: 'example',
+  ask: 'Prep me for the week: what on my calendar collides with the Osprey decision, and what am I about to drop?',
+  status: 'done' as const,
+  planNote: 'Cross-reference the calendar and open docket against the Osprey timeline; flag collisions and orphaned commitments.',
+  steps: [
+    { t: '07:41', kind: 'tool' as const, name: 'Read the docket', detail: '1 open item · Answer Jonah’s split-lead proposal' },
+    { t: '07:41', kind: 'tool' as const, name: 'Read the calendar', detail: '4 events in the next 7 days' },
+    { t: '07:42', kind: 'tool' as const, name: 'Read the Book', detail: 'Jonah Price · Ana Oliveira · Marguerite Chen' },
+    { t: '07:42', kind: 'search' as const, name: 'Searched the wire', detail: 'stablecoin treasury console mid-market' },
+    { t: '07:43', kind: 'write' as const, name: 'Filed a to-do', detail: 'This Week · Draft the split-lead counter before Thursday’s call' },
+  ],
+  result: {
+    title: 'The week bends around Friday',
+    dateline: 'Apollo · from the calendar, the docket, and the wire',
+    sections: [
+      {
+        label: 'The collision',
+        body: 'Thursday’s partner call lands a day before Ana’s term sheet expires, and the split-lead answer Jonah is waiting on is the only open docket item. Decide before the call, not on it — I have filed a to-do to draft the counter by Wednesday night.',
+      },
+      {
+        label: 'About to drop',
+        body: 'Marguerite was promised fee terms this week and nothing on the calendar carries it. Either send the summary Wednesday when Gene’s docs land, or move the promise explicitly — silence is the only losing move.',
+      },
+      {
+        label: 'From the wire',
+        body: 'Circle’s console coverage keeps validating the mid-market wedge. Nothing new changes the Osprey case; one more reason the Friday deadline deserves a yes or a counter, not a lapse.',
+      },
+    ],
+  },
+  verdict: null,
+  feedbackNote: null,
+  createdAt: '2026-07-09T11:41:00.000Z',
+  finishedAt: '2026-07-09T11:44:00.000Z',
+}
+
 // ————————————————————————————————————————————— Lookups
 
 export const thesisBySlug = (slug: string) => theses.find((t) => t.slug === slug)

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import ApolloDesk from '@/components/ApolloDesk'
 import Greeting from '@/components/Greeting'
 import { deals, theses, newsItems } from '@/lib/data'
 import { countOpenTodos } from '@/lib/todos'
@@ -40,6 +41,11 @@ export default async function HomePage() {
           The morning brief is ready. →
         </Link>
       </header>
+
+      {/* The desk — hand Apollo a task; it reports back */}
+      <div className="mt-9 max-h-[22dvh] overflow-hidden">
+        <ApolloDesk />
+      </div>
 
       {/* The contents — begins three-fifths down, ends at the fourth fifth */}
       <nav className="absolute inset-x-0 top-[60%] flex h-[20%] min-h-[13rem] flex-col justify-between">

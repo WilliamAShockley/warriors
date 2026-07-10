@@ -11,6 +11,16 @@ Meant to travel: fork it, set `NEXT_PUBLIC_READER_NAME` and your own keys, and i
 - **Research intake** (`/research/new`) — a new thesis begins with a short interview; the desk asks a few questions, then drafts the research charter and files it. Theses can be retired from their page. With a database connected, Research starts as a blank slate.
 - **The Book** — add contacts from the app; they persist alongside the seeded cast.
 
+## Apollo Agent
+
+The home page is **Apollo**: hand it a task ("prep me for the week", "find what I'm about to drop", "research X against my theses") and it works the problem — an agentic Claude loop (`claude-opus-4-8` by default; `APOLLO_MODEL` to override) with typed tools over the app's own data (docket, book, theses, margin, calendar, meeting notes), web search, and **logged write access** (it can file to-dos, add contacts, and file margin notes; every mutation appears in the task's working papers). Results are filed as an editorial briefing at `/apollo/<id>`.
+
+Apollo is also a continual-learning experiment:
+
+- **Every task's full trace is captured** (the messages array, tool calls included) — the future fine-tuning dataset. Pull it as JSONL: `curl -H "Authorization: Bearer $CRON_SECRET" <url>/api/apollo/export`.
+- **Verdicts teach it.** Each "Good work / Needs another pass" (plus your optional note) is distilled into one lesson, and the latest lessons ride in every future system prompt — prompt-side continual learning, live from day one.
+- **The executor is swappable.** Claude isn't publicly fine-tunable; the export targets an eventual open-weights student model. `APOLLO_MODEL` keeps that a config change, not a rewrite.
+
 ## Running it
 
 ```bash

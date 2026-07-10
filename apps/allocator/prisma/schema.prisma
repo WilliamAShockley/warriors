@@ -68,6 +68,34 @@ model Todo {
   @@index([status])
 }
 
+model ApolloTask {
+  id           String    @id @default(cuid())
+  ask          String
+  status       String    @default("received") // received | working | done | failed
+  planNote     String? // Apollo's one-line reading of the task
+  stepsJson    String    @default("[]")
+  resultJson   String? // briefing shape {title, dateline, sections[]}
+  traceJson    String? // full messages array — the fine-tuning dataset
+  model        String
+  verdict      String? // good | needs-work
+  feedbackNote String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([createdAt])
+}
+
+// Continual learning, prompt-side: distilled from reader feedback,
+// injected into future Apollo system prompts.
+model ApolloLesson {
+  id        String   @id @default(cuid())
+  taskId    String
+  lesson    String
+  createdAt DateTime @default(now())
+}
+
 // One row per local date — the daily job upserts, so re-runs are idempotent.
 model BriefEdition {
   date         String   @id // YYYY-MM-DD in APP_TIMEZONE
