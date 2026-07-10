@@ -1,10 +1,9 @@
 'use client'
 
-import { userName } from '@/lib/data'
-
-// Time-of-day greeting. Rendered client-side so the hour is the reader's,
-// not the server's; suppressHydrationWarning absorbs the SSR difference.
-export default function Greeting() {
+// Time-of-day greeting. The hour is computed client-side so it is the
+// reader's clock, not the server's; suppressHydrationWarning absorbs the
+// SSR difference. The name arrives from the server (database-backed).
+export default function Greeting({ name }: { name: string }) {
   const hour = new Date().getHours()
   const salutation = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
@@ -15,7 +14,7 @@ export default function Greeting() {
     >
       {salutation},
       <br />
-      {userName}.
+      {name}.
     </h1>
   )
 }

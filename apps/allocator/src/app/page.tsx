@@ -4,6 +4,7 @@ import Greeting from '@/components/Greeting'
 import { deals, theses, newsItems } from '@/lib/data'
 import { countOpenTodos } from '@/lib/todos'
 import { listDbTheses } from '@/lib/theses'
+import { getReaderName } from '@/lib/settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +20,11 @@ function todayLine() {
 export default async function HomePage() {
   const prospects = deals.filter((d) => d.status === 'prospect')
   const live = deals.filter((d) => d.status === 'live')
-  const [openTodos, dbTheses] = await Promise.all([countOpenTodos(), listDbTheses()])
+  const [openTodos, dbTheses, readerName] = await Promise.all([
+    countOpenTodos(),
+    listDbTheses(),
+    getReaderName(),
+  ])
   const thesisCount = dbTheses.live ? dbTheses.theses.length : theses.length
 
   const menu = [
@@ -37,7 +42,7 @@ export default async function HomePage() {
         <header className="pt-16">
           <p className="eyebrow">{todayLine()}</p>
           <div className="mt-4">
-            <Greeting />
+            <Greeting name={readerName} />
           </div>
           <Link href="/brief" className="dek mt-4 inline-block underline decoration-hairline underline-offset-4">
             The morning brief is ready. →
@@ -60,10 +65,16 @@ export default async function HomePage() {
       </div>
 
       {/* Below the fold — the desk. Scroll down to hand Apollo a task. */}
-      <section className="pb-8 pt-2">
+      <section className="pb-4 pt-2">
         <div className="rule mb-8" />
         <ApolloDesk />
       </section>
+
+      <p className="pb-8">
+        <Link href="/settings" className="eyebrow text-faint underline decoration-hairline underline-offset-4">
+          The Colophon
+        </Link>
+      </p>
     </main>
   )
 }

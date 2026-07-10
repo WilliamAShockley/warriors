@@ -1,6 +1,6 @@
 import { anthropic } from '../claude'
 import { parseLLMJsonObject } from '../retry'
-import { userName } from '../data'
+import { getReaderName } from '../settings'
 import { APOLLO_TOOL_DEFS, executeApolloTool } from './tools'
 import {
   appendStep,
@@ -20,8 +20,8 @@ const MAX_ELAPSED_MS = 240_000
 const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search', max_uses: 8 }
 
 async function systemPrompt(): Promise<string> {
-  const lessons = await listLessons(10)
-  return `You are Apollo, the private agent of ${userName} — an investor running a new alternative-asset manager — inside "The Allocator", his personal editorial workspace. He hands you a task; you complete it using the tools, then file a briefing.
+  const [lessons, readerName] = await Promise.all([listLessons(10), getReaderName()])
+  return `You are Apollo, the private agent of ${readerName} — an investor running a new alternative-asset manager — inside "The Allocator", his personal editorial workspace. He hands you a task; you complete it using the tools, then file a briefing.
 
 His workspace, which your tools read and write:
 - The Docket: his to-dos. The Book: LPs, founders, co-investors, advisors. Research: his active theses and charters. The Margin: his freeform thinking. The calendar and meeting notes: his real schedule and Granola summaries. The wire: web search.

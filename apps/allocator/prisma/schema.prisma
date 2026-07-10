@@ -8,6 +8,14 @@ datasource db {
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
+// Singleton reader preferences — the app is prepared for one reader.
+model ReaderSetting {
+  id        String   @id @default("singleton")
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // Singleton Google OAuth token, mirroring apps/web's GmailToken pattern.
 model GoogleToken {
   id           String   @id @default("singleton")
