@@ -91,7 +91,8 @@ export async function runApollo(taskId: string, ask: string): Promise<void> {
         }
       }
 
-      if (response.stop_reason === 'pause_turn') {
+      // 'pause_turn' postdates the installed SDK's stop_reason union.
+      if ((response.stop_reason as string) === 'pause_turn') {
         messages.push({ role: 'assistant', content: response.content })
         continue
       }

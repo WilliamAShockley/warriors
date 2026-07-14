@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { contacts, contactById, dealById, notesByIds } from '@/lib/data'
 import { getDbContact } from '@/lib/book'
+import EditContact from '@/components/EditContact'
 
 export function generateStaticParams() {
   return contacts.map((c) => ({ id: c.id }))
@@ -47,6 +48,8 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             <p className="dek mt-2 border-l border-oxblood pl-4">{own.followUp}</p>
           </section>
         )}
+
+        <EditContact contact={own} />
 
         <p className="dek pb-6 pt-10 text-center text-faint">
           Notes and deals will gather here as they are filed.

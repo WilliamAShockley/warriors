@@ -70,6 +70,10 @@ model Todo {
   group     String
   status    String    @default("open") // open | cleared (today, undoable) | done (filed at end of day)
   clearedAt DateTime?
+  // Agent-assigned categorization — infrastructure only, never rendered in the UI.
+  tag       String?
+  taggedBy  String?
+  taggedAt  DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

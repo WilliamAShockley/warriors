@@ -71,3 +71,27 @@ export async function createContact(input: {
     return null
   }
 }
+
+// The Book is amendable after the fact — any field of a reader-added
+// contact can be revised. Empty strings clear the optional fields.
+export type ContactAmendment = Partial<{
+  name: string
+  role: string
+  firm: string
+  segment: string
+  context: string
+  relationship: string | null
+  followUp: string | null
+  location: string | null
+}>
+
+export async function updateContact(id: string, input: ContactAmendment): Promise<BookRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.bookContact.update({ where: { id }, data: input })
+    return toRecord(row)
+  } catch {
+    return null
+  }
+}
