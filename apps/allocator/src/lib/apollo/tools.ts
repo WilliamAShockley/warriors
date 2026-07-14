@@ -1,4 +1,4 @@
-import { contacts as seedContacts, todoGroups, type Segment } from '../data'
+import { contacts as seedContacts, type Segment } from '../data'
 import { listTodos, createTodo } from '../todos'
 import { listDbContacts, createContact } from '../book'
 import { listDbTheses, getDbThesis } from '../theses'
@@ -75,15 +75,14 @@ export const APOLLO_TOOL_DEFS = [
   {
     name: 'add_todo',
     description:
-      'File a to-do on the reader’s Docket. Call this when the task’s outcome includes a commitment the reader should act on. Keep text short and imperative; meta is an optional small-caps context line.',
+      'File a to-do on the reader’s Docket. Call this when the task’s outcome includes a commitment the reader should act on. Keep text short and imperative; meta is an optional small-caps context line. New items file under Today and age into later buckets on their own.',
     input_schema: {
       type: 'object' as const,
       properties: {
         text: { type: 'string' },
-        group: { type: 'string', enum: [...todoGroups] },
         meta: { type: 'string' },
       },
-      required: ['text', 'group'],
+      required: ['text'],
     },
   },
   {
@@ -231,10 +230,9 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
       }
 
       case 'add_todo': {
-        const group = (todoGroups as readonly string[]).includes(input?.group) ? input.group : 'This Week'
-        const todo = await createTodo({ text: String(input?.text ?? ''), group, meta: input?.meta ? String(input.meta) : `Filed by Apollo` })
+        const todo = await createTodo({ text: String(input?.text ?? ''), meta: input?.meta ? String(input.meta) : `Filed by Apollo` })
         return todo
-          ? { output: `Filed: ${todo.text} (${todo.group})`, step: { kind: 'write', name: 'Filed a to-do', detail: `${group} · ${clip(todo.text, 60)}` } }
+          ? { output: `Filed: ${todo.text} (${todo.group})`, step: { kind: 'write', name: 'Filed a to-do', detail: clip(todo.text, 60) } }
           : { output: 'Could not file the to-do (no database).', step: { kind: 'note', name: 'To-do not filed', detail: 'no database' }, isError: true }
       }
 

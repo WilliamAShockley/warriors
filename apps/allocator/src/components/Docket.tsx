@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import clsx from 'clsx'
 import { todos as seedTodos, todoGroups } from '@/lib/data'
 
 type UiTodo = {
@@ -20,7 +19,6 @@ export default function Docket() {
   const [items, setItems] = useState<UiTodo[]>(seedUi)
   const [live, setLive] = useState(false)
   const [draft, setDraft] = useState('')
-  const [draftGroup, setDraftGroup] = useState<string>(todoGroups[0])
 
   // Reconcile with the database when there is one; otherwise the seed stands.
   useEffect(() => {
@@ -59,7 +57,7 @@ export default function Docket() {
         const res = await fetch('/api/todos', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, group: draftGroup }),
+          body: JSON.stringify({ text }),
         })
         const data = await res.json()
         if (data?.todo) {
@@ -71,7 +69,7 @@ export default function Docket() {
     // Mock mode (or a failed write): the item still lands, session-only.
     setItems((prev) => [
       ...prev,
-      { id: `local-${prev.length}-${text.length}`, text, meta: '', group: draftGroup, status: 'open' },
+      { id: `local-${prev.length}-${text.length}`, text, meta: '', group: 'Today', status: 'open' },
     ])
   }
 
@@ -95,21 +93,7 @@ export default function Docket() {
           className="w-full bg-transparent p-4 font-serif text-[15px] leading-relaxed text-ink placeholder:italic placeholder:text-faint focus:outline-none"
         />
         <div className="flex items-center justify-between border-t border-hairline px-4 py-2.5">
-          <div className="flex gap-3">
-            {todoGroups.map((g) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => setDraftGroup(g)}
-                className={clsx(
-                  'font-sans text-[9px] font-medium uppercase tracking-[0.14em] transition-colors duration-300 ease-editorial',
-                  draftGroup === g ? 'text-ink underline decoration-hairline underline-offset-4' : 'text-faint'
-                )}
-              >
-                {g}
-              </button>
-            ))}
-          </div>
+          <span className="eyebrow text-faint">Files under Today; ages from there</span>
           <button type="submit" className="eyebrow-ink underline decoration-hairline underline-offset-4">
             Add It
           </button>

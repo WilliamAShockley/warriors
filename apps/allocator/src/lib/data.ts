@@ -572,12 +572,17 @@ export const notes: Note[] = [
 
 // ————————————————————————————————————————————— To Do's
 
+// Docket buckets are derived from age: filed today, yesterday, within the
+// week, or older — the parking lot. The seed carries a fixed bucket only
+// because mock data has no timestamps.
+export type TodoBucket = 'Today' | 'Yesterday' | 'Last Week' | 'Parking Lot'
+
 export type Todo = {
   id: string
   text: string
   meta: string
   href?: string
-  group: 'This Week' | 'Waiting On' | 'The Horizon'
+  group: TodoBucket
 }
 
 export const todos: Todo[] = [
@@ -586,11 +591,11 @@ export const todos: Todo[] = [
     text: 'Answer Jonah’s split-lead proposal',
     meta: 'Before Ana’s Friday deadline · Osprey Treasury',
     href: '/book/jonah-price',
-    group: 'This Week',
+    group: 'Today',
   },
 ]
 
-export const todoGroups = ['This Week', 'Waiting On', 'The Horizon'] as const
+export const todoGroups = ['Today', 'Yesterday', 'Last Week', 'Parking Lot'] as const
 
 // ————————————————————————————————————————————— News
 
@@ -742,7 +747,7 @@ export const apolloExample = {
     { t: '07:41', kind: 'tool' as const, name: 'Read the calendar', detail: '4 events in the next 7 days' },
     { t: '07:42', kind: 'tool' as const, name: 'Read the Book', detail: 'Jonah Price · Ana Oliveira · Marguerite Chen' },
     { t: '07:42', kind: 'search' as const, name: 'Searched the wire', detail: 'stablecoin treasury console mid-market' },
-    { t: '07:43', kind: 'write' as const, name: 'Filed a to-do', detail: 'This Week · Draft the split-lead counter before Thursday’s call' },
+    { t: '07:43', kind: 'write' as const, name: 'Filed a to-do', detail: 'Draft the split-lead counter before Thursday’s call' },
   ],
   result: {
     title: 'The week bends around Friday',

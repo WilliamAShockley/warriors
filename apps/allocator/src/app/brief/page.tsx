@@ -58,6 +58,7 @@ export default async function BriefPage() {
           <section className="pt-8">
             <p className="eyebrow-ink">Tomorrow</p>
             <ul className="mt-2">
+              {/* Meetings verbatim — title, time, people, place. No editorial. */}
               {schedule.map((s) => (
                 <li key={s.eventId} className="rule py-5 first:border-t-0">
                   <div className="flex items-baseline justify-between gap-4">
@@ -69,22 +70,6 @@ export default async function BriefPage() {
                   {(s.attendees.length > 0 || s.location) && (
                     <p className="eyebrow mt-1.5">
                       {[s.attendees.join(' · '), s.location].filter(Boolean).join(' — ')}
-                    </p>
-                  )}
-                  {s.prep && (
-                    <p className="dek mt-2.5 border-l border-oxblood pl-4 text-[14px]">
-                      {s.noteUrl ? (
-                        <a
-                          href={s.noteUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline decoration-hairline underline-offset-4"
-                        >
-                          {s.prep}
-                        </a>
-                      ) : (
-                        s.prep
-                      )}
                     </p>
                   )}
                 </li>

@@ -1,14 +1,24 @@
-import { NextResponse } from 'next/server'
-import { createTodo, listTodos, toggleTodo } from '@/lib/todos'
-import { todoGroups } from '@/lib/data'
+import { NextResponse, after } from 'next/server'
+import { autoTagTodo, createTodo, listTodos, tagTodo, toggleTodo } from '@/lib/todos'
 
 export async function GET() {
   return NextResponse.json(await listTodos())
 }
 
-// { id } toggles an existing item; { text, group } files a new one.
+// { id } toggles an existing item; { id, tag } lets an agent categorize it
+// (infrastructure only — the tag never renders); { text } files a new one,
+// which the desk classifier tags in the background.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
+
+  if (body?.id && typeof body?.tag === 'string' && body.tag.trim()) {
+    const ok = await tagTodo(
+      String(body.id),
+      body.tag.trim().slice(0, 40),
+      String(body?.taggedBy ?? 'agent').slice(0, 60)
+    )
+    return NextResponse.json({ ok })
+  }
 
   if (body?.id) {
     const ok = await toggleTodo(String(body.id))
@@ -16,10 +26,10 @@ export async function POST(req: Request) {
   }
 
   const text = String(body?.text ?? '').trim()
-  const group = String(body?.group ?? '')
-  if (!text || !(todoGroups as readonly string[]).includes(group)) {
-    return NextResponse.json({ error: 'text and a valid group required' }, { status: 400 })
+  if (!text) {
+    return NextResponse.json({ error: 'text required' }, { status: 400 })
   }
-  const todo = await createTodo({ text, group, meta: String(body?.meta ?? '').trim() })
+  const todo = await createTodo({ text, meta: String(body?.meta ?? '').trim() })
+  if (todo) after(() => autoTagTodo(todo.id, todo.text))
   return NextResponse.json({ ok: Boolean(todo), todo })
 }
