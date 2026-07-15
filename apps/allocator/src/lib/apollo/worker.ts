@@ -2,8 +2,8 @@ import { createTask } from './store'
 import { runApollo, APOLLO_MODEL } from './run'
 
 // The docket worker: when a to-do calls for an email, Apollo picks it up
-// unbidden — researches the recipient, drafts in the reader's voice, and
-// stages the proof tied to the to-do. The reader's part is the signature.
+// unbidden — thread check first, then research if cold, then one staged
+// proof tied to the to-do. The reader's part is the signature.
 
 const hasDb = () => Boolean(process.env.DATABASE_URL)
 
@@ -12,14 +12,28 @@ async function getDb() {
   return db
 }
 
+// The drafting doctrine — appended to the system prompt for worker runs,
+// so it governs the email itself rather than competing with the task text.
+const EMAIL_DOCTRINE = `The email doctrine (this task drafts an email — these rules govern the draft):
+- Follow-ups quote nothing back and re-explain nothing; they pick up exactly where the last message left off, in one or two sentences plus the ask.
+- Cold notes are four sentences at most: who the reader is (one clause, not a resume), the one specific thing about THEIR company that makes this note theirs and no one else's, and a single clear ask — usually twenty minutes. Address the founder by first name.
+- No "hope this finds you well", no "I was impressed by", no flattery padding, no exclamation marks. The specificity IS the compliment.
+- Sign off simply with the reader's first name.
+- The subject line is plain and concrete: their company's name and the reason, e.g. "Freeport — quick question from an allocator".`
+
 const workerAsk = (todoId: string, text: string) => `A to-do just landed on the Docket that calls for an email: "${text}" (Docket id ${todoId}).
 
-Draft that email and stage it for the reader's signature. Work it properly:
-1. Identify the recipient. Check the Book (read_book) and search the mailbox for prior threads (search_email) — prior correspondence decides whether this is an outreach note or a follow-up, gives you their address, and tells you what was last said. If they are unknown to the workspace, search the web to learn who they are and what they are building.
-2. Draft in the reader's voice: direct, warm, brief. Say the one thing the note exists to say. No hype, no filler, no "hope this finds you well".
-3. Stage it with stage_proof — kind "email", the recipient's address in "to", and todoId "${todoId}" so signing it clears the to-do. Reply within the existing thread (threadId) when one exists. If you could not confirm an address, use your best guess and flag it plainly in the summary line.
+Draft that email and stage it for the reader's signature. Follow this procedure exactly — it is a short job, not an investigation. Budget: at most 6 tool calls, at most 3 web searches.
 
-Do NOT send the email directly, and do not file new to-dos. The staged proof is the deliverable — keep the final briefing to one short section on what you drafted and what you based it on.`
+STEP 1 — Thread check (always first). search_email for the company or person named in the to-do.
+- If a thread EXISTS: read_email the most recent message. This is a FOLLOW-UP — the draft continues that conversation from where it left off, addressed to the same person, staged with their address and the threadId. Skip Step 2 entirely.
+- If NO thread: this is a COLD email. Go to Step 2.
+
+STEP 2 — Cold email research (only when there is no thread). Search the web for the company: what it does, and — most important — WHO THE FOUNDER IS AND THEIR FIRST NAME. One or two searches, three at most. Use what you learn for exactly two things: address the founder by first name, and make one line of the body specific to what they are building. For the address: use the founder's real email if research surfaced one; otherwise best-guess the pattern firstname@companydomain.com and say so plainly in the proof's summary line.
+
+STEP 3 — Stage it. stage_proof with kind "email", the recipient's address in "to", and todoId "${todoId}" so signing it clears the to-do. You must ALWAYS stage exactly one proof, even if research came up thin — a short honest draft with a flagged best-guess address beats no draft.
+
+Do NOT read the docket, the calendar, or meeting notes for this task. Do NOT send the email directly. Do NOT file new to-dos. After staging, the final briefing is one short section: what you drafted, for whom, and what you based the address on.`
 
 // Fire-and-forget from the caller's perspective; failures are recorded on
 // the Apollo task itself, never surfaced to the to-do that spawned it.
@@ -34,7 +48,7 @@ export async function workDocketItem(todoId: string, text: string): Promise<void
     const ask = workerAsk(todoId, text)
     const task = await createTask(ask, APOLLO_MODEL)
     if (!task) return
-    await runApollo(task.id, ask)
+    await runApollo(task.id, ask, { systemAppendix: EMAIL_DOCTRINE })
   } catch {
     // Best-effort: the to-do stands either way; the reader can always ask
     // Apollo by hand.
