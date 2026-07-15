@@ -1,5 +1,9 @@
 import { NextResponse, after } from 'next/server'
 import { autoTagTodo, createTodo, listTodos, tagTodo, toggleTodo } from '@/lib/todos'
+import { workDocketItem } from '@/lib/apollo/worker'
+
+// The docket worker may run a full Apollo drafting pass after the response.
+export const maxDuration = 300
 
 export async function GET() {
   return NextResponse.json(await listTodos())
@@ -30,6 +34,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'text required' }, { status: 400 })
   }
   const todo = await createTodo({ text, meta: String(body?.meta ?? '').trim() })
-  if (todo) after(() => autoTagTodo(todo.id, todo.text))
+  if (todo) {
+    // After the response: classify, and if the item calls for an email,
+    // the docket worker drafts it into The Proofs unbidden.
+    after(async () => {
+      const cls = await autoTagTodo(todo.id, todo.text)
+      if (cls?.action === 'email') await workDocketItem(todo.id, todo.text)
+    })
+  }
   return NextResponse.json({ ok: Boolean(todo), todo })
 }
