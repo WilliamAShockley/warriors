@@ -173,7 +173,7 @@ export const APOLLO_TOOL_DEFS = [
   {
     name: 'draft_founder_email',
     description:
-      'Draft a cold outbound or follow-up email to a founder, using the reader’s founder-email skill (its own drafting voice). Call this whenever a task asks you to write, draft, or send email to a founder. FIRST gather context (read_contact for relationship history and the open follow-up, read_meeting_notes for the last conversation, read_theses for the relevant view) and pass it in the `context` field — the skill invents nothing, so the email is only as grounded as the context you give it. Reproduce the returned subject and body verbatim in your briefing.',
+      'Draft a cold outbound or follow-up email to a founder, using the reader’s founder-email skill (its own drafting voice). Call this whenever a task asks you to write, draft, or send email to a founder. FIRST gather context (read_contact for relationship history and the open follow-up, read_meeting_notes for the last conversation, read_theses for the relevant view) and pass it in the `context` field — the skill invents nothing, so the email is only as grounded as the context you give it. Context is recipient and thread facts ONLY: never include the reader’s own identity, firm, or how this workspace describes him — the skill’s voice profile owns all of that. Reproduce the returned subject and body verbatim in your briefing.',
     input_schema: {
       type: 'object' as const,
       properties: {
