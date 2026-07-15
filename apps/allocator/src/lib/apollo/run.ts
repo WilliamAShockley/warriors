@@ -123,7 +123,9 @@ export async function runApollo(
           results.push({
             type: 'tool_result',
             tool_use_id: use.id,
-            content: exec.output,
+            // Clipped defensively: one oversized tool payload (a huge thread,
+            // a long mailbox search) must not blow the context window.
+            content: exec.output.length > 30_000 ? `${exec.output.slice(0, 30_000)}… [clipped]` : exec.output,
             ...(exec.isError ? { is_error: true } : {}),
           })
         }
@@ -160,8 +162,19 @@ export async function runApollo(
     await completeTask(taskId, { status: 'done', result, trace: messages })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    await appendStep(taskId, { kind: 'note', name: 'The run failed', detail: msg.slice(0, 120) })
-    await completeTask(taskId, { status: 'failed', result: null, trace: messages })
+    // The full error must survive: to the step (readably), to the task's
+    // result (so the UI shows the whole thing), and to the platform logs.
+    console.error(`[apollo] run ${taskId} failed:`, msg)
+    await appendStep(taskId, { kind: 'note', name: 'The run failed', detail: msg.slice(0, 300) })
+    await completeTask(taskId, {
+      status: 'failed',
+      result: {
+        title: 'The run failed',
+        dateline: 'Apollo · error report',
+        sections: [{ label: 'What the API said', body: msg.slice(0, 2000) }],
+      },
+      trace: messages,
+    })
   }
 }
 
