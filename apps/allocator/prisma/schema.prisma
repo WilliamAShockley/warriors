@@ -80,6 +80,28 @@ model Todo {
   @@index([status])
 }
 
+// The Proofs: work drafted on the reader's behalf, awaiting signature.
+// Reviewed strictly one at a time; approval executes the attached action.
+model ReviewItem {
+  id              String    @id @default(cuid())
+  kind            String // email | post | analysis
+  title           String
+  summary         String? // one-line dek — who it's for, why it exists
+  body            String // the draft itself, plain text with \n\n paragraphs
+  actionType      String? // send_email | none — what approval executes
+  actionJson      String? // e.g. {"to","subject","threadId"} for send_email
+  sourceUrl       String? // link out when the working file lives elsewhere
+  todoId          String? // the Docket item that spawned it, if any
+  status          String    @default("pending") // pending | approved | spiked
+  queuedAt        DateTime  @default(now()) // queue order; Hold moves it to the back
+  reviewedAt      DateTime?
+  executionResult String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, queuedAt])
+}
+
 model ApolloTask {
   id           String    @id @default(cuid())
   ask          String
