@@ -1,7 +1,9 @@
 import { google } from 'googleapis'
 import { db } from './db'
 
-// OAuth plumbing copied from apps/web/src/lib/gmail.ts, scoped to calendar reads.
+// OAuth plumbing copied from apps/web/src/lib/gmail.ts. One Google account
+// powers the whole desk: calendar reads for the Brief, Gmail read/send for
+// the mail desk. Adding a scope means reconnecting at /api/auth/google.
 
 function getCallbackUrl() {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:5821'
@@ -24,6 +26,8 @@ export function getAuthUrl(state: string) {
     state,
     scope: [
       'https://www.googleapis.com/auth/calendar.readonly',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.send',
       'https://www.googleapis.com/auth/userinfo.email',
     ],
   })

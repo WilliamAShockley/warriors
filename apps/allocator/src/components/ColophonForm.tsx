@@ -62,11 +62,27 @@ export default function ColophonForm() {
         className="mt-4 w-full border-b border-ink bg-transparent pb-2 font-serif text-[18px] text-ink placeholder:italic placeholder:text-faint focus:outline-none"
       />
 
-      {account && (
+      {live && (
         <div className="pt-8">
           <p className="eyebrow-ink">The Account</p>
-          <p className="body-copy mt-2">
-            Calendar connected as <span className="italic">{account}</span>.
+          {account ? (
+            <p className="body-copy mt-2">
+              Connected as <span className="italic">{account}</span>. The calendar and the
+              mail desk — reading and sending — both run through this account.
+            </p>
+          ) : (
+            <p className="body-copy mt-2">
+              No Google account connected. Connect one and the Brief gains your calendar;
+              the desk gains your mail.
+            </p>
+          )}
+          <p className="mt-3">
+            <a
+              href="/api/auth/google"
+              className="eyebrow-ink underline decoration-hairline underline-offset-4"
+            >
+              {account ? 'Reconnect · or switch to another account' : 'Connect a Google account'}
+            </a>
           </p>
         </div>
       )}

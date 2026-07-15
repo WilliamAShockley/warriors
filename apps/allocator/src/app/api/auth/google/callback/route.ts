@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
   const expectedState = req.cookies.get('google_oauth_state')?.value
   if (!code || !state || !expectedState || state !== expectedState) {
-    return NextResponse.redirect(`${appUrl}/?google=error`)
+    return NextResponse.redirect(`${appUrl}/settings?google=error`)
   }
 
   const client = getOAuthClient()
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  const res = NextResponse.redirect(`${appUrl}/?google=connected`)
+  const res = NextResponse.redirect(`${appUrl}/settings?google=connected`)
   res.cookies.delete('google_oauth_state')
   return res
 }
