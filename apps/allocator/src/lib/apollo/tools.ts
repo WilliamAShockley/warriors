@@ -111,6 +111,43 @@ export const APOLLO_TOOL_DEFS = [
       required: ['text'],
     },
   },
+  {
+    name: 'search_email',
+    description:
+      'Search the reader’s connected Gmail account. Accepts Gmail search syntax (from:, to:, subject:, newer_than:7d, quoted phrases). Returns message metadata and snippets — use read_email for a full body.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string' },
+        maxResults: { type: 'number', description: 'Default 15, max 25' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_email',
+    description: 'Read one email in full from the reader’s Gmail, by message id from search_email.',
+    input_schema: {
+      type: 'object' as const,
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'send_email',
+    description:
+      'Send a plain-text email from the reader’s connected Gmail account. Use ONLY when the task explicitly asks for an email to be sent — never send unprompted, and never invent recipients. Pass threadId (from search_email) to reply within an existing conversation.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        to: { type: 'string' },
+        subject: { type: 'string' },
+        body: { type: 'string' },
+        threadId: { type: 'string' },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+  },
 ]
 
 export type ToolExecution = {
@@ -254,6 +291,42 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
         return entry
           ? { output: 'Filed to the margin.', step: { kind: 'write', name: 'Filed a margin note', detail: clip(String(input?.text ?? ''), 60) } }
           : { output: 'Could not file the note.', step: { kind: 'note', name: 'Margin note not filed', detail: 'no database' }, isError: true }
+      }
+
+      case 'search_email': {
+        const { searchEmails } = await import('../gmail')
+        const q = String(input?.query ?? '')
+        const max = Math.min(Number(input?.maxResults) || 15, 25)
+        const hits = await searchEmails(q, max)
+        return {
+          output: hits.length ? JSON.stringify(hits) : 'No messages found (or Gmail is not connected).',
+          step: { kind: 'tool', name: 'Searched the mailbox', detail: `${hits.length} match · ${clip(q, 40)}` },
+        }
+      }
+
+      case 'read_email': {
+        const { readEmail } = await import('../gmail')
+        const msg = await readEmail(String(input?.id ?? ''))
+        return msg
+          ? {
+              output: JSON.stringify({ ...msg, body: clip(msg.body, 6000) }),
+              step: { kind: 'tool', name: 'Read an email', detail: clip(msg.subject, 60) },
+            }
+          : { output: 'Could not read that message (bad id, or Gmail not connected).', step: { kind: 'note', name: 'Email unread', detail: 'unavailable' }, isError: true }
+      }
+
+      case 'send_email': {
+        const { sendEmail } = await import('../gmail')
+        const to = String(input?.to ?? '').trim()
+        const subject = String(input?.subject ?? '').trim()
+        const body = String(input?.body ?? '').trim()
+        if (!to || !subject || !body) {
+          return { output: 'send_email needs to, subject, and body.', step: { kind: 'note', name: 'Email not sent', detail: 'missing fields' }, isError: true }
+        }
+        const sent = await sendEmail({ to, subject, bodyText: body, threadId: input?.threadId ? String(input.threadId) : null })
+        return sent
+          ? { output: `Sent to ${to} (message ${sent.id}).`, step: { kind: 'write', name: 'Sent an email', detail: `${clip(to, 40)} · ${clip(subject, 40)}` } }
+          : { output: 'Could not send (Gmail not connected, or the send failed).', step: { kind: 'note', name: 'Email not sent', detail: 'unavailable' }, isError: true }
       }
 
       default:
