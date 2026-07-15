@@ -142,8 +142,12 @@ export async function createTodo(input: {
 // ————————————————————————————————— Agent tagging (infrastructure only)
 // Each item can be tagged/categorized by an agent. Deliberately absent
 // from the UI: the tags are for the desk's machinery, not the reader.
+// The tag is two-level where an action is called for — "email/outreach",
+// "email/follow_up", "draft/post" — and a plain topic otherwise.
 
-export const todoTags = ['relationship', 'deal', 'research', 'operations', 'personal'] as const
+export const todoTopics = ['relationship', 'deal', 'research', 'operations', 'personal'] as const
+export type TodoAction = 'email' | 'post' | 'analysis' | 'none'
+export type TodoClassification = { action: TodoAction; tag: string }
 
 export async function tagTodo(id: string, tag: string, taggedBy = 'agent'): Promise<boolean> {
   if (!hasDb()) return false
@@ -159,27 +163,72 @@ export async function tagTodo(id: string, tag: string, taggedBy = 'agent'): Prom
   }
 }
 
-// Background categorization on filing — a small model reads the item and
-// files a tag. Failures are swallowed: tagging is best-effort plumbing.
-export async function autoTagTodo(id: string, text: string): Promise<void> {
-  if (!hasDb() || !process.env.ANTHROPIC_API_KEY) return
+// Keyword fallback for keyless environments — enough to route the obvious.
+function classifyByKeywords(text: string): TodoClassification {
+  const t = text.toLowerCase()
+  if (/\b(e-?mail|reply to|respond to|write (to|back)|reach out|follow up with|ping|intro to)\b/.test(t)) {
+    const flavor = /\b(reply|respond|follow up|write back|circle back)\b/.test(t) ? 'follow_up' : 'outreach'
+    return { action: 'email', tag: `email/${flavor}` }
+  }
+  if (/\b(post|blog|essay|newsletter)\b/.test(t)) return { action: 'post', tag: 'draft/post' }
+  if (/\b(analy[sz]e|analysis|model|deck|memo)\b/.test(t)) return { action: 'analysis', tag: 'analysis' }
+  return { action: 'none', tag: 'operations' }
+}
+
+// Read the item and decide two things: what kind of work it calls for
+// (an email — outreach or follow-up? a post? an analysis?) and its topic.
+export async function classifyTodo(text: string): Promise<TodoClassification> {
+  if (!process.env.ANTHROPIC_API_KEY) return classifyByKeywords(text)
   try {
     const { anthropic } = await import('./claude')
+    const { parseLLMJsonObject } = await import('./retry')
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 10,
+      max_tokens: 100,
       messages: [
         {
           role: 'user',
-          content: `Categorize this to-do from an alternative-asset investor's docket. Answer with exactly one word from: ${todoTags.join(', ')}.\n\nTo-do: "${text}"`,
+          content: `Classify this to-do from an alternative-asset investor's docket.
+
+To-do: "${text}"
+
+Respond with JSON only:
+{"action": "email" | "post" | "analysis" | "none", "flavor": "<for email only: outreach if it starts a conversation, follow_up if it continues one>", "topic": "${todoTopics.join('" | "')}"}
+
+"action" is the work product the item calls for: email (writing to someone), post (a blog post or public writing), analysis (a memo, model, or deck), none (anything else — calls, reading, errands).`,
         },
       ],
     })
-    const raw = message.content[0]?.type === 'text' ? message.content[0].text.trim().toLowerCase() : ''
-    const tag = (todoTags as readonly string[]).includes(raw) ? raw : null
-    if (tag) await tagTodo(id, tag, 'desk-classifier')
+    const raw = message.content[0]?.type === 'text' ? message.content[0].text : ''
+    const parsed = parseLLMJsonObject<{ action?: string; flavor?: string; topic?: string }>(raw, {})
+    const action: TodoAction = ['email', 'post', 'analysis'].includes(parsed.action ?? '')
+      ? (parsed.action as TodoAction)
+      : 'none'
+    const topic = (todoTopics as readonly string[]).includes(parsed.topic ?? '') ? parsed.topic! : 'operations'
+    const tag =
+      action === 'email'
+        ? `email/${parsed.flavor === 'follow_up' ? 'follow_up' : 'outreach'}`
+        : action === 'post'
+          ? 'draft/post'
+          : action === 'analysis'
+            ? 'analysis'
+            : topic
+    return { action, tag }
   } catch {
-    // Best-effort: an untagged item is just an item.
+    return classifyByKeywords(text)
+  }
+}
+
+// Background categorization on filing. Failures are swallowed: tagging is
+// best-effort plumbing, and an untagged item is just an item.
+export async function autoTagTodo(id: string, text: string): Promise<TodoClassification | null> {
+  if (!hasDb()) return null
+  try {
+    const cls = await classifyTodo(text)
+    await tagTodo(id, cls.tag, 'desk-classifier')
+    return cls
+  } catch {
+    return null
   }
 }
 
