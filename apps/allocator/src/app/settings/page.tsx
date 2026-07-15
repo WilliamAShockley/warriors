@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import ColophonForm from '@/components/ColophonForm'
+import SkillsEditor from '@/components/SkillsEditor'
 
 export default function SettingsPage() {
   return (
@@ -19,6 +20,10 @@ export default function SettingsPage() {
       <div className="rule-masthead mt-6" />
 
       <ColophonForm />
+
+      <div className="rule mt-12" />
+
+      <SkillsEditor />
     </main>
   )
 }

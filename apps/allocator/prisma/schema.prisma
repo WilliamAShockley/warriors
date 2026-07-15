@@ -121,6 +121,16 @@ model ApolloTask {
   @@index([createdAt])
 }
 
+// A reader-editable Apollo skill: the system prompt that governs a specialized
+// drafting playbook (e.g. founder-email). Keyed by skill id; absence means the
+// code default is in force. Edited from the Colophon (settings).
+model ApolloSkill {
+  id           String   @id // skill id, e.g. "founder-email"
+  systemPrompt String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 // Continual learning, prompt-side: distilled from reader feedback,
 // injected into future Apollo system prompts.
 model ApolloLesson {

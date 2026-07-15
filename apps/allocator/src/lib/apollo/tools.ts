@@ -3,6 +3,8 @@ import { listTodos, createTodo } from '../todos'
 import { listDbContacts, createContact } from '../book'
 import { listDbTheses, getDbThesis } from '../theses'
 import { listMargin, createMargin } from '../margin'
+import { getReaderName } from '../settings'
+import { draftFounderEmail } from './skills'
 import type { ApolloStep } from './store'
 
 const hasDb = () => Boolean(process.env.DATABASE_URL)
@@ -166,6 +168,26 @@ export const APOLLO_TOOL_DEFS = [
         sourceUrl: { type: 'string' },
       },
       required: ['kind', 'title', 'body'],
+    },
+  },
+  {
+    name: 'draft_founder_email',
+    description:
+      'Draft a cold outbound or follow-up email to a founder, using the reader’s founder-email skill (its own drafting voice). Call this whenever a task asks you to write, draft, or send email to a founder. FIRST gather context (read_contact for relationship history and the open follow-up, read_meeting_notes for the last conversation, read_theses for the relevant view) and pass it in the `context` field — the skill invents nothing, so the email is only as grounded as the context you give it. Reproduce the returned subject and body verbatim in your briefing.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        mode: { type: 'string', enum: ['cold', 'follow_up'], description: "'cold' for first contact, 'follow_up' when a thread or meeting already exists" },
+        founder: { type: 'string', description: 'The founder’s name' },
+        firm: { type: 'string', description: 'Their company' },
+        goal: { type: 'string', description: 'The single concrete thing this email should accomplish' },
+        context: {
+          type: 'string',
+          description:
+            'Everything you gathered from the workspace — relationship history, the last meeting, the relevant thesis, the reason for reaching out. Every specific in the email must be grounded here.',
+        },
+      },
+      required: ['mode', 'founder', 'context'],
     },
   },
 ]
@@ -380,6 +402,36 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
         return proof
           ? { output: `Staged for review: ${proof.title} (${kind}). It awaits the reader's signature in The Proofs.`, step: { kind: 'write', name: 'Staged a proof', detail: `${kind} · ${clip(title, 50)}` } }
           : { output: 'Could not stage the proof (no database).', step: { kind: 'note', name: 'Proof not staged', detail: 'no database' }, isError: true }
+      }
+
+      case 'draft_founder_email': {
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { output: 'Cannot draft: no ANTHROPIC_API_KEY configured.', step: { kind: 'note', name: 'Email not drafted', detail: 'no API key' }, isError: true }
+        }
+        const mode = input?.mode === 'cold' ? 'cold' : 'follow_up'
+        const founder = String(input?.founder ?? '').trim()
+        if (!founder) {
+          return { output: 'Cannot draft: no founder named.', step: { kind: 'note', name: 'Email not drafted', detail: 'no founder' }, isError: true }
+        }
+        const readerName = await getReaderName()
+        const draft = await draftFounderEmail(
+          {
+            mode,
+            founder,
+            firm: input?.firm ? String(input.firm) : undefined,
+            goal: input?.goal ? String(input.goal) : undefined,
+            context: String(input?.context ?? ''),
+          },
+          readerName
+        )
+        return {
+          output: JSON.stringify(draft),
+          step: {
+            kind: 'write',
+            name: mode === 'cold' ? 'Drafted a cold email' : 'Drafted a follow-up',
+            detail: `${founder}${input?.firm ? ` · ${clip(String(input.firm), 30)}` : ''}`,
+          },
+        }
       }
 
       default:
