@@ -1,5 +1,5 @@
 import { anthropic } from '../claude'
-import { parseLLMJsonObject } from '../retry'
+import { parseLLMJsonObject, withRetry } from '../retry'
 import { getReaderName } from '../settings'
 import { APOLLO_TOOL_DEFS, executeApolloTool } from './tools'
 import { skillsBriefing } from './skills'
@@ -46,9 +46,14 @@ Two to five sections. The briefing is the deliverable — it should read like a 
   }`
 }
 
-// The manual agent loop: per-step DB logging is the point.
-export async function runApollo(taskId: string, ask: string): Promise<void> {
-  const system = await systemPrompt()
+// The manual agent loop: per-step DB logging is the point. Callers with a
+// specialty (the docket worker) append their doctrine to the system prompt.
+export async function runApollo(
+  taskId: string,
+  ask: string,
+  opts?: { systemAppendix?: string }
+): Promise<void> {
+  const system = (await systemPrompt()) + (opts?.systemAppendix ? `\n\n${opts.systemAppendix}` : '')
   const tools: any[] = [...APOLLO_TOOL_DEFS, WEB_SEARCH_TOOL]
   const messages: any[] = [{ role: 'user', content: ask }]
   const startedAt = Date.now()
@@ -67,14 +72,20 @@ export async function runApollo(taskId: string, ask: string): Promise<void> {
         })
       }
 
-      const response = await anthropic.messages.create({
-        model: APOLLO_MODEL,
-        max_tokens: 16000,
-        thinking: { type: 'adaptive' },
-        system,
-        tools,
-        messages,
-      } as any)
+      // One flaky API response must not kill a whole run; the timeout is
+      // generous because thinking + server-side search make long turns.
+      const response = await withRetry(
+        () =>
+          anthropic.messages.create({
+            model: APOLLO_MODEL,
+            max_tokens: 16000,
+            thinking: { type: 'adaptive' },
+            system,
+            tools,
+            messages,
+          } as any),
+        { maxAttempts: 3, timeoutMs: 180_000 }
+      )
 
       // Capture Apollo's one-line reading of the task from the first text block.
       if (!planCaptured) {
