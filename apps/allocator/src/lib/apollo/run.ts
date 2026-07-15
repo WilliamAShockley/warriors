@@ -59,6 +59,10 @@ export async function runApollo(
   const startedAt = Date.now()
   let planCaptured = false
   let finalText = ''
+  // Server-side tools (web search) execute in a container on Anthropic's
+  // end; when a turn ends with that work pending, the follow-up request
+  // must name the container or the API rejects it with a 400.
+  let containerId: string | undefined
 
   try {
     for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -83,9 +87,12 @@ export async function runApollo(
             system,
             tools,
             messages,
+            ...(containerId ? { container: containerId } : {}),
           } as any),
         { maxAttempts: 3, timeoutMs: 180_000 }
       )
+      const respContainer = (response as any).container?.id
+      if (respContainer) containerId = respContainer
 
       // Capture Apollo's one-line reading of the task from the first text block.
       if (!planCaptured) {
