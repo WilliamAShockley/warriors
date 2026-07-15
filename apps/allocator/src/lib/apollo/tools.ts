@@ -166,6 +166,11 @@ export const APOLLO_TOOL_DEFS = [
         subject: { type: 'string', description: 'email kind only — defaults to title' },
         threadId: { type: 'string', description: 'email kind only — reply within a thread' },
         sourceUrl: { type: 'string' },
+        grounding: {
+          type: 'string',
+          description:
+            'The research/thread context the draft was based on — the same context handed to the drafting skill. ALWAYS pass it: the reader highlights lines in the proof and asks where they came from, and this is what answers him.',
+        },
       },
       required: ['kind', 'title', 'body'],
     },
@@ -398,6 +403,7 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
               : undefined,
           sourceUrl: input?.sourceUrl ? String(input.sourceUrl) : undefined,
           todoId: input?.todoId ? String(input.todoId) : undefined,
+          grounding: input?.grounding ? String(input.grounding).slice(0, 20_000) : undefined,
         })
         return proof
           ? { output: `Staged for review: ${proof.title} (${kind}). It awaits the reader's signature in The Proofs.`, step: { kind: 'write', name: 'Staged a proof', detail: `${kind} · ${clip(title, 50)}` } }

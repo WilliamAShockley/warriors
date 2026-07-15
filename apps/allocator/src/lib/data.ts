@@ -788,6 +788,9 @@ export const proofs = [
     sourceUrl: null,
     filedOn: '9 July',
     todo: { id: 't-demo-1', text: 'Send Marguerite the SPV II fee terms' },
+    grounding:
+      'From filed notes (30 June): \u201cDraft summary for Halloran: 2/20 with fees offset against Fund I commitment, $1.5m soft-circled, quarterly operational letter (she asked twice \u2014 she reads them). Gene returns formation docs Wednesday; send the summary same day.\u201d',
+    commentary: null,
   },
   {
     id: 'p2',
@@ -800,6 +803,8 @@ export const proofs = [
     sourceUrl: null,
     filedOn: '8 July',
     todo: { id: 't-demo-2', text: 'Write the stablecoin post for the site' },
+    grounding: null,
+    commentary: null,
   },
   {
     id: 'p3',
@@ -812,6 +817,8 @@ export const proofs = [
     sourceUrl: 'https://docs.google.com/spreadsheets/d/keyring-cohorts',
     filedOn: '8 July',
     todo: { id: 't-demo-3', text: 'Review Keyring fraud-loss cohorts before the pricing call' },
+    grounding: null,
+    commentary: null,
   },
 ] as const
 
