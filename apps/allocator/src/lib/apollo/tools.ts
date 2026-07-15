@@ -136,7 +136,7 @@ export const APOLLO_TOOL_DEFS = [
   {
     name: 'send_email',
     description:
-      'Send a plain-text email from the reader’s connected Gmail account. Use ONLY when the task explicitly asks for an email to be sent — never send unprompted, and never invent recipients. Pass threadId (from search_email) to reply within an existing conversation.',
+      'Send a plain-text email from the reader’s connected Gmail account. Use ONLY when the task explicitly asks for an email to be sent — never send unprompted, and never invent recipients. When the task is to DRAFT, use stage_proof instead. Pass threadId (from search_email) to reply within an existing conversation.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -146,6 +146,26 @@ export const APOLLO_TOOL_DEFS = [
         threadId: { type: 'string' },
       },
       required: ['to', 'subject', 'body'],
+    },
+  },
+  {
+    name: 'stage_proof',
+    description:
+      'Stage drafted work in The Proofs — the reader’s review tray — where it awaits his signature, one proof at a time. Use this for anything drafted on his behalf: an email (kind "email", requires to; approval actually sends it), a blog post ("post"), or an analysis ("analysis", pass sourceUrl if the working file lives elsewhere). When the draft serves an item on the Docket, ALWAYS pass its todoId (from read_docket) — the proof is headed by its to-do, and signing it clears that to-do. Body is plain text with \\n\\n between paragraphs. Prefer staging over sending.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        kind: { type: 'string', enum: ['email', 'post', 'analysis'] },
+        title: { type: 'string' },
+        summary: { type: 'string', description: 'One-line dek — who it is for, why it exists' },
+        body: { type: 'string' },
+        todoId: { type: 'string', description: 'The Docket item this draft serves, from read_docket' },
+        to: { type: 'string', description: 'email kind only — the recipient' },
+        subject: { type: 'string', description: 'email kind only — defaults to title' },
+        threadId: { type: 'string', description: 'email kind only — reply within a thread' },
+        sourceUrl: { type: 'string' },
+      },
+      required: ['kind', 'title', 'body'],
     },
   },
 ]
@@ -327,6 +347,39 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
         return sent
           ? { output: `Sent to ${to} (message ${sent.id}).`, step: { kind: 'write', name: 'Sent an email', detail: `${clip(to, 40)} · ${clip(subject, 40)}` } }
           : { output: 'Could not send (Gmail not connected, or the send failed).', step: { kind: 'note', name: 'Email not sent', detail: 'unavailable' }, isError: true }
+      }
+
+      case 'stage_proof': {
+        const { createProof } = await import('../review')
+        const kind = ['email', 'post', 'analysis'].includes(input?.kind) ? input.kind : 'analysis'
+        const title = String(input?.title ?? '').trim()
+        const body = String(input?.body ?? '').trim()
+        if (!title || !body) {
+          return { output: 'stage_proof needs a title and a body.', step: { kind: 'note', name: 'Proof not staged', detail: 'missing fields' }, isError: true }
+        }
+        if (kind === 'email' && !String(input?.to ?? '').trim()) {
+          return { output: 'An email proof needs a recipient (to).', step: { kind: 'note', name: 'Proof not staged', detail: 'no recipient' }, isError: true }
+        }
+        const proof = await createProof({
+          kind,
+          title: title.slice(0, 160),
+          summary: input?.summary ? String(input.summary).slice(0, 240) : undefined,
+          body,
+          actionType: kind === 'email' ? 'send_email' : 'none',
+          actionJson:
+            kind === 'email'
+              ? JSON.stringify({
+                  to: String(input.to).trim(),
+                  subject: String(input?.subject ?? title).slice(0, 200),
+                  ...(input?.threadId ? { threadId: String(input.threadId) } : {}),
+                })
+              : undefined,
+          sourceUrl: input?.sourceUrl ? String(input.sourceUrl) : undefined,
+          todoId: input?.todoId ? String(input.todoId) : undefined,
+        })
+        return proof
+          ? { output: `Staged for review: ${proof.title} (${kind}). It awaits the reader's signature in The Proofs.`, step: { kind: 'write', name: 'Staged a proof', detail: `${kind} · ${clip(title, 50)}` } }
+          : { output: 'Could not stage the proof (no database).', step: { kind: 'note', name: 'Proof not staged', detail: 'no database' }, isError: true }
       }
 
       default:
