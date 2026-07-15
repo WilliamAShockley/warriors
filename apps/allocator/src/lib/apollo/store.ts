@@ -172,6 +172,23 @@ export async function listLessons(n = 10): Promise<string[]> {
   }
 }
 
+// Lessons distilled from the reader's proof commentary (taskId "proof:…") —
+// handed to the drafting skills, so review feedback shapes the next draft.
+export async function listProofLessons(n = 8): Promise<string[]> {
+  if (!hasDb()) return []
+  try {
+    const db = await getDb()
+    const rows = await db.apolloLesson.findMany({
+      where: { taskId: { startsWith: 'proof:' } },
+      orderBy: { createdAt: 'desc' },
+      take: n,
+    })
+    return rows.map((r) => r.lesson)
+  } catch {
+    return []
+  }
+}
+
 export async function exportTasks(): Promise<string> {
   if (!hasDb()) return ''
   try {

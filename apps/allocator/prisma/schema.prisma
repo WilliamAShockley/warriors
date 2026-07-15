@@ -92,6 +92,11 @@ model ReviewItem {
   actionJson      String? // e.g. {"to","subject","threadId"} for send_email
   sourceUrl       String? // link out when the working file lives elsewhere
   todoId          String? // the Docket item that spawned it, if any
+  // Continual learning: the research context the draft was grounded in
+  // (for highlight-to-provenance), and the reader's commentary on the
+  // output (distilled into standing lessons for future drafts).
+  grounding       String?
+  commentary      String?
   status          String    @default("pending") // pending | approved | spiked
   queuedAt        DateTime  @default(now()) // queue order; Hold moves it to the back
   reviewedAt      DateTime?

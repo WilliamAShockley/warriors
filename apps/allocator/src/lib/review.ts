@@ -16,6 +16,10 @@ export type ProofRecord = {
   filedOn: string
   // The Docket item this proof serves — the tie between the tray and the to-dos.
   todo: { id: string; text: string } | null
+  // Continual learning: the research context behind the draft, and the
+  // reader's commentary on the output.
+  grounding: string | null
+  commentary: string | null
 }
 
 export type ProofQueue = { live: boolean; total: number; proof: ProofRecord | null }
@@ -43,6 +47,8 @@ const toRecord = (r: any, todo: { id: string; text: string } | null = null): Pro
   sourceUrl: r.sourceUrl,
   filedOn: dateLabel(r.createdAt),
   todo,
+  grounding: r.grounding ?? null,
+  commentary: r.commentary ?? null,
 })
 
 const seedQueue = (): ProofQueue => ({
@@ -90,6 +96,7 @@ export async function createProof(input: {
   actionJson?: string
   sourceUrl?: string
   todoId?: string
+  grounding?: string
 }): Promise<ProofRecord | null> {
   if (!hasDb()) return null
   try {
@@ -104,6 +111,7 @@ export async function createProof(input: {
         actionJson: input.actionJson ?? null,
         sourceUrl: input.sourceUrl ?? null,
         todoId: input.todoId ?? null,
+        grounding: input.grounding ?? null,
       },
     })
     return toRecord(row)
@@ -184,5 +192,119 @@ export async function spikeProof(id: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+// ————————————————————————————————— Continual learning
+
+// Amend a pending proof inline: the body, the email envelope, or the
+// reader's commentary. The signed version is whatever was amended to.
+export async function amendProof(
+  id: string,
+  input: { body?: string; subject?: string; to?: string; commentary?: string }
+): Promise<ProofRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row || row.status !== 'pending') return null
+
+    const data: any = {}
+    if (input.body !== undefined) data.body = input.body
+    if (input.commentary !== undefined) data.commentary = input.commentary.trim() || null
+    if ((input.subject !== undefined || input.to !== undefined) && row.actionType === 'send_email') {
+      const action = row.actionJson ? JSON.parse(row.actionJson) : {}
+      if (input.to !== undefined) action.to = input.to
+      if (input.subject !== undefined) action.subject = input.subject
+      data.actionJson = JSON.stringify(action)
+    }
+    if (Object.keys(data).length === 0) return toRecord(row)
+
+    const updated = await db.reviewItem.update({ where: { id }, data })
+    return toRecord(updated)
+  } catch {
+    return null
+  }
+}
+
+// After a verdict, the reader's commentary becomes a standing lesson —
+// scoped to proofs — that future drafting runs are handed. Best-effort.
+export async function distillProofLesson(id: string): Promise<void> {
+  if (!hasDb() || !process.env.ANTHROPIC_API_KEY) return
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row?.commentary?.trim()) return
+
+    const { anthropic } = await import('./claude')
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 150,
+      messages: [
+        {
+          role: 'user',
+          content: `The reader reviewed a drafted ${row.kind} titled "${row.title}" and left this commentary:\n"${row.commentary.trim()}"\n\nDistill it into ONE imperative lesson for whoever drafts the next one (max 25 words, no preamble). If the commentary contains no usable instruction, answer exactly: NONE`,
+        },
+      ],
+    })
+    const lesson = message.content[0]?.type === 'text' ? message.content[0].text.trim() : ''
+    if (lesson && lesson !== 'NONE') {
+      const { addLesson } = await import('./apollo/store')
+      await addLesson(`proof:${id}`, lesson)
+    }
+  } catch {
+    // A lost lesson is a shame, not a failure.
+  }
+}
+
+// Highlight-to-provenance: where did this language come from? Answered
+// against the stored grounding, honestly — including "nowhere, check it".
+export async function explainSelection(
+  id: string,
+  selection: string
+): Promise<{ source: string; explanation: string } | null> {
+  if (!hasDb() || !process.env.ANTHROPIC_API_KEY) return null
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row) return null
+
+    const { anthropic } = await import('./claude')
+    const { parseLLMJsonObject } = await import('./retry')
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-5',
+      max_tokens: 400,
+      messages: [
+        {
+          role: 'user',
+          content: `A draft ${row.kind} was prepared for an investor from research context. He highlighted a passage and asks: where did this come from?
+
+THE DRAFT:
+${row.body.slice(0, 6000)}
+
+THE RESEARCH CONTEXT THE DRAFT WAS GROUNDED IN:
+${row.grounding?.slice(0, 8000) || '(none was recorded for this draft)'}
+
+THE HIGHLIGHTED PASSAGE:
+"${selection.slice(0, 600)}"
+
+Answer with JSON only:
+{"source": "research" | "thread" | "voice" | "unsupported", "explanation": "<1-3 sentences>"}
+
+Rules: "research"/"thread" only when the context above actually supports the passage — quote the exact supporting line in the explanation. "voice" when it is the sender's own standard self-introduction, boilerplate, or ask language rather than a claim about the recipient. "unsupported" when it is a recipient-specific claim with no support in the context — say plainly it should be checked before sending. Never invent a source.`,
+        },
+      ],
+    })
+    const raw = message.content[0]?.type === 'text' ? message.content[0].text : ''
+    const parsed = parseLLMJsonObject<{ source?: string; explanation?: string }>(raw, {})
+    if (!parsed.explanation) return null
+    return {
+      source: ['research', 'thread', 'voice', 'unsupported'].includes(parsed.source ?? '')
+        ? parsed.source!
+        : 'unsupported',
+      explanation: parsed.explanation,
+    }
+  } catch {
+    return null
   }
 }

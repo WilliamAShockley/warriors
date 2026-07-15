@@ -60,9 +60,17 @@ export async function draftFounderEmail(
   input: FounderEmailInput,
   readerName: string
 ): Promise<FounderEmailDraft> {
-  // The reader's saved prompt if any, else the code default.
-  const template = await getSkillPrompt('founder-email', FOUNDER_EMAIL_SYSTEM)
-  const system = template.replaceAll('${readerName}', readerName)
+  // The reader's saved prompt if any, else the code default — plus standing
+  // notes distilled from his commentary on past proofs (continual learning).
+  const [template, proofLessons] = await Promise.all([
+    getSkillPrompt('founder-email', FOUNDER_EMAIL_SYSTEM),
+    import('../store').then((m) => m.listProofLessons(8)).catch(() => [] as string[]),
+  ])
+  const system =
+    template.replaceAll('${readerName}', readerName) +
+    (proofLessons.length
+      ? `\n\nStanding notes from the reader's reviews of past drafts — honor every one:\n${proofLessons.map((l) => `- ${l}`).join('\n')}`
+      : '')
   const modeLine =
     input.mode === 'cold'
       ? 'This is a COLD OUTBOUND email — the first contact with this founder.'
