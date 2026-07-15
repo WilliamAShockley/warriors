@@ -153,7 +153,7 @@ export const APOLLO_TOOL_DEFS = [
   {
     name: 'stage_proof',
     description:
-      'Stage drafted work in The Proofs — the reader’s review tray — where it awaits his signature, one proof at a time. Use this for anything drafted on his behalf: an email (kind "email", requires to; approval actually sends it), a blog post ("post"), or an analysis ("analysis", pass sourceUrl if the working file lives elsewhere). When the draft serves an item on the Docket, ALWAYS pass its todoId (from read_docket) — the proof is headed by its to-do, and signing it clears that to-do. Body is plain text with \\n\\n between paragraphs. Prefer staging over sending.',
+      'Stage drafted work in The Proofs — the reader’s review tray — where it awaits his signature, one proof at a time. Use this for anything drafted on his behalf: an email (kind "email", requires to; approval actually sends it), a blog post ("post"), or an analysis ("analysis", pass sourceUrl if the working file lives elsewhere). When the body came from a drafting skill (draft_founder_email), pass its subject and body through UNTOUCHED — no polishing, no grammar fixes; the quirks are the voice. When the draft serves an item on the Docket, ALWAYS pass its todoId (from read_docket) — the proof is headed by its to-do, and signing it clears that to-do. Body is plain text with \\n\\n between paragraphs. Prefer staging over sending.',
     input_schema: {
       type: 'object' as const,
       properties: {
