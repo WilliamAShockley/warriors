@@ -165,6 +165,11 @@ export const APOLLO_TOOL_DEFS = [
         to: { type: 'string', description: 'email kind only — the recipient' },
         subject: { type: 'string', description: 'email kind only — defaults to title' },
         threadId: { type: 'string', description: 'email kind only — reply within a thread' },
+        linkedinUrl: {
+          type: 'string',
+          description:
+            'email kind — the recipient\u2019s LinkedIn profile URL. ALWAYS pass it when research surfaced one; when NO plausible email address exists, stage with linkedinUrl and omit "to" — the reader sends it over LinkedIn himself.',
+        },
         sourceUrl: { type: 'string' },
         grounding: {
           type: 'string',
@@ -405,17 +410,17 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
         if (!title || !body) {
           return { output: 'stage_proof needs a title and a body.', step: { kind: 'note', name: 'Proof not staged', detail: 'missing fields' }, isError: true }
         }
-        if (kind === 'email' && !String(input?.to ?? '').trim()) {
-          return { output: 'An email proof needs a recipient (to).', step: { kind: 'note', name: 'Proof not staged', detail: 'no recipient' }, isError: true }
+        if (kind === 'email' && !String(input?.to ?? '').trim() && !String(input?.linkedinUrl ?? '').trim()) {
+          return { output: 'An email proof needs a recipient (to) or a linkedinUrl.', step: { kind: 'note', name: 'Proof not staged', detail: 'no recipient' }, isError: true }
         }
         const proof = await createProof({
           kind,
           title: title.slice(0, 160),
           summary: input?.summary ? String(input.summary).slice(0, 240) : undefined,
           body,
-          actionType: kind === 'email' ? 'send_email' : 'none',
+          actionType: kind === 'email' && String(input?.to ?? '').trim() ? 'send_email' : 'none',
           actionJson:
-            kind === 'email'
+            kind === 'email' && String(input?.to ?? '').trim()
               ? JSON.stringify({
                   to: String(input.to).trim(),
                   subject: String(input?.subject ?? title).slice(0, 200),
@@ -423,6 +428,7 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
                 })
               : undefined,
           sourceUrl: input?.sourceUrl ? String(input.sourceUrl) : undefined,
+          linkedinUrl: input?.linkedinUrl ? String(input.linkedinUrl).slice(0, 300) : undefined,
           todoId: input?.todoId ? String(input.todoId) : undefined,
           grounding: input?.grounding ? String(input.grounding).slice(0, 20_000) : undefined,
           audience: ['founder', 'investor', 'other'].includes(input?.audience) ? input.audience : undefined,

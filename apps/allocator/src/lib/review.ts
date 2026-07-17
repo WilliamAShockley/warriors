@@ -13,6 +13,7 @@ export type ProofRecord = {
   actionType: string | null
   action: { to?: string; subject?: string; threadId?: string } | null
   sourceUrl: string | null
+  linkedinUrl: string | null
   filedOn: string
   // The Docket item this proof serves — the tie between the tray and the to-dos.
   todo: { id: string; text: string } | null
@@ -47,6 +48,7 @@ const toRecord = (r: any, todo: { id: string; text: string } | null = null): Pro
   actionType: r.actionType,
   action: r.actionJson ? JSON.parse(r.actionJson) : null,
   sourceUrl: r.sourceUrl,
+  linkedinUrl: r.linkedinUrl ?? null,
   filedOn: dateLabel(r.createdAt),
   todo,
   grounding: r.grounding ?? null,
@@ -98,6 +100,7 @@ export async function createProof(input: {
   actionType?: string
   actionJson?: string
   sourceUrl?: string
+  linkedinUrl?: string
   todoId?: string
   grounding?: string
   audience?: string
@@ -115,6 +118,7 @@ export async function createProof(input: {
         actionType: input.actionType ?? 'none',
         actionJson: input.actionJson ?? null,
         sourceUrl: input.sourceUrl ?? null,
+        linkedinUrl: input.linkedinUrl ?? null,
         todoId: input.todoId ?? null,
         grounding: input.grounding ?? null,
         audience: input.audience ?? null,
@@ -504,5 +508,37 @@ export async function redoProof(
     }
   } catch {
     return null
+  }
+}
+
+
+// The LinkedIn handoff: the reader sent the draft himself over LinkedIn
+// (no email existed). Files the proof as approved — same ledger, same
+// to-do clearing — with the channel on record. No thread to watch.
+export async function approveViaLinkedIn(id: string): Promise<{ ok: boolean; error?: string }> {
+  if (!hasDb()) return { ok: false, error: 'no database' }
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row || row.status !== 'pending') return { ok: false, error: 'not on review' }
+
+    await db.reviewItem.update({
+      where: { id },
+      data: {
+        status: 'approved',
+        reviewedAt: new Date(),
+        executionResult: 'sent via LinkedIn — manual handoff',
+        straightThrough: !row.amended,
+      },
+    })
+    if (row.todoId) {
+      await db.todo.updateMany({
+        where: { id: row.todoId, status: 'open' },
+        data: { status: 'cleared', clearedAt: new Date() },
+      })
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'approval failed' }
   }
 }
