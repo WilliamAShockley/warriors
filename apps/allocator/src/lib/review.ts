@@ -16,10 +16,12 @@ export type ProofRecord = {
   filedOn: string
   // The Docket item this proof serves — the tie between the tray and the to-dos.
   todo: { id: string; text: string } | null
-  // Continual learning: the research context behind the draft, and the
-  // reader's commentary on the output.
+  // Continual learning: the research context behind the draft, the
+  // reader's commentary on the output, and — once amended — the draft as
+  // originally staged, so the redline can be drawn against it.
   grounding: string | null
   commentary: string | null
+  originalBody: string | null
 }
 
 export type ProofQueue = { live: boolean; total: number; proof: ProofRecord | null }
@@ -49,6 +51,7 @@ const toRecord = (r: any, todo: { id: string; text: string } | null = null): Pro
   todo,
   grounding: r.grounding ?? null,
   commentary: r.commentary ?? null,
+  originalBody: r.originalBody ?? null,
 })
 
 const seedQueue = (): ProofQueue => ({
