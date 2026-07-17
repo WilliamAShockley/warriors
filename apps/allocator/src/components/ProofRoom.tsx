@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { ProofRecord } from '@/lib/review'
+import type { Ledger, ProofRecord } from '@/lib/review'
 
 // The Proofs: one page on the desk at a time. The arrow signs it — approval
 // executes the attached action (an email actually sends) and the next proof
@@ -42,6 +42,7 @@ function Para({ text, highlight }: { text: string; highlight: string | null }) {
 
 export default function ProofRoom() {
   const [proof, setProof] = useState<ProofRecord | null>(null)
+  const [theLedger, setTheLedger] = useState<Ledger | null>(null)
   const [total, setTotal] = useState(0)
   const [live, setLive] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -85,6 +86,7 @@ export default function ProofRoom() {
       setProof(p)
       setTotal(data?.total ?? 0)
       setLive(Boolean(data?.live))
+      setTheLedger(data?.ledger ?? null)
       resetLearningState(p)
     } catch {
       setProof(null)
@@ -241,6 +243,14 @@ export default function ProofRoom() {
 
   if (!loaded) return null
 
+  const ledgerLine =
+    theLedger && theLedger.signed > 0 ? (
+      <p className="eyebrow mt-4 text-faint">
+        Straight through · {theLedger.straight} of 100 · streak {theLedger.streak}
+        {theLedger.trailing30 !== null ? ` · last 30: ${theLedger.trailing30}%` : ''}
+      </p>
+    ) : null
+
   if (!proof) {
     return (
       <div className="pt-20 text-center">
@@ -250,6 +260,7 @@ export default function ProofRoom() {
         <p className="dek mt-3">
           Nothing awaits your signature. Drafted work files here as the desk produces it.
         </p>
+        <div className="flex justify-center">{ledgerLine}</div>
       </div>
     )
   }
@@ -272,6 +283,7 @@ export default function ProofRoom() {
             {total} in the tray · filed {proof.filedOn}
           </p>
         </div>
+        {ledgerLine}
         {proof.todo && (
           <Link href="/todos" className="mt-3.5 block border-l border-oxblood pl-4">
             <p className="eyebrow">From the Docket</p>

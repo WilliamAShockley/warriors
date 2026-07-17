@@ -61,13 +61,27 @@ export async function draftFounderEmail(
   readerName: string
 ): Promise<FounderEmailDraft> {
   // The reader's saved prompt if any, else the code default — plus standing
-  // notes distilled from his commentary on past proofs (continual learning).
-  const [template, proofLessons] = await Promise.all([
+  // notes distilled from his reviews, plus live exemplars: his most recent
+  // successful sent emails in this exact situation (replied first, then
+  // straight-through). The profile's negative constraints still bind; the
+  // exemplars let the voice drift with wherever his mail is actually going.
+  const [template, proofLessons, exemplars] = await Promise.all([
     getSkillPrompt('founder-email', FOUNDER_EMAIL_SYSTEM),
     import('../store').then((m) => m.listProofLessons(8)).catch(() => [] as string[]),
+    import('../../review')
+      .then((m) => m.listExemplars('founder', input.mode, 3))
+      .catch(() => []),
   ])
   const system =
     template.replaceAll('${readerName}', readerName) +
+    (exemplars.length
+      ? `\n\nLIVE EXEMPLARS — the reader's most recent successful sent emails of this exact type (${input.mode}). These are more current than the profile's anchors; where their style has drifted from the profile, follow the exemplars — but the profile's NEGATIVE CONSTRAINTS still bind absolutely:\n${exemplars
+          .map(
+            (e, i) =>
+              `--- Exemplar ${i + 1}${e.replied ? ' (got a reply)' : e.straightThrough ? ' (sent untouched)' : ''} ---\nSubject: ${e.subject ?? '(none)'}\n${e.body}`
+          )
+          .join('\n\n')}`
+      : '') +
     (proofLessons.length
       ? `\n\nStanding notes from the reader's reviews of past drafts — honor every one:\n${proofLessons.map((l) => `- ${l}`).join('\n')}`
       : '')

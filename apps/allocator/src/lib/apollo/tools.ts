@@ -171,6 +171,13 @@ export const APOLLO_TOOL_DEFS = [
           description:
             'The research/thread context the draft was based on — the same context handed to the drafting skill. ALWAYS pass it: the reader highlights lines in the proof and asks where they came from, and this is what answers him.',
         },
+        audience: {
+          type: 'string',
+          enum: ['founder', 'investor', 'other'],
+          description:
+            'Who the email addresses, from the Book segment or your research: founder (founders/companies), investor (LPs), other. ALWAYS pass it for emails — the ledger and exemplar retrieval segment on it.',
+        },
+        mode: { type: 'string', enum: ['cold', 'follow_up'], description: 'email kind only' },
       },
       required: ['kind', 'title', 'body'],
     },
@@ -404,6 +411,8 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
           sourceUrl: input?.sourceUrl ? String(input.sourceUrl) : undefined,
           todoId: input?.todoId ? String(input.todoId) : undefined,
           grounding: input?.grounding ? String(input.grounding).slice(0, 20_000) : undefined,
+          audience: ['founder', 'investor', 'other'].includes(input?.audience) ? input.audience : undefined,
+          mode: ['cold', 'follow_up'].includes(input?.mode) ? input.mode : undefined,
         })
         return proof
           ? { output: `Staged for review: ${proof.title} (${kind}). It awaits the reader's signature in The Proofs.`, step: { kind: 'write', name: 'Staged a proof', detail: `${kind} · ${clip(title, 50)}` } }

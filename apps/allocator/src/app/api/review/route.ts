@@ -5,15 +5,18 @@ import {
   createProof,
   distillProofLesson,
   holdProof,
+  ledger,
   nextProof,
   spikeProof,
 } from '@/lib/review'
 
 const PROOF_KINDS = ['email', 'post', 'analysis'] as const
 
-// The head of the queue — one proof at a time, never a list.
+// The head of the queue — one proof at a time, never a list — plus the
+// straight-through ledger.
 export async function GET() {
-  return NextResponse.json(await nextProof())
+  const [queue, theLedger] = await Promise.all([nextProof(), ledger()])
+  return NextResponse.json({ ...queue, ledger: theLedger })
 }
 
 // { action: 'approve' | 'hold' | 'spike', id } reviews the proof on deck;
@@ -68,6 +71,8 @@ export async function POST(req: Request) {
     sourceUrl: String(body?.sourceUrl ?? '').trim() || undefined,
     todoId: String(body?.todoId ?? '').trim() || undefined,
     grounding: String(body?.grounding ?? '').trim().slice(0, 20_000) || undefined,
+    audience: ['founder', 'investor', 'other'].includes(body?.audience) ? body.audience : undefined,
+    mode: ['cold', 'follow_up'].includes(body?.mode) ? body.mode : undefined,
   })
   return NextResponse.json({ ok: Boolean(proof), proof })
 }
