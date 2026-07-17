@@ -7,8 +7,13 @@ import {
   holdProof,
   ledger,
   nextProof,
+  redoProof,
   spikeProof,
 } from '@/lib/review'
+import { workDocketItem } from '@/lib/apollo/worker'
+
+// A redirect re-runs the full drafting pass after the response.
+export const maxDuration = 300
 
 const PROOF_KINDS = ['email', 'post', 'analysis'] as const
 
@@ -31,6 +36,20 @@ export async function POST(req: Request) {
       // A verdict with commentary becomes a standing lesson for future drafts.
       if (result.ok) after(() => distillProofLesson(id))
       return NextResponse.json(result, { status: result.ok ? 200 : 502 })
+    }
+    if (body.action === 'redo') {
+      const correction = String(body?.correction ?? '').trim().slice(0, 1000)
+      if (!correction) return NextResponse.json({ error: 'a correction is required' }, { status: 400 })
+      const redo = await redoProof(id, correction)
+      if (!redo) return NextResponse.json({ error: 'could not redirect' }, { status: 500 })
+      after(() =>
+        workDocketItem(redo.todoId, redo.taskText, {
+          correction,
+          previousTo: redo.previousTo,
+          previousTitle: redo.previousTitle,
+        })
+      )
+      return NextResponse.json({ ok: true })
     }
     if (body.action === 'hold') return NextResponse.json({ ok: await holdProof(id) })
     if (body.action === 'spike') {

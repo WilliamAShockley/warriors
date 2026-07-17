@@ -466,3 +466,43 @@ export async function listExemplars(audience: string, mode: string, n = 3): Prom
     return []
   }
 }
+
+// Redirect: the reader says the targeting was wrong. The proof on deck is
+// spiked as superseded, and the caller re-runs the worker with the
+// correction as binding instruction.
+export async function redoProof(
+  id: string,
+  correction: string
+): Promise<{ todoId: string; taskText: string; previousTo?: string; previousTitle?: string } | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row || row.status !== 'pending') return null
+
+    let taskText = row.title
+    if (row.todoId) {
+      const t = await db.todo.findUnique({ where: { id: row.todoId } })
+      if (t) taskText = t.text
+    }
+
+    await db.reviewItem.update({
+      where: { id },
+      data: {
+        status: 'spiked',
+        reviewedAt: new Date(),
+        executionResult: `superseded — redirected by the reader: ${correction.slice(0, 300)}`,
+      },
+    })
+
+    const action = row.actionJson ? JSON.parse(row.actionJson) : {}
+    return {
+      todoId: row.todoId ?? '',
+      taskText,
+      previousTo: action.to ? String(action.to) : undefined,
+      previousTitle: row.title,
+    }
+  } catch {
+    return null
+  }
+}
