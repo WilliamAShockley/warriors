@@ -3,9 +3,10 @@
 // a focused sub-call. Register new skills here; run.ts surfaces them to Apollo,
 // and the Colophon (settings) reads/writes their prompts.
 import { founderEmailSkill } from './founder-email'
+import { schedulerSkill } from './scheduler'
 import { getSkillPrompt, isSkillCustom } from './store'
 
-export const APOLLO_SKILLS = [founderEmailSkill] as const
+export const APOLLO_SKILLS = [founderEmailSkill, schedulerSkill] as const
 
 export type SkillMeta = (typeof APOLLO_SKILLS)[number]
 
@@ -44,5 +45,6 @@ export function getSkillMeta(id: string): SkillMeta | undefined {
 }
 
 export { draftFounderEmail, founderEmailSkill } from './founder-email'
+export { proposeTimes, schedulerSkill } from './scheduler'
 export { getSkillPrompt, setSkillPrompt, resetSkillPrompt, isSkillCustom } from './store'
 export type { FounderEmailInput, FounderEmailMode, FounderEmailDraft } from './founder-email'
