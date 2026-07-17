@@ -4,7 +4,7 @@ import { listDbContacts, createContact } from '../book'
 import { listDbTheses, getDbThesis } from '../theses'
 import { listMargin, createMargin } from '../margin'
 import { getReaderName } from '../settings'
-import { draftFounderEmail } from './skills'
+import { draftFounderEmail, proposeTimes } from './skills'
 import type { ApolloStep } from './store'
 
 const hasDb = () => Boolean(process.env.DATABASE_URL)
@@ -200,6 +200,20 @@ export const APOLLO_TOOL_DEFS = [
         },
       },
       required: ['mode', 'founder', 'context'],
+    },
+  },
+  {
+    name: 'propose_times',
+    description:
+      'Propose meeting times from the reader’s REAL calendar, using his scheduling skill (working hours, buffers, exact output format). Call this whenever a task or an email thread calls for offering availability — e.g. a follow-up where the other party agreed to meet or asked for times. Reproduce the returned windows VERBATIM. Never compose availability yourself; if this tool fails, say availability could not be checked rather than inventing times.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        meetingLength: { type: 'string', description: 'e.g. "30 minutes", "1 hour" — if known' },
+        otherPartyTimezone: { type: 'string', description: 'e.g. "Pacific" — if known from the thread' },
+        startDate: { type: 'string', description: 'Look from this date instead of tomorrow, if the task says so' },
+        notes: { type: 'string', description: 'Anything else that bears on scheduling' },
+      },
     },
   },
 ]
@@ -447,6 +461,25 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
             detail: `${founder}${input?.firm ? ` · ${clip(String(input.firm), 30)}` : ''}`,
           },
         }
+      }
+
+      case 'propose_times': {
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { output: 'Cannot propose times: no ANTHROPIC_API_KEY configured.', step: { kind: 'note', name: 'Times not proposed', detail: 'no API key' }, isError: true }
+        }
+        const readerName = await getReaderName()
+        const result = await proposeTimes(
+          {
+            meetingLength: input?.meetingLength ? String(input.meetingLength) : undefined,
+            otherPartyTimezone: input?.otherPartyTimezone ? String(input.otherPartyTimezone) : undefined,
+            startDate: input?.startDate ? String(input.startDate) : undefined,
+            notes: input?.notes ? String(input.notes) : undefined,
+          },
+          readerName
+        )
+        return result.ok
+          ? { output: result.text, step: { kind: 'tool', name: 'Proposed times', detail: 'from the live calendar' } }
+          : { output: result.text, step: { kind: 'note', name: 'Times not proposed', detail: 'calendar unavailable' }, isError: true }
       }
 
       default:

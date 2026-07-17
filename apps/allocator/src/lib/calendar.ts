@@ -88,3 +88,72 @@ export async function syncCalendar(targetDay?: string): Promise<CalendarSyncResu
 
   return { day, synced, skipped: false }
 }
+
+// ————————————————————————————————— The scheduling window
+
+// A LIVE read of the next N days, straight from Google — the synced table
+// only ever holds the Brief's single day, which must never be mistaken
+// for an open week. Returns null when the calendar is unreachable, which
+// callers must treat as "cannot know", never as "free".
+export type WindowDay = { label: string; events: { time: string; title: string; free: boolean }[] }
+
+const dayFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: TZ,
+  weekday: 'long',
+  month: 'numeric',
+  day: 'numeric',
+})
+const timeFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: TZ,
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+  timeZoneName: 'short',
+})
+
+export async function getCalendarWindow(days = 10): Promise<WindowDay[] | null> {
+  try {
+    const client = await getAuthedClient()
+    if (!client) return null
+
+    const start = addDays(localDateString(), 1)
+    const timeMin = zonedMidnight(start)
+    const timeMax = zonedMidnight(addDays(start, days))
+
+    const calendar = google.calendar({ version: 'v3', auth: client })
+    const res = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: timeMin.toISOString(),
+      timeMax: timeMax.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 250,
+    })
+
+    // Every day appears, busy or empty — an absent day is not an open day.
+    const byLabel = new Map<string, WindowDay>()
+    for (let i = 0; i < days; i++) {
+      const d = zonedMidnight(addDays(start, i))
+      byLabel.set(dayFmt.format(d), { label: dayFmt.format(d), events: [] })
+    }
+
+    for (const ev of res.data.items ?? []) {
+      if (ev.status === 'cancelled' || !ev.start) continue
+      const isAllDay = Boolean(ev.start.date && !ev.start.dateTime)
+      const startAt = new Date(ev.start.dateTime ?? `${ev.start.date}T12:00:00Z`)
+      const day = byLabel.get(dayFmt.format(startAt))
+      if (!day) continue
+      const time = isAllDay
+        ? 'All day'
+        : `${timeFmt.format(startAt)} – ${ev.end?.dateTime ? timeFmt.format(new Date(ev.end.dateTime)) : '?'}`
+      day.events.push({
+        time,
+        title: ev.summary ?? '(untitled)',
+        free: ev.transparency === 'transparent',
+      })
+    }
+    return [...byLabel.values()]
+  } catch {
+    return null
+  }
+}
