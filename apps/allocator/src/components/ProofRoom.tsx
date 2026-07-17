@@ -157,8 +157,17 @@ export default function ProofRoom() {
   const [redline, setRedline] = useState<Change[]>([])
   const baselineAction = useRef<{ to?: string; subject?: string } | null>(null)
 
+  // Redirect: the targeting was wrong — spike this draft and re-run the
+  // search with the reader's correction as binding instruction.
+  const [redirecting, setRedirecting] = useState(false)
+  const [correction, setCorrection] = useState('')
+  const [redoNote, setRedoNote] = useState('')
+  const redoPolls = useRef(0)
+
   const resetLearningState = (p: ProofRecord | null) => {
     setEditing(false)
+    setRedirecting(false)
+    setCorrection('')
     setHighlight(null)
     setProvenance(null)
     setTracing(false)
@@ -310,6 +319,50 @@ export default function ProofRoom() {
       .finally(() => setTracing(false))
   }, [editing, proof, live])
 
+  const submitRedirect = async () => {
+    if (!proof || !correction.trim() || working) return
+    setWorking(true)
+    setNote('')
+    try {
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'redo', id: proof.id, correction: correction.trim() }),
+      })
+      const data = await res.json()
+      if (data?.ok) {
+        setRedoNote('Redirected. The desk is re-running the search — the corrected proof files here in a minute or two.')
+        redoPolls.current = 0
+        await fetchNext()
+      } else {
+        setNote(data?.error ?? 'The redirect did not take. Try again.')
+      }
+    } catch {
+      setNote('Could not reach the desk. Try again.')
+    }
+    setWorking(false)
+  }
+
+  // While a redirect is in flight, watch the tray for the corrected proof.
+  useEffect(() => {
+    if (!redoNote) return
+    const t = setInterval(async () => {
+      redoPolls.current += 1
+      if (redoPolls.current > 20) {
+        setRedoNote('')
+        clearInterval(t)
+        return
+      }
+      await fetchNext()
+    }, 12_000)
+    return () => clearInterval(t)
+  }, [redoNote, fetchNext])
+
+  useEffect(() => {
+    if (proof && redoNote) setRedoNote('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proof?.id])
+
   const beginEdit = () => {
     if (!proof) return
     setDraftBody(proof.body)
@@ -366,10 +419,10 @@ export default function ProofRoom() {
     return (
       <div className="pt-20 text-center">
         <p className="font-serif text-[19px] font-medium leading-snug tracking-tight">
-          The tray is clear.
+          {redoNote ? 'Redirected.' : 'The tray is clear.'}
         </p>
-        <p className="dek mt-3">
-          Nothing awaits your signature. Drafted work files here as the desk produces it.
+        <p className={clsx('dek mt-3', redoNote && 'animate-pulse')}>
+          {redoNote || 'Nothing awaits your signature. Drafted work files here as the desk produces it.'}
         </p>
         <div className="flex justify-center">{ledgerLine}</div>
       </div>
@@ -598,6 +651,47 @@ export default function ProofRoom() {
 
       {note && <p className="dek mt-5 text-oxblood">{note}</p>}
 
+      {/* Redirect the desk — the targeting was wrong; correct it and re-run */}
+      {redirecting && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            submitRedirect()
+          }}
+          className="mt-6 border border-oxblood/60 p-5"
+        >
+          <p className="eyebrow text-oxblood">Redirect the Desk</p>
+          <p className="dek mt-1.5 text-[13px]">
+            Wrong company or wrong person? Say what the search got wrong — this draft is spiked
+            and the desk re-runs from your correction.
+          </p>
+          <textarea
+            value={correction}
+            onChange={(e) => setCorrection(e.target.value)}
+            rows={3}
+            autoFocus
+            placeholder={'e.g. Not Nebra Labs — I meant Nebex, the company behind the product NEBRA EXCHANGE.'}
+            className="mt-3 w-full resize-none border-b border-hairline bg-transparent pb-2 font-serif text-[15px] leading-relaxed text-ink placeholder:italic placeholder:text-faint focus:border-ink focus:outline-none"
+          />
+          <div className="mt-4 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setRedirecting(false)}
+              className="eyebrow text-faint underline decoration-hairline underline-offset-4"
+            >
+              Never Mind
+            </button>
+            <button
+              type="submit"
+              disabled={working || !correction.trim()}
+              className="eyebrow-ink underline decoration-hairline underline-offset-4 disabled:opacity-40"
+            >
+              {working ? 'Redirecting' : 'Spike & Re-run'}
+            </button>
+          </div>
+        </form>
+      )}
+
       {/* The verdict line: quiet outs on the left, the signature on the right */}
       <div className="flex items-center justify-between pb-6 pt-8">
         <div className="flex gap-5">
@@ -615,6 +709,15 @@ export default function ProofRoom() {
           >
             Spike
           </button>
+          {live && !redirecting && (
+            <button
+              onClick={() => setRedirecting(true)}
+              className="eyebrow text-faint underline decoration-hairline underline-offset-4"
+              title="Wrong target — correct the search and re-run"
+            >
+              Redirect
+            </button>
+          )}
         </div>
         <button
           onClick={() => act('approve')}
