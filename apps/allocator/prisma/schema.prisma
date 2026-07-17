@@ -97,6 +97,22 @@ model ReviewItem {
   // output (distilled into standing lessons for future drafts).
   grounding       String?
   commentary      String?
+  // Straight-through processing: the draft as originally staged (snapshotted
+  // on first amendment; null means never edited), whether it was amended,
+  // and — set at signing — whether it went through untouched.
+  originalBody    String?
+  amended         Boolean   @default(false)
+  straightThrough Boolean?
+  // Audience routing and drafting mode, set at staging: exemplar retrieval
+  // and the ledger segment on these so playbooks never cross-contaminate.
+  audience        String? // founder | investor | other
+  mode            String? // cold | follow_up
+  // The sent artifact, for reply tracking — only these exact threads are
+  // ever checked, never the mailbox at large.
+  sentMessageId   String?
+  sentThreadId    String?
+  replyStatus     String? // awaiting | replied
+  replyCheckedAt  DateTime?
   status          String    @default("pending") // pending | approved | spiked
   queuedAt        DateTime  @default(now()) // queue order; Hold moves it to the back
   reviewedAt      DateTime?

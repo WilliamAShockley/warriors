@@ -148,3 +148,34 @@ export async function sendEmail(args: {
     return null
   }
 }
+
+// Did this specific thread — one the app itself sent into — receive a
+// message from someone other than the connected account? Never scans the
+// mailbox; only ever asks about the named thread.
+export async function threadHasReply(threadId: string, afterMessageId?: string | null): Promise<boolean> {
+  const gmail = await getGmail()
+  if (!gmail) return false
+  try {
+    const { db } = await import('./db')
+    const token = await db.googleToken.findUnique({ where: { id: 'singleton' } })
+    const ownEmail = (token?.email ?? '').toLowerCase()
+
+    const thread = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'metadata',
+      metadataHeaders: ['From'],
+    })
+    const messages = thread.data.messages ?? []
+    const ourIndex = afterMessageId ? messages.findIndex((m) => m.id === afterMessageId) : -1
+    const candidates = ourIndex >= 0 ? messages.slice(ourIndex + 1) : messages
+
+    return candidates.some((m) => {
+      const from =
+        m.payload?.headers?.find((h) => h.name?.toLowerCase() === 'from')?.value?.toLowerCase() ?? ''
+      return ownEmail ? !from.includes(ownEmail) : false
+    })
+  } catch {
+    return false
+  }
+}
