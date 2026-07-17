@@ -791,6 +791,7 @@ export const proofs = [
     grounding:
       'From filed notes (30 June): \u201cDraft summary for Halloran: 2/20 with fees offset against Fund I commitment, $1.5m soft-circled, quarterly operational letter (she asked twice \u2014 she reads them). Gene returns formation docs Wednesday; send the summary same day.\u201d',
     commentary: null,
+    originalBody: null,
   },
   {
     id: 'p2',
@@ -805,6 +806,7 @@ export const proofs = [
     todo: { id: 't-demo-2', text: 'Write the stablecoin post for the site' },
     grounding: null,
     commentary: null,
+    originalBody: null,
   },
   {
     id: 'p3',
@@ -819,6 +821,7 @@ export const proofs = [
     todo: { id: 't-demo-3', text: 'Review Keyring fraud-loss cohorts before the pricing call' },
     grounding: null,
     commentary: null,
+    originalBody: null,
   },
 ] as const
 
