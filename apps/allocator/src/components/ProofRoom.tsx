@@ -157,6 +157,9 @@ export default function ProofRoom() {
   const [redline, setRedline] = useState<Change[]>([])
   const baselineAction = useRef<{ to?: string; subject?: string } | null>(null)
 
+  // LinkedIn handoff: copy the draft, open their profile, confirm sent.
+  const [linkedinFlow, setLinkedinFlow] = useState<'idle' | 'opened'>('idle')
+
   // Redirect: the targeting was wrong — spike this draft and re-run the
   // search with the reader's correction as binding instruction.
   const [redirecting, setRedirecting] = useState(false)
@@ -166,6 +169,7 @@ export default function ProofRoom() {
 
   const resetLearningState = (p: ProofRecord | null) => {
     setEditing(false)
+    setLinkedinFlow('idle')
     setRedirecting(false)
     setCorrection('')
     setHighlight(null)
@@ -318,6 +322,46 @@ export default function ProofRoom() {
       .catch(() => setProvenance({ source: 'unsupported', explanation: 'The desk could not trace it. Try again.' }))
       .finally(() => setTracing(false))
   }, [editing, proof, live])
+
+  // The LinkedIn handoff: the draft goes to the clipboard, their profile
+  // opens, and the reader sends it himself — then files it as sent here.
+  const openLinkedIn = async () => {
+    if (!proof) return
+    try {
+      await navigator.clipboard.writeText(proof.body)
+    } catch {}
+    const name = proof.title.replace(/reaching out/i, '').replace(/<>.*$/, '').replace(/[-·]/g, ' ').trim()
+    const url =
+      proof.linkedinUrl ||
+      `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(name || proof.title)}`
+    window.open(url, '_blank', 'noopener')
+    setLinkedinFlow('opened')
+  }
+
+  const confirmLinkedIn = async () => {
+    if (!proof || working) return
+    if (!live) {
+      setProof(null)
+      setTotal((t) => Math.max(0, t - 1))
+      return
+    }
+    setWorking(true)
+    setNote('')
+    try {
+      await saveCommentary()
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve_linkedin', id: proof.id }),
+      })
+      const data = await res.json()
+      if (data?.ok) await fetchNext()
+      else setNote(data?.error ?? 'That did not take. Try again.')
+    } catch {
+      setNote('Could not reach the desk. Try again.')
+    }
+    setWorking(false)
+  }
 
   const submitRedirect = async () => {
     if (!proof || !correction.trim() || working) return
@@ -719,22 +763,64 @@ export default function ProofRoom() {
             </button>
           )}
         </div>
-        <button
-          onClick={() => act('approve')}
-          disabled={working || editing}
-          aria-label={
-            proof.actionType === 'send_email' ? 'Approve — sends the email — and next' : 'Approve and next'
-          }
-          className="flex h-14 w-14 items-center justify-center rounded-full border border-ink font-serif text-[22px] leading-none text-ink transition-colors duration-300 ease-editorial hover:bg-ink hover:text-paper disabled:opacity-40"
-        >
-          {working ? '·' : '→'}
-        </button>
+        <div className="flex flex-col items-center gap-2.5">
+          <button
+            onClick={() => act('approve')}
+            disabled={working || editing || (proof.kind === 'email' && !proof.action?.to)}
+            aria-label={
+              proof.actionType === 'send_email' ? 'Approve — sends the email — and next' : 'Approve and next'
+            }
+            title={
+              proof.kind === 'email' && !proof.action?.to
+                ? 'No email address — this one goes out over LinkedIn'
+                : undefined
+            }
+            className="flex h-14 w-14 items-center justify-center rounded-full border border-ink font-serif text-[22px] leading-none text-ink transition-colors duration-300 ease-editorial hover:bg-ink hover:text-paper disabled:opacity-40"
+          >
+            {working ? '·' : '→'}
+          </button>
+          {proof.kind === 'email' && (
+            <button
+              onClick={openLinkedIn}
+              disabled={working || editing}
+              aria-label="Send over LinkedIn instead — copies the draft and opens their profile"
+              title="Send over LinkedIn — copies the draft and opens their profile"
+              className={clsx(
+                'flex h-10 w-10 items-center justify-center rounded-full border font-serif text-[14px] italic leading-none transition-colors duration-300 ease-editorial disabled:opacity-40',
+                !proof.action?.to
+                  ? 'border-ink text-ink hover:bg-ink hover:text-paper'
+                  : 'border-stone/60 text-stone hover:border-ink hover:text-ink'
+              )}
+            >
+              in
+            </button>
+          )}
+        </div>
       </div>
 
+      {linkedinFlow === 'opened' && proof.kind === 'email' && (
+        <div className="mb-2 border-l border-oxblood pl-4 pb-2">
+          <p className="eyebrow-ink">Over LinkedIn</p>
+          <p className="dek mt-1 text-[13px]">
+            The draft is on your clipboard and their {proof.linkedinUrl ? 'profile' : 'search'} is open —
+            paste it into a message there. Sent it?
+          </p>
+          <button
+            onClick={confirmLinkedIn}
+            disabled={working}
+            className="eyebrow-ink mt-2 underline decoration-hairline underline-offset-4 disabled:opacity-40"
+          >
+            {working ? 'Filing' : 'File it as sent'}
+          </button>
+        </div>
+      )}
+
       <p className="eyebrow pb-10 text-center text-faint">
-        {proof.actionType === 'send_email'
-          ? `The arrow signs it — the email sends${proof.todo ? ', its to-do clears' : ''}, the next proof follows`
-          : `The arrow signs it — approved to the record${proof.todo ? ', its to-do clears' : ''}, the next proof follows`}
+        {proof.kind === 'email' && !proof.action?.to
+          ? 'No email address was found — the in badge sends it over LinkedIn'
+          : proof.actionType === 'send_email'
+            ? `The arrow signs it — the email sends${proof.todo ? ', its to-do clears' : ''}, the next proof follows`
+            : `The arrow signs it — approved to the record${proof.todo ? ', its to-do clears' : ''}, the next proof follows`}
       </p>
     </div>
   )

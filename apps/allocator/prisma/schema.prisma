@@ -91,6 +91,7 @@ model ReviewItem {
   actionType      String? // send_email | none — what approval executes
   actionJson      String? // e.g. {"to","subject","threadId"} for send_email
   sourceUrl       String? // link out when the working file lives elsewhere
+  linkedinUrl     String? // the recipient's LinkedIn — the channel when no email exists
   todoId          String? // the Docket item that spawned it, if any
   // Continual learning: the research context the draft was grounded in
   // (for highlight-to-provenance), and the reader's commentary on the

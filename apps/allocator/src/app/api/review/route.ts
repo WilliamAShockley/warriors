@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import {
   amendProof,
   approveProof,
+  approveViaLinkedIn,
   createProof,
   distillProofLesson,
   holdProof,
@@ -51,6 +52,11 @@ export async function POST(req: Request) {
       )
       return NextResponse.json({ ok: true })
     }
+    if (body.action === 'approve_linkedin') {
+      const result = await approveViaLinkedIn(id)
+      if (result.ok) after(() => distillProofLesson(id))
+      return NextResponse.json(result, { status: result.ok ? 200 : 502 })
+    }
     if (body.action === 'hold') return NextResponse.json({ ok: await holdProof(id) })
     if (body.action === 'spike') {
       const ok = await spikeProof(id)
@@ -69,15 +75,23 @@ export async function POST(req: Request) {
 
   let actionType = 'none'
   let actionJson: string | undefined
+  const linkedinUrl = String(body?.linkedinUrl ?? '').trim()
   if (kind === 'email') {
     const to = String(body?.to ?? '').trim()
-    if (!to) return NextResponse.json({ error: 'an email proof needs a recipient' }, { status: 400 })
-    actionType = 'send_email'
-    actionJson = JSON.stringify({
-      to,
-      subject: String(body?.subject ?? title).slice(0, 200),
-      ...(body?.threadId ? { threadId: String(body.threadId) } : {}),
-    })
+    if (!to && !linkedinUrl) {
+      return NextResponse.json(
+        { error: 'an email proof needs a recipient address or a LinkedIn URL' },
+        { status: 400 }
+      )
+    }
+    if (to) {
+      actionType = 'send_email'
+      actionJson = JSON.stringify({
+        to,
+        subject: String(body?.subject ?? title).slice(0, 200),
+        ...(body?.threadId ? { threadId: String(body.threadId) } : {}),
+      })
+    }
   }
 
   const proof = await createProof({
@@ -88,6 +102,7 @@ export async function POST(req: Request) {
     actionType,
     actionJson,
     sourceUrl: String(body?.sourceUrl ?? '').trim() || undefined,
+    linkedinUrl: linkedinUrl.slice(0, 300) || undefined,
     todoId: String(body?.todoId ?? '').trim() || undefined,
     grounding: String(body?.grounding ?? '').trim().slice(0, 20_000) || undefined,
     audience: ['founder', 'investor', 'other'].includes(body?.audience) ? body.audience : undefined,

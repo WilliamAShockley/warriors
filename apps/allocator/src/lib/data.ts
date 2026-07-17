@@ -792,6 +792,7 @@ export const proofs = [
       'From filed notes (30 June): \u201cDraft summary for Halloran: 2/20 with fees offset against Fund I commitment, $1.5m soft-circled, quarterly operational letter (she asked twice \u2014 she reads them). Gene returns formation docs Wednesday; send the summary same day.\u201d',
     commentary: null,
     originalBody: null,
+    linkedinUrl: null,
   },
   {
     id: 'p2',
@@ -807,6 +808,7 @@ export const proofs = [
     grounding: null,
     commentary: null,
     originalBody: null,
+    linkedinUrl: null,
   },
   {
     id: 'p3',
@@ -822,6 +824,7 @@ export const proofs = [
     grounding: null,
     commentary: null,
     originalBody: null,
+    linkedinUrl: null,
   },
 ] as const
 
