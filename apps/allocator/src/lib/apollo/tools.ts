@@ -266,19 +266,29 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
 
       case 'read_contact': {
         const q = String(input?.name_or_id ?? '').toLowerCase()
+        // The reader's dated notes on the person ride along with the card —
+        // they are the freshest read on the relationship.
+        const withNotes = async (record: object, id: string) => {
+          const { listContactNotes } = await import('../book')
+          const { notes } = await listContactNotes(id)
+          return JSON.stringify({
+            ...record,
+            readerNotes: notes.slice(0, 12).map((n) => ({ filedOn: n.filedOn, note: n.body })),
+          })
+        }
         const seed = seedContacts.find(
           (c) => c.id === q || c.name.toLowerCase().includes(q)
         )
         if (seed) {
           return {
-            output: JSON.stringify(seed),
+            output: await withNotes(seed, seed.id),
             step: { kind: 'tool', name: 'Read the Book', detail: seed.name },
           }
         }
         const { contacts: dbContacts } = await listDbContacts()
         const hit = dbContacts.find((c) => c.id === q || c.name.toLowerCase().includes(q))
         return hit
-          ? { output: JSON.stringify(hit), step: { kind: 'tool', name: 'Read the Book', detail: hit.name } }
+          ? { output: await withNotes(hit, hit.id), step: { kind: 'tool', name: 'Read the Book', detail: hit.name } }
           : { output: 'No contact matched.', step: { kind: 'tool', name: 'Read the Book', detail: `no match · ${clip(q, 40)}` } }
       }
 

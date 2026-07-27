@@ -95,3 +95,52 @@ export async function updateContact(id: string, input: ContactAmendment): Promis
     return null
   }
 }
+
+// ————————————————————————————————— Notes on a person
+
+// A dated running record per contact — filed from the contact's page,
+// read back newest first, and handed to Apollo when a task names them.
+
+export type ContactNoteRecord = {
+  id: string
+  body: string
+  filedOn: string
+}
+
+const TZ = process.env.APP_TIMEZONE ?? 'America/New_York'
+const noteDate = (d: Date) =>
+  new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: 'numeric', month: 'long' }).format(d)
+
+export async function listContactNotes(
+  contactId: string
+): Promise<{ live: boolean; notes: ContactNoteRecord[] }> {
+  if (!hasDb()) return { live: false, notes: [] }
+  try {
+    const db = await getDb()
+    const rows = await db.contactNote.findMany({
+      where: { contactId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    })
+    return {
+      live: true,
+      notes: rows.map((r: any) => ({ id: r.id, body: r.body, filedOn: noteDate(r.createdAt) })),
+    }
+  } catch {
+    return { live: false, notes: [] }
+  }
+}
+
+export async function addContactNote(
+  contactId: string,
+  body: string
+): Promise<ContactNoteRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.contactNote.create({ data: { contactId, body } })
+    return { id: row.id, body: row.body, filedOn: noteDate(row.createdAt) }
+  } catch {
+    return null
+  }
+}

@@ -215,6 +215,18 @@ model FiledNote {
   @@index([createdAt])
 }
 
+// Dated notes on a person in the Book — a running record per contact.
+// contactId is a loose reference (no FK): it serves reader-added contacts
+// and the seeded ones alike.
+model ContactNote {
+  id        String   @id @default(cuid())
+  contactId String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([contactId, createdAt])
+}
+
 model BookContact {
   id           String   @id @default(cuid())
   name         String
