@@ -183,6 +183,16 @@ export const APOLLO_TOOL_DEFS = [
             'Who the email addresses, from the Book segment or your research: founder (founders/companies), investor (LPs), other. ALWAYS pass it for emails — the ledger and exemplar retrieval segment on it.',
         },
         mode: { type: 'string', enum: ['cold', 'follow_up'], description: 'email kind only' },
+        dossier: {
+          type: 'string',
+          description:
+            'A short dossier on the RECIPIENT, rendered at the foot of the review page: who they are, background, what the company does, stage/funding if known, and the hook for reaching out now. 4–8 tight lines, plain text with \\n\\n between them, every line grounded in your research. ALWAYS pass it for founder outreach.',
+        },
+        websiteUrl: {
+          type: 'string',
+          description:
+            'The recipient company’s homepage URL (https://…), when research surfaced it — the review page shows a screenshot of the site below the dossier.',
+        },
       },
       required: ['kind', 'title', 'body'],
     },
@@ -433,6 +443,10 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
           grounding: input?.grounding ? String(input.grounding).slice(0, 20_000) : undefined,
           audience: ['founder', 'investor', 'other'].includes(input?.audience) ? input.audience : undefined,
           mode: ['cold', 'follow_up'].includes(input?.mode) ? input.mode : undefined,
+          dossier: input?.dossier ? String(input.dossier).slice(0, 8000) : undefined,
+          websiteUrl: /^https?:\/\//.test(String(input?.websiteUrl ?? '').trim())
+            ? String(input.websiteUrl).trim().slice(0, 500)
+            : undefined,
         })
         return proof
           ? { output: `Staged for review: ${proof.title} (${kind}). It awaits the reader's signature in The Proofs.`, step: { kind: 'write', name: 'Staged a proof', detail: `${kind} · ${clip(title, 50)}` } }

@@ -23,6 +23,10 @@ export type ProofRecord = {
   grounding: string | null
   commentary: string | null
   originalBody: string | null
+  // The recipient dossier and their company's site, filed at staging —
+  // rendered at the foot of the review page.
+  dossier: string | null
+  websiteUrl: string | null
 }
 
 export type ProofQueue = { live: boolean; total: number; proof: ProofRecord | null }
@@ -54,6 +58,8 @@ const toRecord = (r: any, todo: { id: string; text: string } | null = null): Pro
   grounding: r.grounding ?? null,
   commentary: r.commentary ?? null,
   originalBody: r.originalBody ?? null,
+  dossier: r.dossier ?? null,
+  websiteUrl: r.websiteUrl ?? null,
 })
 
 const seedQueue = (): ProofQueue => ({
@@ -105,6 +111,8 @@ export async function createProof(input: {
   grounding?: string
   audience?: string
   mode?: string
+  dossier?: string
+  websiteUrl?: string
 }): Promise<ProofRecord | null> {
   if (!hasDb()) return null
   try {
@@ -123,6 +131,8 @@ export async function createProof(input: {
         grounding: input.grounding ?? null,
         audience: input.audience ?? null,
         mode: input.mode ?? null,
+        dossier: input.dossier ?? null,
+        websiteUrl: input.websiteUrl ?? null,
       },
     })
     return toRecord(row)
@@ -174,6 +184,21 @@ export async function approveProof(id: string): Promise<{ ok: boolean; error?: s
         sentMessageId,
         sentThreadId,
         replyStatus: sentThreadId ? 'awaiting' : null,
+        // The delivery watch takes over after the response: it watches the
+        // sent thread for a bounce and re-guesses the address if one lands.
+        ...(sentThreadId
+          ? {
+              deliveryStatus: 'watching',
+              deliveryJson: JSON.stringify([
+                {
+                  to: JSON.parse(row.actionJson!).to ?? '',
+                  messageId: sentMessageId,
+                  threadId: sentThreadId,
+                  at: new Date().toISOString(),
+                },
+              ]),
+            }
+          : {}),
       },
     })
 
@@ -468,6 +493,126 @@ export async function listExemplars(audience: string, mode: string, n = 3): Prom
     return scored.slice(0, n)
   } catch {
     return []
+  }
+}
+
+// ————————————————————————————————— The delivery watch
+
+// Gmail accepts every send — a dead address answers seconds later with a
+// mailer-daemon bounce in the same thread. After a signature, this watch
+// stays on the sent thread: on a bounce it asks the address-guess skill
+// for the next-most-likely address and resends, up to five attempts in
+// all. Out of guesses (or out of attempts), it files a to-do instead of
+// pretending. Runs post-response via after(); wholly best-effort.
+const DELIVERY_MAX_ATTEMPTS = 5
+const BOUNCE_WAIT_MS = 40_000
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+type DeliveryAttempt = {
+  to: string
+  messageId: string | null
+  threadId: string
+  at: string
+  bounced?: boolean
+}
+
+export async function superviseDelivery(id: string): Promise<void> {
+  if (!hasDb()) return
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row || row.status !== 'approved' || row.deliveryStatus !== 'watching' || !row.sentThreadId)
+      return
+
+    const { threadHasBounce, sendEmail } = await import('./gmail')
+    const action = row.actionJson ? JSON.parse(row.actionJson) : {}
+    const subject = String(action.subject ?? row.title)
+
+    let attempts: DeliveryAttempt[] = []
+    try {
+      attempts = JSON.parse(row.deliveryJson ?? '[]')
+    } catch {}
+    if (attempts.length === 0) {
+      attempts = [
+        {
+          to: String(action.to ?? ''),
+          messageId: row.sentMessageId,
+          threadId: row.sentThreadId,
+          at: new Date().toISOString(),
+        },
+      ]
+    }
+
+    const save = (data: Record<string, unknown>) =>
+      db.reviewItem.update({
+        where: { id },
+        data: { ...data, deliveryJson: JSON.stringify(attempts) },
+      })
+
+    for (;;) {
+      await sleep(BOUNCE_WAIT_MS)
+      const current = attempts[attempts.length - 1]
+      if (!current.threadId) break
+      if (!(await threadHasBounce(current.threadId))) {
+        // No bounce inside the watch window — the address held.
+        await save({ deliveryStatus: 'delivered' })
+        return
+      }
+      current.bounced = true
+      if (attempts.length >= DELIVERY_MAX_ATTEMPTS) break
+
+      // The next guess comes from the (reader-editable) address-guess skill.
+      const { guessNextAddress } = await import('./apollo/skills/address-guess')
+      let recipient = row.title
+      if (row.todoId) {
+        const t = await db.todo.findUnique({ where: { id: row.todoId } })
+        if (t) recipient = `${t.text} — proof titled "${row.title}"`
+      }
+      const next = await guessNextAddress({
+        recipient,
+        triedAddresses: attempts.map((a) => a.to).filter(Boolean),
+        context: [row.dossier, row.grounding].filter(Boolean).join('\n\n'),
+      })
+      if (!next) break
+
+      // A fresh send to the new address — its own thread, its own watch.
+      const sent = await sendEmail({ to: next, subject, bodyText: row.body })
+      if (!sent) break
+      attempts.push({
+        to: next,
+        messageId: sent.id || null,
+        threadId: sent.threadId || '',
+        at: new Date().toISOString(),
+      })
+      action.to = next
+      await save({
+        actionJson: JSON.stringify(action),
+        sentMessageId: sent.id || null,
+        sentThreadId: sent.threadId || null,
+        replyStatus: 'awaiting',
+        replyCheckedAt: null,
+        executionResult: `sent to ${next} · message ${sent.id} · attempt ${attempts.length} after ${
+          attempts.length - 1
+        } bounce${attempts.length - 1 === 1 ? '' : 's'}`,
+      })
+    }
+
+    // Out of attempts or out of credible guesses: say so, and put it back
+    // on the reader's desk as a to-do rather than letting it die quietly.
+    const tried = attempts.map((a) => a.to).filter(Boolean)
+    await save({
+      deliveryStatus: 'undeliverable',
+      replyStatus: null,
+      executionResult: `undeliverable — ${tried.length} address${tried.length === 1 ? '' : 'es'} bounced: ${tried.join(', ')}`,
+    })
+    const { createTodo } = await import('./todos')
+    await createTodo({
+      text: `Find a working address for "${row.title.slice(0, 90)}" — every guess bounced (${tried.join(', ')})`,
+      meta: 'Filed by the delivery watch',
+    })
+  } catch {
+    // The watch is enrichment on top of a sent email; it never throws back.
   }
 }
 

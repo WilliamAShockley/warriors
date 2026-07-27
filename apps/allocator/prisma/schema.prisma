@@ -108,12 +108,21 @@ model ReviewItem {
   // and the ledger segment on these so playbooks never cross-contaminate.
   audience        String? // founder | investor | other
   mode            String? // cold | follow_up
+  // The recipient dossier and their company's website, filed by the worker
+  // at staging — rendered at the foot of the review page.
+  dossier         String?
+  websiteUrl      String?
   // The sent artifact, for reply tracking — only these exact threads are
   // ever checked, never the mailbox at large.
   sentMessageId   String?
   sentThreadId    String?
   replyStatus     String? // awaiting | replied
   replyCheckedAt  DateTime?
+  // The delivery watch: after signing, the sent thread is watched for a
+  // bounce; on bounce the desk re-guesses the address and resends, up to
+  // five attempts in all. deliveryJson logs every attempt.
+  deliveryStatus  String? // watching | delivered | undeliverable
+  deliveryJson    String? // [{to, messageId, threadId, at, bounced}]
   status          String    @default("pending") // pending | approved | spiked
   queuedAt        DateTime  @default(now()) // queue order; Hold moves it to the back
   reviewedAt      DateTime?

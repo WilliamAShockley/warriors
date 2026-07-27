@@ -111,6 +111,43 @@ function RedlineEntry({ children }: { children: React.ReactNode }) {
   )
 }
 
+// The storefront: a screenshot of the recipient company's site, via the
+// keyless mShots service. It serves a placeholder while the shot renders,
+// so the image quietly re-fetches a few times before settling.
+function SiteShot({ url }: { url: string }) {
+  const [tick, setTick] = useState(0)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    setTick(0)
+    setFailed(false)
+  }, [url])
+  useEffect(() => {
+    if (failed || tick >= 4) return
+    const t = setTimeout(() => setTick((n) => n + 1), 6000)
+    return () => clearTimeout(t)
+  }, [tick, failed])
+  if (failed) {
+    return (
+      <p className="dek mt-3 text-[13px]">
+        The site would not sit for its portrait —{' '}
+        <a href={url} target="_blank" rel="noreferrer" className="underline decoration-hairline underline-offset-4">
+          visit it directly
+        </a>
+        .
+      </p>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`https://s0.wp.com/mshots/v1/${encodeURIComponent(url)}?w=1200&vpw=1280&vph=800${tick ? `&refresh=${tick}` : ''}`}
+      alt={`Screenshot of ${url}`}
+      onError={() => setFailed(true)}
+      className="mt-3 w-full border border-hairline"
+    />
+  )
+}
+
 // Render a paragraph with the highlighted passage marked bold and yellow.
 function Para({ text, highlight }: { text: string; highlight: string | null }) {
   if (!highlight) return <p className="body-copy whitespace-pre-line">{text}</p>
@@ -822,6 +859,41 @@ export default function ProofRoom() {
             ? `The arrow signs it — the email sends${proof.todo ? ', its to-do clears' : ''}, the next proof follows`
             : `The arrow signs it — approved to the record${proof.todo ? ', its to-do clears' : ''}, the next proof follows`}
       </p>
+
+      {/* The Dossier — who you are writing to, at the foot of the page */}
+      {proof.dossier && (
+        <section className="border-t border-hairline pb-2 pt-7">
+          <p className="eyebrow text-oxblood">The Dossier</p>
+          <p className="dek mt-1.5 text-[13px]">
+            Who you are writing to — assembled by the desk from the research behind this draft.
+          </p>
+          <div className="mt-4 space-y-3.5">
+            {proof.dossier.split(/\n\n+/).map((line, i) => (
+              <p key={i} className="whitespace-pre-line font-serif text-[15px] leading-relaxed text-ink">
+                {line}
+              </p>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* The Storefront — their site, photographed below the dossier */}
+      {proof.websiteUrl && (
+        <section className={clsx('pb-12', proof.dossier ? 'pt-7' : 'border-t border-hairline pt-7')}>
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="eyebrow-ink">The Storefront</p>
+            <a
+              href={proof.websiteUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="eyebrow text-faint underline decoration-hairline underline-offset-4"
+            >
+              Visit the site →
+            </a>
+          </div>
+          <SiteShot url={proof.websiteUrl} />
+        </section>
+      )}
     </div>
   )
 }
