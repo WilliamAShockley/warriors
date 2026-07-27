@@ -20,6 +20,11 @@ export default function Docket() {
   const [live, setLive] = useState(false)
   const [draft, setDraft] = useState('')
 
+  // Inline amendment: tap an item's text to reword it in place. An edit is
+  // a correction — it never re-commissions the desk.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+
   // Reconcile with the database when there is one; otherwise the seed stands.
   useEffect(() => {
     fetch('/api/todos')
@@ -73,6 +78,28 @@ export default function Docket() {
     ])
   }
 
+  const beginEdit = (t: UiTodo) => {
+    setEditingId(t.id)
+    setEditText(t.text)
+  }
+
+  const saveEdit = () => {
+    const id = editingId
+    const text = editText.trim()
+    setEditingId(null)
+    if (!id || !text) return
+    const before = items.find((t) => t.id === id)
+    if (!before || before.text === text) return
+    setItems((prev) => prev.map((t) => (t.id === id ? { ...t, text } : t)))
+    if (live) {
+      fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, text }),
+      }).catch(() => {})
+    }
+  }
+
   const open = items.filter((t) => t.status === 'open')
   const cleared = items.filter((t) => t.status === 'cleared')
 
@@ -119,8 +146,32 @@ export default function Docket() {
                       aria-label="Clear"
                       className="mt-1 h-[18px] w-[18px] shrink-0 rounded-full border border-stone transition-colors duration-300 ease-editorial"
                     />
-                    <div className="min-w-0">
-                      <p className="font-serif text-[17px] leading-snug text-ink">{t.text}</p>
+                    <div className="min-w-0 flex-1">
+                      {editingId === t.id ? (
+                        <input
+                          value={editText}
+                          onChange={(e) => setEditText(e.target.value)}
+                          onBlur={saveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              saveEdit()
+                            }
+                            if (e.key === 'Escape') setEditingId(null)
+                          }}
+                          autoFocus
+                          aria-label="Amend the item"
+                          className="w-full border-b border-hairline bg-transparent pb-0.5 font-serif text-[17px] leading-snug text-ink focus:border-ink focus:outline-none"
+                        />
+                      ) : (
+                        <p
+                          onClick={() => beginEdit(t)}
+                          title="Tap to amend"
+                          className="cursor-text font-serif text-[17px] leading-snug text-ink"
+                        >
+                          {t.text}
+                        </p>
+                      )}
                       {t.meta &&
                         (t.href ? (
                           <Link

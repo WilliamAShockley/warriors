@@ -115,6 +115,21 @@ export async function toggleTodo(id: string): Promise<boolean> {
   }
 }
 
+// Amend an item's text in place. Deliberately does NOT re-run the docket
+// worker — an edit is a correction, not a new commission.
+export async function updateTodoText(id: string, text: string): Promise<boolean> {
+  if (!hasDb()) return false
+  try {
+    const db = await getDb()
+    const row = await db.todo.findUnique({ where: { id } })
+    if (!row || row.status === 'done') return false
+    await db.todo.update({ where: { id }, data: { text } })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function createTodo(input: {
   text: string
   meta?: string

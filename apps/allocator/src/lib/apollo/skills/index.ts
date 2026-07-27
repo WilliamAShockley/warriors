@@ -4,9 +4,10 @@
 // and the Colophon (settings) reads/writes their prompts.
 import { founderEmailSkill } from './founder-email'
 import { schedulerSkill } from './scheduler'
+import { addressGuessSkill } from './address-guess'
 import { getSkillPrompt, isSkillCustom } from './store'
 
-export const APOLLO_SKILLS = [founderEmailSkill, schedulerSkill] as const
+export const APOLLO_SKILLS = [founderEmailSkill, schedulerSkill, addressGuessSkill] as const
 
 export type SkillMeta = (typeof APOLLO_SKILLS)[number]
 

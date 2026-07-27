@@ -149,6 +149,37 @@ export async function sendEmail(args: {
   }
 }
 
+// Did this specific sent thread take a bounce? Gmail accepts every send —
+// a bad address comes back seconds later as a mailer-daemon message in the
+// same thread. Only ever asks about the named thread, never the mailbox.
+export async function threadHasBounce(threadId: string): Promise<boolean> {
+  const gmail = await getGmail()
+  if (!gmail) return false
+  try {
+    const thread = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'metadata',
+      metadataHeaders: ['From', 'Subject'],
+    })
+    return (thread.data.messages ?? []).some((m) => {
+      const header = (name: string) =>
+        m.payload?.headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? ''
+      const from = header('From').toLowerCase()
+      const subject = header('Subject').toLowerCase()
+      return (
+        from.includes('mailer-daemon') ||
+        from.includes('postmaster@') ||
+        /delivery status notification|undeliver|delivery (has )?failed|delivery failure|address not found|returned mail|message blocked/.test(
+          subject
+        )
+      )
+    })
+  } catch {
+    return false
+  }
+}
+
 // Did this specific thread — one the app itself sent into — receive a
 // message from someone other than the connected account? Never scans the
 // mailbox; only ever asks about the named thread.

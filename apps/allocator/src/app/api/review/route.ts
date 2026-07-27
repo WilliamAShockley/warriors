@@ -10,10 +10,13 @@ import {
   nextProof,
   redoProof,
   spikeProof,
+  superviseDelivery,
 } from '@/lib/review'
 import { workDocketItem } from '@/lib/apollo/worker'
 
-// A redirect re-runs the full drafting pass after the response.
+// A redirect re-runs the full drafting pass after the response, and the
+// delivery watch may sit on a sent thread through several bounce-and-retry
+// rounds — both run post-response under this ceiling.
 export const maxDuration = 300
 
 const PROOF_KINDS = ['email', 'post', 'analysis'] as const
@@ -34,8 +37,13 @@ export async function POST(req: Request) {
     const id = String(body.id)
     if (body.action === 'approve') {
       const result = await approveProof(id)
-      // A verdict with commentary becomes a standing lesson for future drafts.
-      if (result.ok) after(() => distillProofLesson(id))
+      // A verdict with commentary becomes a standing lesson for future
+      // drafts, and the delivery watch takes over the sent thread — on a
+      // bounce it re-guesses the address and resends, up to five tries.
+      if (result.ok) {
+        after(() => distillProofLesson(id))
+        after(() => superviseDelivery(id))
+      }
       return NextResponse.json(result, { status: result.ok ? 200 : 502 })
     }
     if (body.action === 'redo') {
@@ -107,6 +115,10 @@ export async function POST(req: Request) {
     grounding: String(body?.grounding ?? '').trim().slice(0, 20_000) || undefined,
     audience: ['founder', 'investor', 'other'].includes(body?.audience) ? body.audience : undefined,
     mode: ['cold', 'follow_up'].includes(body?.mode) ? body.mode : undefined,
+    dossier: String(body?.dossier ?? '').trim().slice(0, 8000) || undefined,
+    websiteUrl: /^https?:\/\//.test(String(body?.websiteUrl ?? '').trim())
+      ? String(body.websiteUrl).trim().slice(0, 500)
+      : undefined,
   })
   return NextResponse.json({ ok: Boolean(proof), proof })
 }
