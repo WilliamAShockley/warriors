@@ -12,9 +12,9 @@ export default function SettingsPage() {
       <header className="pt-6">
         <p className="eyebrow">Account</p>
         <h1 className="mt-2 font-serif text-[32px] font-semibold leading-none tracking-tight">
-          The Colophon
+          Settings
         </h1>
-        <p className="dek mt-2">The particulars of this edition.</p>
+        <p className="dek mt-2">The particulars of this edition — and the desk&rsquo;s playbooks.</p>
       </header>
 
       <div className="rule-masthead mt-6" />
