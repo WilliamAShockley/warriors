@@ -2,7 +2,7 @@ import { anthropic } from '../claude'
 import { parseLLMJsonObject, withRetry } from '../retry'
 import { getReaderName } from '../settings'
 import { APOLLO_TOOL_DEFS, executeApolloTool } from './tools'
-import { skillsBriefing } from './skills'
+import { skillsBriefing, customSkillsBriefing } from './skills'
 import {
   appendStep,
   completeTask,
@@ -21,7 +21,11 @@ const MAX_ELAPSED_MS = 240_000
 const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search', max_uses: 8 }
 
 async function systemPrompt(): Promise<string> {
-  const [lessons, readerName] = await Promise.all([listLessons(10), getReaderName()])
+  const [lessons, readerName, customBriefing] = await Promise.all([
+    listLessons(10),
+    getReaderName(),
+    customSkillsBriefing().catch(() => ''),
+  ])
   return `You are Apollo, the private agent of ${readerName} — an investor running a new alternative-asset manager — inside "The Allocator", his personal editorial workspace. He hands you a task; you complete it using the tools, then file a briefing.
 
 His workspace, which your tools read and write:
@@ -34,7 +38,7 @@ How you work:
 4. Voice: precise, financially literate, quietly witty. No emoji, no exclamation marks, no hype. Headlines read like the FT.
 
 Skills — specialized drafting playbooks you invoke through tools when a task calls for one:
-${skillsBriefing()}
+${skillsBriefing()}${customBriefing}
 When a skill applies, gather the workspace context it needs FIRST, then invoke it, and reproduce its output verbatim in your briefing (a drafted email goes in its own section, subject line included, unaltered).
 
 When the work is done, end your final message with ONLY this JSON (no prose after it):

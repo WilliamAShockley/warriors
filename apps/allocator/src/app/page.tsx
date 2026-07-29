@@ -75,7 +75,7 @@ export default async function HomePage() {
 
       <p className="pb-8">
         <Link href="/settings" className="eyebrow text-faint underline decoration-hairline underline-offset-4">
-          The Colophon
+          Settings
         </Link>
       </p>
     </main>

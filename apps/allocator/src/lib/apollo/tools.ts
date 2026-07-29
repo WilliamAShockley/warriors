@@ -218,6 +218,25 @@ export const APOLLO_TOOL_DEFS = [
     },
   },
   {
+    name: 'draft_with_skill',
+    description:
+      'Draft with one of the playbooks the reader AUTHORED HIMSELF (listed in your system prompt with their skillIds, when he has any). Call it whenever a task matches an authored playbook’s trigger — an authored playbook takes PRECEDENCE over draft_founder_email and over drafting in your own voice. Pass the skillId exactly as listed, plus everything you gathered: the skill invents nothing. Context carries recipient and thread facts ONLY — never the reader’s own identity or how this workspace describes him. Reproduce the returned subject and body verbatim (stage_proof, no polishing).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        skillId: { type: 'string', description: 'The authored skill’s id, exactly as listed in your system prompt' },
+        recipient: { type: 'string', description: 'Who this is for — name, and company if known' },
+        goal: { type: 'string', description: 'The single concrete thing this draft should accomplish' },
+        context: {
+          type: 'string',
+          description:
+            'Everything gathered from the workspace and research — recipient facts, thread history, the reason for reaching out. Every specific in the draft must be grounded here.',
+        },
+      },
+      required: ['skillId', 'context'],
+    },
+  },
+  {
     name: 'propose_times',
     description:
       'Propose meeting times from the reader’s REAL calendar, using his scheduling skill (working hours, buffers, exact output format). Call this whenever a task or an email thread calls for offering availability — e.g. a follow-up where the other party agreed to meet or asked for times. Reproduce the returned windows VERBATIM. Never compose availability yourself; if this tool fails, say availability could not be checked rather than inventing times.',
@@ -490,6 +509,34 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
             name: mode === 'cold' ? 'Drafted a cold email' : 'Drafted a follow-up',
             detail: `${founder}${input?.firm ? ` · ${clip(String(input.firm), 30)}` : ''}`,
           },
+        }
+      }
+
+      case 'draft_with_skill': {
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { output: 'Cannot draft: no ANTHROPIC_API_KEY configured.', step: { kind: 'note', name: 'Draft not made', detail: 'no API key' }, isError: true }
+        }
+        const skillId = String(input?.skillId ?? '').trim()
+        if (!skillId) {
+          return { output: 'draft_with_skill needs a skillId.', step: { kind: 'note', name: 'Draft not made', detail: 'no skillId' }, isError: true }
+        }
+        const { draftWithSkill } = await import('./skills')
+        const readerName = await getReaderName()
+        const result = await draftWithSkill(
+          {
+            skillId,
+            recipient: input?.recipient ? String(input.recipient) : undefined,
+            goal: input?.goal ? String(input.goal) : undefined,
+            context: String(input?.context ?? ''),
+          },
+          readerName
+        )
+        if ('error' in result) {
+          return { output: result.error, step: { kind: 'note', name: 'Draft not made', detail: clip(skillId, 40) }, isError: true }
+        }
+        return {
+          output: JSON.stringify(result),
+          step: { kind: 'write', name: 'Drafted with an authored playbook', detail: clip(skillId, 50) },
         }
       }
 

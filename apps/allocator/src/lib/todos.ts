@@ -181,7 +181,7 @@ export async function tagTodo(id: string, tag: string, taggedBy = 'agent'): Prom
 // Keyword fallback for keyless environments — enough to route the obvious.
 function classifyByKeywords(text: string): TodoClassification {
   const t = text.toLowerCase()
-  if (/\b(e-?mail|reply to|respond to|write (to|back)|reach out|follow up with|ping|intro to)\b/.test(t)) {
+  if (/\b(e-?mail|reply to|respond to|write (to|back)|reach out|follow up with|ping|intro to|invite)\b/.test(t)) {
     const flavor = /\b(reply|respond|follow up|write back|circle back)\b/.test(t) ? 'follow_up' : 'outreach'
     return { action: 'email', tag: `email/${flavor}` }
   }

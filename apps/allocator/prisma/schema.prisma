@@ -152,12 +152,15 @@ model ApolloTask {
   @@index([createdAt])
 }
 
-// A reader-editable Apollo skill: the system prompt that governs a specialized
-// drafting playbook (e.g. founder-email). Keyed by skill id; absence means the
-// code default is in force. Edited from the Colophon (settings).
+// A reader-editable Apollo skill. Two kinds share the table: overrides of
+// built-in skills (label null — the code default is authoritative until a
+// row exists) and skills the reader authored himself in Settings (label
+// set — whenToUse tells Apollo when to reach for it).
 model ApolloSkill {
-  id           String   @id // skill id, e.g. "founder-email"
+  id           String   @id // skill id, e.g. "founder-email" or "podcast-invite"
   systemPrompt String
+  label        String? // set only on reader-authored skills
+  whenToUse    String? // reader-authored: when Apollo should invoke it
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
