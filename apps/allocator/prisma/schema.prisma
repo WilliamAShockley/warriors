@@ -133,6 +133,18 @@ model ReviewItem {
   @@index([status, queuedAt])
 }
 
+// A dated status update on a Docket item — "waiting on Breck to respond
+// on dates, then text Alanna" — a running log per to-do, shown under a
+// small disclosure on the Docket and read by the desk before drafting.
+model TodoUpdate {
+  id        String   @id @default(cuid())
+  todoId    String
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([todoId, createdAt])
+}
+
 model ApolloTask {
   id           String    @id @default(cuid())
   ask          String

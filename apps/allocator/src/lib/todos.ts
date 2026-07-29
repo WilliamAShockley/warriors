@@ -1,5 +1,11 @@
 import { todos as seedTodos, type TodoBucket } from './data'
 
+export type TodoUpdateRecord = {
+  id: string
+  text: string
+  filedOn: string
+}
+
 export type TodoRecord = {
   id: string
   text: string
@@ -7,6 +13,8 @@ export type TodoRecord = {
   href: string | null
   group: TodoBucket
   status: 'open' | 'cleared'
+  // The running log on the item — dated status updates, oldest first.
+  updates: TodoUpdateRecord[]
 }
 
 const TZ = process.env.APP_TIMEZONE ?? 'America/New_York'
@@ -14,6 +22,9 @@ const hasDb = () => Boolean(process.env.DATABASE_URL)
 
 // YYYY-MM-DD of a moment in the reader's timezone (en-CA formats as ISO).
 const localDay = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d)
+
+const updateDate = (d: Date) =>
+  new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: 'numeric', month: 'long' }).format(d)
 
 // The docket files itself: an item's bucket is how long it has sat there.
 // Filed today → Today; yesterday → Yesterday; two to seven days ago →
@@ -36,6 +47,7 @@ const seedRecords = (): TodoRecord[] =>
     href: t.href ?? null,
     group: t.group,
     status: 'open' as const,
+    updates: [],
   }))
 
 // Dynamic imports keep the zero-env mock path from ever touching Prisma.
@@ -80,6 +92,19 @@ export async function listTodos(): Promise<{ live: boolean; todos: TodoRecord[] 
       where: { status: { in: ['open', 'cleared'] } },
       orderBy: { createdAt: 'asc' },
     })
+    // The running logs, one query for the whole docket.
+    const updateRows = rows.length
+      ? await db.todoUpdate.findMany({
+          where: { todoId: { in: rows.map((r) => r.id) } },
+          orderBy: { createdAt: 'asc' },
+        })
+      : []
+    const updatesByTodo = new Map<string, TodoUpdateRecord[]>()
+    for (const u of updateRows) {
+      const list = updatesByTodo.get(u.todoId) ?? []
+      list.push({ id: u.id, text: u.text, filedOn: updateDate(u.createdAt) })
+      updatesByTodo.set(u.todoId, list)
+    }
     return {
       live: true,
       todos: rows.map((r) => ({
@@ -89,6 +114,7 @@ export async function listTodos(): Promise<{ live: boolean; todos: TodoRecord[] 
         href: r.href,
         group: bucketFor(r.createdAt, now),
         status: r.status as 'open' | 'cleared',
+        updates: updatesByTodo.get(r.id) ?? [],
       })),
     }
   } catch {
@@ -112,6 +138,25 @@ export async function toggleTodo(id: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+// File a dated status update on an item — the running log under the
+// disclosure ("waiting on Breck to respond on dates, then text Alanna").
+// Never re-runs the worker; an update is a note to self, not a commission.
+export async function addTodoUpdate(
+  todoId: string,
+  text: string
+): Promise<TodoUpdateRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const todo = await db.todo.findUnique({ where: { id: todoId } })
+    if (!todo || todo.status === 'done') return null
+    const row = await db.todoUpdate.create({ data: { todoId, text } })
+    return { id: row.id, text: row.text, filedOn: updateDate(row.createdAt) }
+  } catch {
+    return null
   }
 }
 
@@ -148,6 +193,7 @@ export async function createTodo(input: {
       href: row.href,
       group: 'Today',
       status: 'open',
+      updates: [],
     }
   } catch {
     return null

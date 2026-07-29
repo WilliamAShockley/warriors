@@ -1,5 +1,13 @@
 import { NextResponse, after } from 'next/server'
-import { autoTagTodo, createTodo, listTodos, tagTodo, toggleTodo, updateTodoText } from '@/lib/todos'
+import {
+  addTodoUpdate,
+  autoTagTodo,
+  createTodo,
+  listTodos,
+  tagTodo,
+  toggleTodo,
+  updateTodoText,
+} from '@/lib/todos'
 import { workDocketItem } from '@/lib/apollo/worker'
 
 // The docket worker may run a full Apollo drafting pass after the response.
@@ -23,6 +31,13 @@ export async function POST(req: Request) {
       String(body?.taggedBy ?? 'agent').slice(0, 60)
     )
     return NextResponse.json({ ok })
+  }
+
+  if (body?.id && typeof body?.update === 'string') {
+    const text = body.update.trim().slice(0, 1000)
+    if (!text) return NextResponse.json({ error: 'update required' }, { status: 400 })
+    const update = await addTodoUpdate(String(body.id), text)
+    return NextResponse.json({ ok: Boolean(update), update })
   }
 
   if (body?.id && typeof body?.text === 'string') {
