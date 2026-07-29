@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { todos as seedTodos, todoGroups } from '@/lib/data'
 
+type UiUpdate = { id: string; text: string; filedOn: string }
+
 type UiTodo = {
   id: string
   text: string
@@ -11,9 +13,10 @@ type UiTodo = {
   href?: string | null
   group: string
   status: 'open' | 'cleared'
+  updates?: UiUpdate[]
 }
 
-const seedUi: UiTodo[] = seedTodos.map((t) => ({ ...t, status: 'open' }))
+const seedUi: UiTodo[] = seedTodos.map((t) => ({ ...t, status: 'open', updates: [] }))
 
 export default function Docket() {
   const [items, setItems] = useState<UiTodo[]>(seedUi)
@@ -24,6 +27,10 @@ export default function Docket() {
   // a correction — it never re-commissions the desk.
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
+
+  // The running log: dated status updates under a small disclosure per item.
+  const [logOpenId, setLogOpenId] = useState<string | null>(null)
+  const [logDraft, setLogDraft] = useState('')
 
   // Reconcile with the database when there is one; otherwise the seed stands.
   useEffect(() => {
@@ -98,6 +105,37 @@ export default function Docket() {
         body: JSON.stringify({ id, text }),
       }).catch(() => {})
     }
+  }
+
+  const fileUpdate = async (id: string) => {
+    const text = logDraft.trim()
+    if (!text) return
+    setLogDraft('')
+    if (live) {
+      try {
+        const res = await fetch('/api/todos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, update: text }),
+        })
+        const data = await res.json()
+        if (data?.update) {
+          setItems((prev) =>
+            prev.map((t) => (t.id === id ? { ...t, updates: [...(t.updates ?? []), data.update] } : t))
+          )
+          return
+        }
+      } catch {}
+    }
+    // Mock mode (or a failed write): the update still lands, session-only.
+    const filedOn = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long' }).format(new Date())
+    setItems((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? { ...t, updates: [...(t.updates ?? []), { id: `local-u-${Date.now()}`, text, filedOn }] }
+          : t
+      )
+    )
   }
 
   const open = items.filter((t) => t.status === 'open')
@@ -183,6 +221,64 @@ export default function Docket() {
                         ) : (
                           <p className="eyebrow mt-1.5 text-faint">{t.meta}</p>
                         ))}
+
+                      {/* The running log — latest update at a glance, the rest under the disclosure */}
+                      {(t.updates?.length ?? 0) > 0 && logOpenId !== t.id && (
+                        <p className="mt-2 font-serif text-[13.5px] italic leading-snug text-stone">
+                          ↳ {t.updates![t.updates!.length - 1].text}
+                        </p>
+                      )}
+                      <button
+                        onClick={() => {
+                          setLogOpenId(logOpenId === t.id ? null : t.id)
+                          setLogDraft('')
+                        }}
+                        className="eyebrow mt-2 text-faint underline decoration-hairline underline-offset-4"
+                      >
+                        {logOpenId === t.id
+                          ? 'Close the Log'
+                          : t.updates?.length
+                            ? `Updates · ${t.updates.length} ▾`
+                            : 'Add an Update ▾'}
+                      </button>
+
+                      {logOpenId === t.id && (
+                        <div className="mt-3 border-l border-hairline pl-4">
+                          {(t.updates?.length ?? 0) > 0 && (
+                            <ul>
+                              {t.updates!.map((u) => (
+                                <li key={u.id} className="py-2 first:pt-0">
+                                  <p className="eyebrow text-faint">{u.filedOn}</p>
+                                  <p className="mt-1 font-serif text-[14px] leading-relaxed text-ink">
+                                    {u.text}
+                                  </p>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              fileUpdate(t.id)
+                            }}
+                            className="flex items-end gap-3 pb-1 pt-2"
+                          >
+                            <input
+                              value={logDraft}
+                              onChange={(e) => setLogDraft(e.target.value)}
+                              placeholder="e.g. waiting on Breck to respond on dates, then text Alanna"
+                              className="w-full border-b border-hairline bg-transparent pb-1.5 font-serif text-[14px] leading-snug text-ink placeholder:italic placeholder:text-faint focus:border-ink focus:outline-none"
+                            />
+                            <button
+                              type="submit"
+                              disabled={!logDraft.trim()}
+                              className="eyebrow-ink shrink-0 underline decoration-hairline underline-offset-4 disabled:opacity-40"
+                            >
+                              File It
+                            </button>
+                          </form>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </li>
