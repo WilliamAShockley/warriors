@@ -21,10 +21,21 @@ const PUBLIC_PATHS = new Set([
 // same bearer so traces can be pulled by script.
 const CRON_PATHS = new Set(['/api/cron/brief', '/api/apollo/export'])
 
-let cachedSession: { secret: string; token: string } | null = null
+// APP_PASSWORD holds one word or several, comma-separated — the reader's
+// own plus any guest words. Each derives its own session token, so
+// removing a word from the list revokes that guest's sessions alone.
+// (A password containing a comma is therefore unsupported.)
+const appPasswords = () =>
+  (process.env.APP_PASSWORD ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+const cachedTokens = new Map<string, string>()
 
 async function sessionToken(secret: string): Promise<string> {
-  if (cachedSession?.secret === secret) return cachedSession.token
+  const cached = cachedTokens.get(secret)
+  if (cached) return cached
   const digest = await crypto.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(`allocator-session:${secret}`)
@@ -32,7 +43,7 @@ async function sessionToken(secret: string): Promise<string> {
   const token = Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
-  cachedSession = { secret, token }
+  cachedTokens.set(secret, token)
   return token
 }
 
@@ -47,8 +58,8 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  const password = process.env.APP_PASSWORD
-  if (!password) {
+  const passwords = appPasswords()
+  if (passwords.length === 0) {
     // Prod fails closed, like apps/web. Local dev without the var stays open
     // so the zero-env mock demo keeps working.
     if (process.env.NODE_ENV === 'production') {
@@ -57,12 +68,14 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // Bearer access for scripts / curl.
-  if (auth === `Bearer ${password}`) return NextResponse.next()
+  // Bearer access for scripts / curl — any of the words opens the door.
+  if (auth && passwords.some((p) => auth === `Bearer ${p}`)) return NextResponse.next()
 
-  const expected = await sessionToken(password)
-  if (req.cookies.get('allocator_session')?.value === expected) {
-    return NextResponse.next()
+  const cookie = req.cookies.get('allocator_session')?.value
+  if (cookie) {
+    for (const p of passwords) {
+      if (cookie === (await sessionToken(p))) return NextResponse.next()
+    }
   }
 
   if (pathname.startsWith('/api/')) {
