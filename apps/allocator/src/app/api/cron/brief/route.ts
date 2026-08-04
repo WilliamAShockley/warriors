@@ -47,6 +47,12 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         r.brief = { error: err instanceof Error ? err.message : String(err) }
       }
+      try {
+        const { sweepMailboxTasks } = await import('@/lib/inbound')
+        r.mailDoor = await sweepMailboxTasks(true)
+      } catch (err) {
+        r.mailDoor = { error: err instanceof Error ? err.message : String(err) }
+      }
       return r
     })
   }

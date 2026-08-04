@@ -3,7 +3,29 @@ import { getConnectedAccount, getReaderName, setReaderName } from '@/lib/setting
 
 export async function GET() {
   const [name, account] = await Promise.all([getReaderName(), getConnectedAccount()])
-  return NextResponse.json({ name, account, live: Boolean(process.env.DATABASE_URL) })
+
+  // The workspace's provisioned inbound address, when the deployment has
+  // an inbound-mail domain wired up (INBOUND_EMAIL_DOMAIN).
+  let inboundAddress: string | null = null
+  const domain = (process.env.INBOUND_EMAIL_DOMAIN ?? '').trim()
+  if (domain && process.env.DATABASE_URL) {
+    try {
+      const [{ rawDb }, { activeWorkspaceId, ensureAdopted }] = await Promise.all([
+        import('@/lib/db'),
+        import('@/lib/tenant'),
+      ])
+      await ensureAdopted()
+      const ws = await rawDb.workspace.findUnique({ where: { id: await activeWorkspaceId() } })
+      if (ws) inboundAddress = `task-${ws.inboundToken}@${domain}`
+    } catch {}
+  }
+
+  return NextResponse.json({
+    name,
+    account,
+    inboundAddress,
+    live: Boolean(process.env.DATABASE_URL),
+  })
 }
 
 export async function POST(req: Request) {

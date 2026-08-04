@@ -26,6 +26,7 @@ const TENANT_MODELS = new Set([
   'ContactNote',
   'CalendarEvent',
   'MeetingNote',
+  'InboundEmail',
 ])
 
 const SCOPE_WHERE = new Set([
