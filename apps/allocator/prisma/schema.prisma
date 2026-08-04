@@ -22,6 +22,15 @@ model Workspace {
   updatedAt    DateTime @updatedAt
 }
 
+// An invitation to the instance — instance-level, not per-workspace. The
+// operator manages these from Settings ("The Circulation List"); an email
+// on the list may sign in with Google and receive its own workspace.
+model Invite {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
+
 // A signed-in identity (Google sign-in). One user, one workspace.
 model User {
   id          String   @id @default(cuid())

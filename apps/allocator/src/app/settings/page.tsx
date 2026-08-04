@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import ColophonForm from '@/components/ColophonForm'
 import SkillsEditor from '@/components/SkillsEditor'
+import CirculationList from '@/components/CirculationList'
 
 export default function SettingsPage() {
   return (
@@ -24,6 +25,8 @@ export default function SettingsPage() {
       <div className="rule mt-12" />
 
       <SkillsEditor />
+
+      <CirculationList />
 
       <p className="pb-8 pt-12 text-center">
         <a
