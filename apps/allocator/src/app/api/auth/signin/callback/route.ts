@@ -4,14 +4,14 @@ import { rawDb } from '@/lib/db'
 import { signSession } from '@/lib/auth'
 import { ensureAdopted, PRIMARY_WORKSPACE } from '@/lib/tenant'
 
-// Google sign-in, step two: Google lands back here. The allowlist decides
-// what the email gets:
-//   OWNER_EMAILS   — the reader himself: full access to the primary
-//                    workspace (the original desk, with all its history).
-//   ALLOWED_EMAILS — an invited guest of the software: their OWN fresh
-//                    workspace, entirely separate from everyone else's.
-// Anyone else authenticates fine with Google and is politely refused.
-// Both variables are comma-separated; matching is case-insensitive.
+// Google sign-in, step two: Google lands back here. Self-serve by
+// default: any authenticated account gets its OWN fresh workspace —
+// sign up, get dropped into your desk, done. Two refinements:
+//   OWNER_EMAILS — the operator's addresses: these attach to the primary
+//                  workspace (the original desk, with all its history).
+//   INVITE_ONLY=true — flips the instance to a closed circulation: only
+//                  owners, the Settings-managed invite list, and
+//                  ALLOWED_EMAILS may open a desk. For private clones.
 
 const parseEmails = (v: string | undefined) =>
   (v ?? '')
@@ -41,10 +41,22 @@ export async function GET(req: Request) {
     if (!email) return NextResponse.redirect(new URL('/login?error=signin', origin))
 
     const owners = parseEmails(process.env.OWNER_EMAILS)
-    const invited = parseEmails(process.env.ALLOWED_EMAILS)
     const isOwner = owners.includes(email)
-    if (!isOwner && !invited.includes(email)) {
-      return NextResponse.redirect(new URL('/login?error=uninvited', origin))
+
+    // Closed-circulation mode only: check the lists. Open by default.
+    if (!isOwner && process.env.INVITE_ONLY === 'true') {
+      const envInvited = parseEmails(process.env.ALLOWED_EMAILS)
+      let listed = envInvited.includes(email)
+      if (!listed) {
+        const invite = await rawDb.invite.findUnique({ where: { email } }).catch(() => null)
+        listed = Boolean(invite)
+      }
+      // A returning user who already opened a desk stays welcome.
+      if (!listed) {
+        const existing = await rawDb.user.findUnique({ where: { email } }).catch(() => null)
+        listed = Boolean(existing)
+      }
+      if (!listed) return NextResponse.redirect(new URL('/login?error=uninvited', origin))
     }
 
     await ensureAdopted()

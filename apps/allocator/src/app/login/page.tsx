@@ -79,7 +79,7 @@ export default function LoginPage() {
         Sign In with Google
       </a>
       <p className="dek mt-3 text-center text-[13px]">
-        By invitation — a listed account opens its own desk.
+        New here? Signing in opens a desk of your own.
       </p>
     </main>
   )
