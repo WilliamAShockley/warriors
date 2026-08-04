@@ -7,16 +7,23 @@ async function getDb() {
   return db
 }
 
-// The reader's name: database first, NEXT_PUBLIC_READER_NAME as the
-// zero-env fallback so forks work before any setup.
+// The reader's name: their saved setting, else the first name from their
+// sign-in identity, else a plain "Reader". The seeded name belongs to the
+// zero-env demo and the primary desk only — a stranger's fresh workspace
+// must never greet them as someone else.
 export async function getReaderName(): Promise<string> {
   if (!hasDb()) return fallbackName
   try {
     const db = await getDb()
-    const { activeWorkspaceId, ensureAdopted } = await import('./tenant')
+    const { activeWorkspaceId, ensureAdopted, PRIMARY_WORKSPACE } = await import('./tenant')
     await ensureAdopted()
-    const row = await db.readerSetting.findUnique({ where: { id: await activeWorkspaceId() } })
-    return row?.name?.trim() || fallbackName
+    const ws = await activeWorkspaceId()
+    const row = await db.readerSetting.findUnique({ where: { id: ws } })
+    if (row?.name?.trim()) return row.name
+    if (ws === PRIMARY_WORKSPACE) return fallbackName
+    const { rawDb } = await import('./db')
+    const user = await rawDb.user.findFirst({ where: { workspaceId: ws } })
+    return user?.name?.trim().split(/\s+/)[0] || 'Reader'
   } catch {
     return fallbackName
   }

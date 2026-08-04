@@ -2,7 +2,7 @@ import { briefLead, briefItems, type BriefItem } from './data'
 import type { RecallCue, ScheduleEntry } from './assembleBrief'
 
 export type BriefData = {
-  lead: typeof briefLead
+  lead: typeof briefLead | null
   items: BriefItem[]
   schedule: ScheduleEntry[] | null
   recall: RecallCue[]
@@ -17,9 +17,12 @@ const mockEdition: BriefData = {
   live: false,
 }
 
-// Today's edition from the database, or the seeded mock when the backend
-// isn't configured / hasn't produced one. The mock path must never touch
-// Prisma (zero-env demos), hence the dynamic imports.
+// Today's edition from the database; the seeded mock belongs to zero-env
+// demos ONLY. A live desk with no edition yet (a brand-new workspace, or
+// before the first overnight run) gets an honest empty edition instead of
+// fiction. The mock path must never touch Prisma, hence dynamic imports.
+
+const emptyEdition: BriefData = { lead: null, items: [], schedule: null, recall: [], live: true }
 export async function getBrief(): Promise<BriefData> {
   if (!process.env.DATABASE_URL) return mockEdition
 
@@ -29,7 +32,7 @@ export async function getBrief(): Promise<BriefData> {
       import('./calendar'),
     ])
     const edition = await db.briefEdition.findFirst({ where: { date: localDateString() } })
-    if (!edition) return mockEdition
+    if (!edition) return emptyEdition
 
     return {
       lead: JSON.parse(edition.leadJson),
@@ -39,6 +42,6 @@ export async function getBrief(): Promise<BriefData> {
       live: true,
     }
   } catch {
-    return mockEdition
+    return emptyEdition
   }
 }

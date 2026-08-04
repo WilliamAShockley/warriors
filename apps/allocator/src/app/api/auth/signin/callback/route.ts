@@ -74,6 +74,16 @@ export async function GET(req: Request) {
         ? PRIMARY_WORKSPACE
         : (await rawDb.workspace.create({ data: { name: name ? `${name}'s Desk` : 'The Desk' } })).id
       user = await rawDb.user.create({ data: { email, name, workspaceId } })
+      // A fresh desk greets its own reader from day one.
+      if (!isOwner && name) {
+        await rawDb.readerSetting
+          .upsert({
+            where: { id: workspaceId },
+            create: { id: workspaceId, name: name.split(/\s+/)[0] },
+            update: {},
+          })
+          .catch(() => {})
+      }
     }
 
     const token = await signSession({
