@@ -8,17 +8,42 @@ datasource db {
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
-// Singleton reader preferences — the app is prepared for one reader.
+// A workspace: one person's entire desk. Every table below carries a
+// workspaceId; the pre-account era's data lives on in workspace "primary".
+model Workspace {
+  id           String   @id @default(cuid())
+  name         String   @default("The Desk")
+  // Optional bring-your-own-key: tasks in this workspace bill to this key;
+  // absent, the instance's ANTHROPIC_API_KEY carries them.
+  anthropicKey String?
+  // Capability token for the future inbound-email door.
+  inboundToken String   @unique @default(cuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// A signed-in identity (Google sign-in). One user, one workspace.
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  workspaceId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Reader preferences, keyed by workspace (the pre-account row was "singleton",
+// adopted to "primary" on boot).
 model ReaderSetting {
-  id        String   @id @default("singleton")
+  id        String   @id // workspace id
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-// Singleton Google OAuth token, mirroring apps/web's GmailToken pattern.
+// Google OAuth token for a workspace's connected account (id = workspace id).
 model GoogleToken {
-  id           String   @id @default("singleton")
+  id           String   @id // workspace id
   accessToken  String
   refreshToken String
   expiryDate   Float
@@ -28,7 +53,8 @@ model GoogleToken {
 }
 
 model CalendarEvent {
-  id          String        @id // Google event id; recurring instances are unique with singleEvents=true
+  workspaceId String        @default("primary")
+  id          String // Google event id; recurring instances are unique with singleEvents=true
   title       String
   start       DateTime
   end         DateTime
@@ -41,11 +67,13 @@ model CalendarEvent {
   updatedAt   DateTime      @updatedAt
   notes       MeetingNote[]
 
-  @@index([start])
+  @@id([workspaceId, id])
+  @@index([workspaceId, start])
 }
 
 model MeetingNote {
-  id                 String         @id // Granola note id (not_…)
+  workspaceId        String         @default("primary")
+  id                 String // Granola note id (not_…)
   title              String
   summary            String
   attendees          String? // JSON string [{name,email}]
@@ -55,14 +83,16 @@ model MeetingNote {
   raw                String? // full API payload
   granolaCreatedAt   DateTime?
   linkedEventId      String?
-  linkedEvent        CalendarEvent? @relation(fields: [linkedEventId], references: [id])
+  linkedEvent        CalendarEvent? @relation(fields: [workspaceId, linkedEventId], references: [workspaceId, id])
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
-  @@index([granolaCreatedAt])
+  @@id([workspaceId, id])
+  @@index([workspaceId, granolaCreatedAt])
 }
 
 model Todo {
+  workspaceId String    @default("primary")
   id        String    @id @default(cuid())
   text      String
   meta      String
@@ -77,12 +107,13 @@ model Todo {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  @@index([status])
+  @@index([workspaceId, status])
 }
 
 // The Proofs: work drafted on the reader's behalf, awaiting signature.
 // Reviewed strictly one at a time; approval executes the attached action.
 model ReviewItem {
+  workspaceId String    @default("primary")
   id              String    @id @default(cuid())
   kind            String // email | post | analysis
   title           String
@@ -130,22 +161,24 @@ model ReviewItem {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  @@index([status, queuedAt])
+  @@index([workspaceId, status, queuedAt])
 }
 
 // A dated status update on a Docket item — "waiting on Breck to respond
 // on dates, then text Alanna" — a running log per to-do, shown under a
 // small disclosure on the Docket and read by the desk before drafting.
 model TodoUpdate {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
   todoId    String
   text      String
   createdAt DateTime @default(now())
 
-  @@index([todoId, createdAt])
+  @@index([workspaceId, todoId, createdAt])
 }
 
 model ApolloTask {
+  workspaceId String    @default("primary")
   id           String    @id @default(cuid())
   ask          String
   status       String    @default("received") // received | working | done | failed
@@ -161,7 +194,7 @@ model ApolloTask {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  @@index([createdAt])
+  @@index([workspaceId, createdAt])
 }
 
 // A reader-editable Apollo skill. Two kinds share the table: overrides of
@@ -169,17 +202,21 @@ model ApolloTask {
 // row exists) and skills the reader authored himself in Settings (label
 // set — whenToUse tells Apollo when to reach for it).
 model ApolloSkill {
-  id           String   @id // skill id, e.g. "founder-email" or "podcast-invite"
+  workspaceId  String   @default("primary")
+  id           String // skill id, e.g. "founder-email" or "podcast-invite"
   systemPrompt String
   label        String? // set only on reader-authored skills
   whenToUse    String? // reader-authored: when Apollo should invoke it
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@id([workspaceId, id])
 }
 
 // Continual learning, prompt-side: distilled from reader feedback,
 // injected into future Apollo system prompts.
 model ApolloLesson {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
   taskId    String
   lesson    String
@@ -188,28 +225,33 @@ model ApolloLesson {
 
 // One row per local date — the daily job upserts, so re-runs are idempotent.
 model BriefEdition {
-  date         String   @id // YYYY-MM-DD in APP_TIMEZONE
+  workspaceId  String   @default("primary")
+  date         String // YYYY-MM-DD in APP_TIMEZONE
   leadJson     String
   itemsJson    String
   scheduleJson String
   recallJson   String? // Worth Reciting cues drawn from yesterday's Margin
   generatedAt  DateTime @default(now())
+
+  @@id([workspaceId, date])
 }
 
 // Freeform thinking filed below the news wire; the desk replies inline.
 model MarginEntry {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
   text      String
   reply     String?
   createdAt DateTime @default(now())
 
-  @@index([createdAt])
+  @@index([workspaceId, createdAt])
 }
 
 // A reader-defined research theme, born from the intake interview.
 model ResearchThesis {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
-  slug      String   @unique
+  slug      String
   name      String
   chip      String
   stance    String
@@ -218,10 +260,13 @@ model ResearchThesis {
   status    String   @default("active") // active | retired
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, slug])
 }
 
 // A thought filed to The File (/notes). First line is the title.
 model FiledNote {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
   title     String
   body      String
@@ -234,15 +279,17 @@ model FiledNote {
 // contactId is a loose reference (no FK): it serves reader-added contacts
 // and the seeded ones alike.
 model ContactNote {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
   contactId String
   body      String
   createdAt DateTime @default(now())
 
-  @@index([contactId, createdAt])
+  @@index([workspaceId, contactId, createdAt])
 }
 
 model BookContact {
+  workspaceId String    @default("primary")
   id           String   @id @default(cuid())
   name         String
   role         String

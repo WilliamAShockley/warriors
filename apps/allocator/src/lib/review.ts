@@ -299,6 +299,8 @@ export async function distillProofLesson(id: string): Promise<void> {
     const db = await getDb()
     const row = await db.reviewItem.findUnique({ where: { id } })
     if (!row) return
+    const { runAsWorkspace } = await import('./tenant')
+    return await runAsWorkspace((row as any).workspaceId ?? 'primary', async () => {
 
     const commentary = row.commentary?.trim() || null
     const edited = row.amended && row.originalBody && row.originalBody !== row.body
@@ -330,6 +332,7 @@ export async function distillProofLesson(id: string): Promise<void> {
       const { addLesson } = await import('./apollo/store')
       await addLesson(`proof:${id}`, lesson)
     }
+    })
   } catch {
     // A lost lesson is a shame, not a failure.
   }
@@ -524,6 +527,16 @@ export async function superviseDelivery(id: string): Promise<void> {
     const row = await db.reviewItem.findUnique({ where: { id } })
     if (!row || row.status !== 'approved' || row.deliveryStatus !== 'watching' || !row.sentThreadId)
       return
+    const { runAsWorkspace } = await import('./tenant')
+    return await runAsWorkspace((row as any).workspaceId ?? 'primary', () => watchDelivery(db, row))
+  } catch {
+    // The watch is enrichment on top of a sent email; it never throws back.
+  }
+}
+
+async function watchDelivery(db: any, row: any): Promise<void> {
+  const id = row.id
+  try {
 
     const { threadHasBounce, sendEmail } = await import('./gmail')
     const action = row.actionJson ? JSON.parse(row.actionJson) : {}

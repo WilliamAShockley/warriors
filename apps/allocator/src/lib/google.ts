@@ -1,5 +1,6 @@
 import { google } from 'googleapis'
 import { db } from './db'
+import { activeWorkspaceId, ensureAdopted } from './tenant'
 
 // OAuth plumbing copied from apps/web/src/lib/gmail.ts. One Google account
 // powers the whole desk: calendar reads for the Brief, Gmail read/send for
@@ -34,7 +35,9 @@ export function getAuthUrl(state: string) {
 }
 
 export async function getAuthedClient() {
-  const token = await db.googleToken.findUnique({ where: { id: 'singleton' } })
+  await ensureAdopted()
+  const ws = await activeWorkspaceId()
+  const token = await db.googleToken.findUnique({ where: { id: ws } })
   if (!token) return null
 
   const client = getOAuthClient()
@@ -48,7 +51,7 @@ export async function getAuthedClient() {
   client.on('tokens', async (tokens) => {
     if (tokens.access_token) {
       await db.googleToken.update({
-        where: { id: 'singleton' },
+        where: { id: ws },
         data: {
           accessToken: tokens.access_token,
           expiryDate: tokens.expiry_date ?? 0,

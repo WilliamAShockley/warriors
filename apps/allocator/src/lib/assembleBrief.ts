@@ -162,8 +162,9 @@ Return only the JSON.`
     noteUrl: ev.notes[0]?.noteUrl ?? null,
   }))
 
+  const { activeWorkspaceId } = await import('./tenant')
   await db.briefEdition.upsert({
-    where: { date: today },
+    where: { workspaceId_date: { workspaceId: await activeWorkspaceId(), date: today } },
     create: {
       date: today,
       leadJson: JSON.stringify(parsed.lead),

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { google } from 'googleapis'
 import { getOAuthClient } from '@/lib/google'
 import { db } from '@/lib/db'
+import { activeWorkspaceId, ensureAdopted } from '@/lib/tenant'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -22,10 +23,13 @@ export async function GET(req: NextRequest) {
   const oauth2 = google.oauth2({ version: 'v2', auth: client })
   const userInfo = await oauth2.userinfo.get()
 
+  // The mailbox belongs to whichever workspace's session started the link.
+  await ensureAdopted()
+  const ws = await activeWorkspaceId()
   await db.googleToken.upsert({
-    where: { id: 'singleton' },
+    where: { id: ws },
     create: {
-      id: 'singleton',
+      id: ws,
       accessToken: tokens.access_token!,
       refreshToken: tokens.refresh_token!,
       expiryDate: tokens.expiry_date ?? 0,

@@ -24,6 +24,15 @@ export default function SettingsPage() {
       <div className="rule mt-12" />
 
       <SkillsEditor />
+
+      <p className="pb-8 pt-12 text-center">
+        <a
+          href="/api/auth/logout"
+          className="eyebrow text-faint underline decoration-hairline underline-offset-4"
+        >
+          Sign Out
+        </a>
+      </p>
     </main>
   )
 }

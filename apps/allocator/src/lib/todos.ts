@@ -70,7 +70,10 @@ export async function listTodos(): Promise<{ live: boolean; todos: TodoRecord[] 
   try {
     const db = await getDb()
 
-    if ((await db.todo.count()) === 0) {
+    // First-boot furniture for the operator's own desk only — a fresh
+    // invited workspace starts genuinely empty.
+    const { activeWorkspaceId, PRIMARY_WORKSPACE } = await import('./tenant')
+    if ((await activeWorkspaceId()) === PRIMARY_WORKSPACE && (await db.todo.count()) === 0) {
       await db.todo.createMany({
         data: seedTodos.map((t) => ({
           id: t.id,

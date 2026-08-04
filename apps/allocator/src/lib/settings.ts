@@ -13,7 +13,9 @@ export async function getReaderName(): Promise<string> {
   if (!hasDb()) return fallbackName
   try {
     const db = await getDb()
-    const row = await db.readerSetting.findUnique({ where: { id: 'singleton' } })
+    const { activeWorkspaceId, ensureAdopted } = await import('./tenant')
+    await ensureAdopted()
+    const row = await db.readerSetting.findUnique({ where: { id: await activeWorkspaceId() } })
     return row?.name?.trim() || fallbackName
   } catch {
     return fallbackName
@@ -24,9 +26,12 @@ export async function setReaderName(name: string): Promise<boolean> {
   if (!hasDb()) return false
   try {
     const db = await getDb()
+    const { activeWorkspaceId, ensureAdopted } = await import('./tenant')
+    await ensureAdopted()
+    const ws = await activeWorkspaceId()
     await db.readerSetting.upsert({
-      where: { id: 'singleton' },
-      create: { id: 'singleton', name },
+      where: { id: ws },
+      create: { id: ws, name },
       update: { name },
     })
     return true
@@ -40,7 +45,9 @@ export async function getConnectedAccount(): Promise<string | null> {
   if (!hasDb()) return null
   try {
     const db = await getDb()
-    const row = await db.googleToken.findUnique({ where: { id: 'singleton' } })
+    const { activeWorkspaceId, ensureAdopted } = await import('./tenant')
+    await ensureAdopted()
+    const row = await db.googleToken.findUnique({ where: { id: await activeWorkspaceId() } })
     return row?.email ?? null
   } catch {
     return null

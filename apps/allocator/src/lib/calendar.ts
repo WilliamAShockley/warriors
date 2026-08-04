@@ -78,8 +78,9 @@ export async function syncCalendar(targetDay?: string): Promise<CalendarSyncResu
       description: ev.description ?? null,
       source: 'google',
     }
+    const { activeWorkspaceId } = await import('./tenant')
     await db.calendarEvent.upsert({
-      where: { id: ev.id },
+      where: { workspaceId_id: { workspaceId: await activeWorkspaceId(), id: ev.id } },
       create: { id: ev.id, ...data },
       update: data,
     })

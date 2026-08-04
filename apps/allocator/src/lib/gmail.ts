@@ -119,7 +119,8 @@ export async function sendEmail(args: {
   if (!gmail) return null
   try {
     const { db } = await import('./db')
-    const token = await db.googleToken.findUnique({ where: { id: 'singleton' } })
+    const { activeWorkspaceId } = await import('./tenant')
+    const token = await db.googleToken.findUnique({ where: { id: await activeWorkspaceId() } })
     const fromEmail = token?.email ?? 'me'
 
     const messageParts = [
@@ -188,7 +189,8 @@ export async function threadHasReply(threadId: string, afterMessageId?: string |
   if (!gmail) return false
   try {
     const { db } = await import('./db')
-    const token = await db.googleToken.findUnique({ where: { id: 'singleton' } })
+    const { activeWorkspaceId } = await import('./tenant')
+    const token = await db.googleToken.findUnique({ where: { id: await activeWorkspaceId() } })
     const ownEmail = (token?.email ?? '').toLowerCase()
 
     const thread = await gmail.users.threads.get({

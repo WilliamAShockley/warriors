@@ -1,11 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Google sign-in errors land back here as ?error=…
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('error')
+    if (code === 'uninvited') setError('That account is not on the circulation list.')
+    else if (code === 'signin') setError('Google sign-in did not take. Try again.')
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -58,6 +65,22 @@ export default function LoginPage() {
           {loading ? 'One moment' : 'Enter'}
         </button>
       </form>
+
+      <div className="mt-10 flex items-center gap-4">
+        <div className="h-px flex-1 bg-hairline" />
+        <span className="eyebrow text-faint">or</span>
+        <div className="h-px flex-1 bg-hairline" />
+      </div>
+
+      <a
+        href="/api/auth/signin"
+        className="mt-6 block w-full border border-hairline py-3.5 text-center font-sans text-[10px] font-medium uppercase tracking-[0.18em] text-ink transition-colors duration-300 ease-editorial hover:border-ink"
+      >
+        Sign In with Google
+      </a>
+      <p className="dek mt-3 text-center text-[13px]">
+        By invitation — a listed account opens its own desk.
+      </p>
     </main>
   )
 }
