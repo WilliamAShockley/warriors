@@ -19,8 +19,14 @@ const parseEmails = (v: string | undefined) =>
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
 
-const callbackUrl = () =>
-  `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:5821'}/api/auth/signin/callback`
+// Must mirror the start route: the token exchange has to present the
+// exact redirect_uri the auth request was made with.
+const callbackUrl = (req: Request) => {
+  const url = new URL(req.url)
+  const host = req.headers.get('x-forwarded-host') ?? url.host
+  const proto = req.headers.get('x-forwarded-proto') ?? url.protocol.replace(':', '')
+  return `${proto}://${host}/api/auth/signin/callback`
+}
 
 export async function GET(req: Request) {
   const { searchParams, origin } = new URL(req.url)
@@ -31,7 +37,7 @@ export async function GET(req: Request) {
     const client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      callbackUrl()
+      callbackUrl(req)
     )
     const { tokens } = await client.getToken(code)
     client.setCredentials(tokens)
