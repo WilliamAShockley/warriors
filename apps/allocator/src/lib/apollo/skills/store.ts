@@ -12,7 +12,7 @@ export async function getSkillPrompt(id: string, fallback: string): Promise<stri
   if (!hasDb()) return fallback
   try {
     const db = await getDb()
-    const row = await db.apolloSkill.findUnique({ where: { id } })
+    const row = await db.apolloSkill.findFirst({ where: { id } })
     return row?.systemPrompt?.trim() ? row.systemPrompt : fallback
   } catch {
     return fallback
@@ -24,7 +24,7 @@ export async function isSkillCustom(id: string): Promise<boolean> {
   if (!hasDb()) return false
   try {
     const db = await getDb()
-    const row = await db.apolloSkill.findUnique({ where: { id } })
+    const row = await db.apolloSkill.findFirst({ where: { id } })
     return Boolean(row?.systemPrompt?.trim())
   } catch {
     return false
@@ -35,8 +35,9 @@ export async function setSkillPrompt(id: string, systemPrompt: string): Promise<
   if (!hasDb()) return false
   try {
     const db = await getDb()
+    const { activeWorkspaceId } = await import('../../tenant')
     await db.apolloSkill.upsert({
-      where: { id },
+      where: { workspaceId_id: { workspaceId: await activeWorkspaceId(), id } },
       create: { id, systemPrompt },
       update: { systemPrompt },
     })
@@ -95,7 +96,7 @@ export async function getCustomSkill(id: string): Promise<CustomSkill | null> {
   if (!hasDb()) return null
   try {
     const db = await getDb()
-    const row = await db.apolloSkill.findUnique({ where: { id } })
+    const row = await db.apolloSkill.findFirst({ where: { id } })
     return row && row.label ? toCustom(row) : null
   } catch {
     return null
@@ -120,7 +121,7 @@ export async function createCustomSkill(input: {
     const base = slugify(input.label) || 'skill'
     // First free id: the slug, else slug-2, slug-3 …
     let id = base
-    for (let n = 2; await db.apolloSkill.findUnique({ where: { id } }); n++) id = `${base}-${n}`
+    for (let n = 2; await db.apolloSkill.findFirst({ where: { id } }); n++) id = `${base}-${n}`
     const row = await db.apolloSkill.create({
       data: {
         id,

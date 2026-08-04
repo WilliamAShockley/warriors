@@ -1,11 +1,19 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { verifySession } from '@/lib/auth'
 
-// Access gate ported from apps/web/src/middleware.ts.
+// Access gate. Three ways in: a signed identity session (Google sign-in,
+// carries the workspace and role), the reader's password words (the
+// pre-account door, mapped to the primary workspace), or a guest word
+// (the reading copy — read-only).
 
 const PUBLIC_PATHS = new Set([
   '/login',
   '/api/auth/login',
+  // Google sign-in start + its redirect landing — reachable pre-session.
+  '/api/auth/signin',
+  '/api/auth/signin/callback',
+  '/api/auth/logout',
   // Google's redirect lands here without our fetch context — must be open.
   // The start route (/api/auth/google) is NOT public: linking the account
   // is the reader's act, behind his session.
@@ -91,6 +99,13 @@ export async function middleware(req: NextRequest) {
       )
     }
     return NextResponse.next()
+  }
+
+  // A signed identity session (Google sign-in) names its own role.
+  const identity = req.cookies.get('allocator_id')?.value
+  if (identity) {
+    const session = await verifySession(identity)
+    if (session) return session.role === 'guest' ? guestGate() : NextResponse.next()
   }
 
   // Bearer access for scripts / curl — the reader's words in full, a

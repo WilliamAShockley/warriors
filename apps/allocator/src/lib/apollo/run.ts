@@ -52,7 +52,24 @@ Two to five sections. The briefing is the deliverable — it should read like a 
 
 // The manual agent loop: per-step DB logging is the point. Callers with a
 // specialty (the docket worker) append their doctrine to the system prompt.
+// The whole run is framed in the task's own workspace, so every tool call
+// and every write lands on the right desk even far from the request.
 export async function runApollo(
+  taskId: string,
+  ask: string,
+  opts?: { systemAppendix?: string }
+): Promise<void> {
+  const { runAsWorkspace, activeWorkspaceId } = await import('../tenant')
+  const { db } = await import('../db')
+  let ws = await activeWorkspaceId()
+  try {
+    const task = await db.apolloTask.findUnique({ where: { id: taskId } })
+    if (task) ws = (task as any).workspaceId ?? ws
+  } catch {}
+  return runAsWorkspace(ws, () => runApolloInWorkspace(taskId, ask, opts))
+}
+
+async function runApolloInWorkspace(
   taskId: string,
   ask: string,
   opts?: { systemAppendix?: string }

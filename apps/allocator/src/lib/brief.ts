@@ -28,7 +28,7 @@ export async function getBrief(): Promise<BriefData> {
       import('./db'),
       import('./calendar'),
     ])
-    const edition = await db.briefEdition.findUnique({ where: { date: localDateString() } })
+    const edition = await db.briefEdition.findFirst({ where: { date: localDateString() } })
     if (!edition) return mockEdition
 
     return {

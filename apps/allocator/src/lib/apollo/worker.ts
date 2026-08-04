@@ -1,5 +1,6 @@
 import { createTask } from './store'
 import { runApollo, APOLLO_MODEL } from './run'
+import { activeWorkspaceId, runAsWorkspace } from '../tenant'
 
 // The docket worker: when a to-do calls for an email, Apollo picks it up
 // unbidden — thread check first, research if cold, then the founder-email
@@ -49,18 +50,28 @@ export async function workDocketItem(
 ): Promise<void> {
   if (!hasDb() || !process.env.ANTHROPIC_API_KEY) return
   try {
-    // One draft per to-do: skip if a proof already awaits signature for it.
-    // A redirect re-run skips the guard — its predecessor was just spiked.
-    if (todoId && !redirect) {
+    // Runs post-response, where the request context may be gone — the
+    // to-do row itself names the workspace this run belongs to.
+    let ws = await activeWorkspaceId()
+    if (todoId) {
       const db = await getDb()
-      const existing = await db.reviewItem.count({ where: { todoId, status: 'pending' } })
-      if (existing > 0) return
+      const todo = await db.todo.findUnique({ where: { id: todoId } })
+      if (todo) ws = (todo as any).workspaceId ?? ws
     }
+    await runAsWorkspace(ws, async () => {
+      // One draft per to-do: skip if a proof already awaits signature for it.
+      // A redirect re-run skips the guard — its predecessor was just spiked.
+      if (todoId && !redirect) {
+        const db = await getDb()
+        const existing = await db.reviewItem.count({ where: { todoId, status: 'pending' } })
+        if (existing > 0) return
+      }
 
-    const ask = workerAsk(todoId, text, redirect)
-    const task = await createTask(ask, APOLLO_MODEL)
-    if (!task) return
-    await runApollo(task.id, ask)
+      const ask = workerAsk(todoId, text, redirect)
+      const task = await createTask(ask, APOLLO_MODEL)
+      if (!task) return
+      await runApollo(task.id, ask)
+    })
   } catch {
     // Best-effort: the to-do stands either way; the reader can always ask
     // Apollo by hand.
