@@ -34,22 +34,29 @@ export default async function BriefPage() {
 
       <div className="rule-masthead mt-6" />
 
-      {/* Lead story */}
-      <article className="pt-8">
-        <p className="eyebrow text-oxblood">{lead.eyebrow}</p>
-        <h2 className="mt-3 font-serif text-[30px] font-medium leading-[1.12] tracking-tight">
-          {lead.headline}
-        </h2>
-        <p className="dek mt-4">{lead.dek}</p>
-        <div className="mt-5 space-y-4">
-          {lead.body.map((para, i) => (
-            <p key={i} className="body-copy">
-              {para}
-            </p>
-          ))}
-        </div>
-        <p className="eyebrow mt-5">{lead.source}</p>
-      </article>
+      {/* Lead story — absent until the first overnight edition assembles */}
+      {lead ? (
+        <article className="pt-8">
+          <p className="eyebrow text-oxblood">{lead.eyebrow}</p>
+          <h2 className="mt-3 font-serif text-[30px] font-medium leading-[1.12] tracking-tight">
+            {lead.headline}
+          </h2>
+          <p className="dek mt-4">{lead.dek}</p>
+          <div className="mt-5 space-y-4">
+            {lead.body.map((para, i) => (
+              <p key={i} className="body-copy">
+                {para}
+              </p>
+            ))}
+          </div>
+          <p className="eyebrow mt-5">{lead.source}</p>
+        </article>
+      ) : (
+        <p className="dek pt-10 text-center">
+          No edition yet. The morning paper assembles overnight — connect a Google account and
+          tomorrow&rsquo;s brief writes itself.
+        </p>
+      )}
 
       {/* Tomorrow's schedule — times and titles verbatim from the calendar */}
       {schedule && schedule.length > 0 && (
@@ -123,6 +130,7 @@ export default async function BriefPage() {
         </>
       )}
 
+      {items.length > 0 && (<>
       <div className="rule mt-9" />
 
       {/* The digest */}
@@ -152,6 +160,7 @@ export default async function BriefPage() {
       </section>
 
       <div className="rule mt-2" />
+      </>)}
 
       {/* Sign-off — a paper you finish */}
       <footer className="pb-6 pt-10 text-center">

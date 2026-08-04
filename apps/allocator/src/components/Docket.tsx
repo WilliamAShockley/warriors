@@ -19,7 +19,9 @@ type UiTodo = {
 const seedUi: UiTodo[] = seedTodos.map((t) => ({ ...t, status: 'open', updates: [] }))
 
 export default function Docket() {
-  const [items, setItems] = useState<UiTodo[]>(seedUi)
+  // Starts empty — the seeded docket appears only once the backend
+  // declares itself mock (zero-env demo), never as a flash on a live desk.
+  const [items, setItems] = useState<UiTodo[]>([])
   const [live, setLive] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -32,7 +34,8 @@ export default function Docket() {
   const [logOpenId, setLogOpenId] = useState<string | null>(null)
   const [logDraft, setLogDraft] = useState('')
 
-  // Reconcile with the database when there is one; otherwise the seed stands.
+  // Reconcile with the database when there is one; the seed stands only
+  // for the zero-env demo (or an unreachable backend).
   useEffect(() => {
     fetch('/api/todos')
       .then((r) => (r.ok ? r.json() : null))
@@ -40,9 +43,11 @@ export default function Docket() {
         if (data?.live) {
           setItems(data.todos)
           setLive(true)
+        } else {
+          setItems(seedUi)
         }
       })
-      .catch(() => {})
+      .catch(() => setItems(seedUi))
   }, [])
 
   const toggle = (id: string) => {

@@ -19,8 +19,10 @@ function todayLine() {
 }
 
 export default async function HomePage() {
-  const prospects = deals.filter((d) => d.status === 'prospect')
-  const live = deals.filter((d) => d.status === 'live')
+  // Seed pipeline counts belong to the zero-env demo only.
+  const hasDb = Boolean(process.env.DATABASE_URL)
+  const prospects = hasDb ? [] : deals.filter((d) => d.status === 'prospect')
+  const live = hasDb ? [] : deals.filter((d) => d.status === 'live')
   const [openTodos, dbTheses, pendingProofs, readerName] = await Promise.all([
     countOpenTodos(),
     listDbTheses(),
@@ -32,8 +34,8 @@ export default async function HomePage() {
   const menu = [
     { label: 'To Do’s', href: '/todos', note: `${openTodos} open` },
     { label: 'Review', href: '/review', note: `${pendingProofs} in the tray` },
-    { label: 'Prospects', href: '/prospects', note: `${prospects.length} names` },
-    { label: 'Live Deals', href: '/deals', note: `${live.length} in motion` },
+    { label: 'Prospects', href: '/prospects', note: prospects.length ? `${prospects.length} names` : 'none on file' },
+    { label: 'Live Deals', href: '/deals', note: live.length ? `${live.length} in motion` : 'none in motion' },
     { label: 'Research', href: '/research', note: `${thesisCount} thes${thesisCount === 1 ? 'is' : 'es'}` },
     { label: 'News', href: '/news', note: `${newsItems.length} on the wire` },
   ]

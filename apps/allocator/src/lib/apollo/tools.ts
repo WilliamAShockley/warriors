@@ -272,9 +272,11 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
       }
 
       case 'read_book': {
-        const { contacts: dbContacts } = await listDbContacts()
+        // The seeded cast is the zero-env demo's; a live Book is the
+        // reader's own people and no one else.
+        const { live, contacts: dbContacts } = await listDbContacts()
         const all = [
-          ...seedContacts.map((c) => ({ id: c.id, name: c.name, role: c.role, firm: c.firm, segment: c.segment, context: c.context })),
+          ...(live ? [] : seedContacts.map((c) => ({ id: c.id, name: c.name, role: c.role, firm: c.firm, segment: c.segment, context: c.context }))),
           ...dbContacts.map((c) => ({ id: c.id, name: c.name, role: c.role, firm: c.firm, segment: c.segment, context: c.context })),
         ]
         return {
@@ -295,9 +297,9 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
             readerNotes: notes.slice(0, 12).map((n) => ({ filedOn: n.filedOn, note: n.body })),
           })
         }
-        const seed = seedContacts.find(
-          (c) => c.id === q || c.name.toLowerCase().includes(q)
-        )
+        const seed = hasDb()
+          ? undefined
+          : seedContacts.find((c) => c.id === q || c.name.toLowerCase().includes(q))
         if (seed) {
           return {
             output: await withNotes(seed, seed.id),
