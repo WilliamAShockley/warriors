@@ -18,6 +18,8 @@ const PUBLIC_PATHS = new Set([
   // The start route (/api/auth/google) is NOT public: linking the account
   // is the reader's act, behind his session.
   '/api/auth/google/callback',
+  // The inbound-mail webhook authenticates itself by workspace token.
+  '/api/inbound/email',
   // PWA assets — home-screen install and the splash need these anonymously
   '/manifest.webmanifest',
   '/icon-192.png',

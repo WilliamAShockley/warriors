@@ -177,6 +177,17 @@ model TodoUpdate {
   @@index([workspaceId, todoId, createdAt])
 }
 
+// The mail door's ledger: every inbound email already turned into a task,
+// so sweeps and webhook retries never file the same message twice.
+model InboundEmail {
+  workspaceId String   @default("primary")
+  id          String // Gmail message id, or the vendor's message id
+  todoId      String?
+  createdAt   DateTime @default(now())
+
+  @@id([workspaceId, id])
+}
+
 model ApolloTask {
   workspaceId String    @default("primary")
   id           String    @id @default(cuid())

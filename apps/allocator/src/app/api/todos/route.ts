@@ -14,7 +14,18 @@ import { workDocketItem } from '@/lib/apollo/worker'
 export const maxDuration = 300
 
 export async function GET() {
-  return NextResponse.json(await listTodos())
+  const todos = await listTodos()
+  // The mail door sweeps opportunistically on Docket reads (throttled):
+  // email yourself "Allocator: …" and it files here on your next visit.
+  // The workspace is pinned before the response goes out — the request
+  // context is not guaranteed inside after().
+  const { activeWorkspaceId, runAsWorkspace } = await import('@/lib/tenant')
+  const ws = await activeWorkspaceId()
+  after(async () => {
+    const { sweepMailboxTasks } = await import('@/lib/inbound')
+    await runAsWorkspace(ws, () => sweepMailboxTasks())
+  })
+  return NextResponse.json(todos)
 }
 
 // { id } toggles an existing item; { id, text } amends its wording (a
