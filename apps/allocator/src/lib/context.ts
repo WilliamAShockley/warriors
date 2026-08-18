@@ -205,6 +205,8 @@ Founder full name: ${row.founderFullName ?? '(unknown)'}
 Website: ${row.websiteUrl ?? '(unknown)'}
 Context: ${row.context ?? '(none yet)'}
 
+IDENTITY ANCHORS — read before searching. Company names collide; several unrelated companies may share this one. Whatever the entry already knows — the website, the founder, the existing context — pins WHICH company this is: every search result you use must be about THAT company, and anything about a same-name company at a different domain or with different founders must be DISCARDED, however prominent it is. If the entry has no anchors and your searches reveal multiple distinct companies under this name, do NOT guess: set context to a one-line note naming the candidates (e.g. "AMBIGUOUS — could be X at a.com or Y at b.com; add the website or founder to the entry to anchor the research") and leave founder fields null.
+
 End your reply with ONLY this JSON (no prose after it):
 {"founderFirstName": "<or null>", "founderFullName": "<or null>",
  "context": "<the refreshed running brief, 3-8 sentences>",
