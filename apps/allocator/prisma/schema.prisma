@@ -152,6 +152,11 @@ model ReviewItem {
   // at staging — rendered at the foot of the review page.
   dossier         String?
   websiteUrl      String?
+  // Multi-draft proofs (podcast invitations and kin): 2-4 complete drafts
+  // staged together, recommended first. The reader sees all and puts one
+  // on deck; body/actionJson always mirror the selected draft.
+  variantsJson    String? // [{label, subject, body}]
+  selectedVariant Int       @default(0)
   // The sent artifact, for reply tracking — only these exact threads are
   // ever checked, never the mailbox at large.
   sentMessageId   String?

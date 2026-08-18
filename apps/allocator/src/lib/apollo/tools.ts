@@ -223,6 +223,20 @@ export const APOLLO_TOOL_DEFS = [
           description:
             'The recipient company’s homepage URL (https://…), when research surfaced it — the review page shows a screenshot of the site below the dossier.',
         },
+        variants: {
+          type: 'array',
+          description:
+            'MULTI-DRAFT proofs (podcast invitations, and any task that produced several candidate drafts): 2-4 COMPLETE drafts, the RECOMMENDED one FIRST. The reader sees every option in the review room and puts one on deck. Each label names its angle (e.g. "mechanism-forward", "market timing"). When passing variants, body/subject must still carry the recommended draft — identical to variants[0].',
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string', description: 'The angle, a few words' },
+              subject: { type: 'string' },
+              body: { type: 'string' },
+            },
+            required: ['label', 'body'],
+          },
+        },
       },
       required: ['kind', 'title', 'body'],
     },
@@ -555,6 +569,16 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
           dossier: input?.dossier ? String(input.dossier).slice(0, 8000) : undefined,
           websiteUrl: /^https?:\/\//.test(String(input?.websiteUrl ?? '').trim())
             ? String(input.websiteUrl).trim().slice(0, 500)
+            : undefined,
+          variants: Array.isArray(input?.variants)
+            ? input.variants
+                .filter((v: any) => v && String(v.body ?? '').trim())
+                .slice(0, 4)
+                .map((v: any) => ({
+                  label: String(v.label ?? 'option').slice(0, 60),
+                  ...(v.subject ? { subject: String(v.subject).slice(0, 200) } : {}),
+                  body: String(v.body).slice(0, 20_000),
+                }))
             : undefined,
         })
         return proof

@@ -1,6 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import {
   amendProof,
+  selectProofVariant,
   approveProof,
   approveViaLinkedIn,
   createProof,
@@ -135,6 +136,13 @@ export async function PATCH(req: Request) {
   const body = await req.json().catch(() => ({}))
   const id = String(body?.id ?? '').trim()
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  // Putting a staged option on deck is its own verb — not an amendment.
+  if (body.selectVariant !== undefined) {
+    const proof = await selectProofVariant(id, Number(body.selectVariant))
+    if (!proof) return NextResponse.json({ error: 'could not select that draft' }, { status: 400 })
+    return NextResponse.json({ ok: true, proof })
+  }
 
   const input: { body?: string; subject?: string; to?: string; commentary?: string } = {}
   if (body.body !== undefined) {
