@@ -12,6 +12,7 @@ type Company = {
   founderEmail: string | null
   linkedinUrl: string | null
   enrichedOn: string | null
+  enrichError: string | null
 }
 
 // While the desk researches a just-filed entry, the line cycles through
@@ -39,11 +40,15 @@ export default function Register() {
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [note, setNote] = useState('')
 
-  // Entries filed this session whose research is still in flight, and
-  // entries whose context just landed (for the arrival flourish).
-  const [researching, setResearching] = useState<Record<string, boolean>>({})
+  // Entries whose research is in flight, keyed to a fingerprint of the
+  // entry as it stood when the research began — any change (context
+  // landing, or a failure written to the card) means the run concluded.
+  const [researching, setResearching] = useState<Record<string, string>>({})
   const [arrived, setArrived] = useState<Record<string, boolean>>({})
   const [tick, setTick] = useState(0)
+
+  const fingerprint = (c: Company) =>
+    `${c.enrichedOn ?? ''}|${(c.context ?? '').length}|${c.enrichError ?? ''}`
 
   // The add form
   const [newName, setNewName] = useState('')
@@ -82,18 +87,21 @@ export default function Register() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [researchingCount])
 
-  // The moment an in-flight entry comes back enriched, retire its loading
-  // state and flash the arrival.
+  // The moment an in-flight entry changes — context landed, or a failure
+  // was written to the card — retire its loading state; flash only success.
   useEffect(() => {
-    const done = companies.filter((c) => researching[c.id] && c.enrichedOn)
+    const done = companies.filter(
+      (c) => researching[c.id] !== undefined && fingerprint(c) !== researching[c.id]
+    )
     if (done.length === 0) return
     setResearching((prev) => {
       const next = { ...prev }
       for (const c of done) delete next[c.id]
       return next
     })
-    setArrived((prev) => ({ ...prev, ...Object.fromEntries(done.map((c) => [c.id, true])) }))
-    for (const c of done) {
+    const succeeded = done.filter((c) => c.context && !c.enrichError)
+    setArrived((prev) => ({ ...prev, ...Object.fromEntries(succeeded.map((c) => [c.id, true])) }))
+    for (const c of succeeded) {
       setTimeout(
         () =>
           setArrived((prev) => {
@@ -124,7 +132,7 @@ export default function Register() {
         setNewFounder('')
         setNewContext('')
         if (live && !data.company.enrichedOn) {
-          setResearching((prev) => ({ ...prev, [data.company.id]: true }))
+          setResearching((prev) => ({ ...prev, [data.company.id]: fingerprint(data.company) }))
         }
       } else {
         setNote(data?.error ?? 'That did not take.')
@@ -167,7 +175,9 @@ export default function Register() {
     }
   }
 
-  // Research It Now: synchronous, honest — a failure surfaces its reason.
+  // Research It Now: fire-and-forget. The entry drops into the cycling
+  // loading state; the poll picks up either the context or the failure
+  // reason written onto the card.
   const [researchingNow, setResearchingNow] = useState(false)
   const researchNow = async (id: string) => {
     if (researchingNow) return
@@ -180,21 +190,15 @@ export default function Register() {
         body: JSON.stringify({ id, enrich: true }),
       })
       const data = await res.json()
-      if (data?.ok && data?.company) {
-        setCompanies((prev) => prev.map((c) => (c.id === id ? data.company : c)))
+      if (data?.ok) {
+        const current = companies.find((c) => c.id === id)
+        setResearching((prev) => ({
+          ...prev,
+          [id]: current ? fingerprint(current) : '',
+        }))
         setOpenId(null)
-        setArrived((prev) => ({ ...prev, [id]: true }))
-        setTimeout(
-          () =>
-            setArrived((prev) => {
-              const next = { ...prev }
-              delete next[id]
-              return next
-            }),
-          6000
-        )
       } else {
-        setNote(`The research failed: ${data?.error ?? 'no reason given'}`)
+        setNote(`The research did not start: ${data?.error ?? 'no reason given'}`)
       }
     } catch {
       setNote('Could not reach the desk.')
@@ -320,7 +324,7 @@ export default function Register() {
                 <div className="flex items-baseline justify-between gap-4">
                   <h3 className="font-serif text-[19px] font-medium leading-snug tracking-tight">{c.name}</h3>
                   <p className="eyebrow shrink-0">
-                    {researching[c.id] ? (
+                    {researching[c.id] !== undefined ? (
                       <span className="animate-pulse text-oxblood">researching…</span>
                     ) : arrived[c.id] ? (
                       <span className="text-oxblood">fresh off the wire</span>
@@ -337,7 +341,12 @@ export default function Register() {
                     {c.founderEmail ? ` · ${c.founderEmail}` : ''}
                   </p>
                 )}
-                {researching[c.id] && !c.context ? (
+                {c.enrichError && researching[c.id] === undefined && (
+                  <p className="eyebrow mt-2 text-oxblood">
+                    the research failed · {c.enrichError} — Research It Now retries
+                  </p>
+                )}
+                {researching[c.id] !== undefined && !c.context ? (
                   <p className="mt-2 animate-pulse font-serif text-[14px] italic leading-relaxed text-stone">
                     {RESEARCHING_PHRASES[(tick + i) % RESEARCHING_PHRASES.length]}
                   </p>

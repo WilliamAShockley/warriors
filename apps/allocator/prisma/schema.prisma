@@ -325,6 +325,7 @@ model CompanyContext {
   founderEmail     String?
   linkedinUrl      String?
   lastEnrichedAt   DateTime?
+  enrichError      String? // why the last research run failed, shown on the card
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

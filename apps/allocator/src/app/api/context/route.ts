@@ -5,9 +5,10 @@ import { amendCompany, listCompanies, removeCompany, upsertCompany } from '@/lib
 // name; POST { id, remove: true } strikes an entry; PATCH { id, ... }
 // amends fields explicitly (empty strings clear).
 //
-// File-time enrichment runs post-response (a bounded web check can take
-// up to a minute), hence the elevated ceiling.
-export const maxDuration = 120
+// Enrichment always runs post-response (a bounded web check can take a
+// minute or more, longer than any sane HTTP wait) — the ceiling covers
+// the after() window.
+export const maxDuration = 300
 
 export async function GET() {
   return NextResponse.json(await listCompanies())
@@ -20,16 +21,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: await removeCompany(String(body.id)) })
   }
 
-  // Research It Now: run the enrichment synchronously and answer honestly —
-  // the reader sees the real error instead of a spinner that gives up.
+  // Research It Now: fire-and-forget. The check runs behind this response
+  // (never against the browser's patience); success lands as context, and
+  // failure lands as enrichError ON the entry — the card tells the truth
+  // either way, and the page's polling picks whichever up.
   if (body?.id && body?.enrich === true) {
-    const { enrichCompanyById, listCompanies } = await import('@/lib/context')
-    const result = await enrichCompanyById(String(body.id))
-    if (!result.ok) {
-      return NextResponse.json({ ok: false, error: result.error ?? 'enrichment failed' }, { status: 502 })
-    }
-    const { companies } = await listCompanies()
-    return NextResponse.json({ ok: true, company: companies.find((c) => c.id === String(body.id)) ?? null })
+    const id = String(body.id)
+    const { activeWorkspaceId, runAsWorkspace } = await import('@/lib/tenant')
+    const ws = await activeWorkspaceId()
+    after(async () => {
+      const { enrichCompanyById } = await import('@/lib/context')
+      await runAsWorkspace(ws, () => enrichCompanyById(id))
+    })
+    return NextResponse.json({ ok: true, started: true })
   }
 
   const name = String(body?.name ?? '').trim()

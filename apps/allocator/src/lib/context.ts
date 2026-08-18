@@ -21,6 +21,7 @@ export type CompanyRecord = {
   founderEmail: string | null
   linkedinUrl: string | null
   enrichedOn: string | null
+  enrichError: string | null
 }
 
 const TZ = process.env.APP_TIMEZONE ?? 'America/New_York'
@@ -42,6 +43,7 @@ const toRecord = (r: any): CompanyRecord => ({
   founderEmail: r.founderEmail,
   linkedinUrl: r.linkedinUrl,
   enrichedOn: dateLabel(r.lastEnrichedAt),
+  enrichError: r.enrichError ?? null,
 })
 
 export async function listCompanies(): Promise<{ live: boolean; companies: CompanyRecord[] }> {
@@ -178,9 +180,12 @@ async function refreshEntry(db: any, row: any): Promise<RefreshResult> {
     const { parseLLMJsonObject } = await import('./retry')
     // Generous ceiling: adaptive thinking and three search rounds all
     // count against max_tokens — a small cap truncates before the JSON.
-    const response = await anthropic.messages.create({
+    // A hard client-side timeout keeps the run inside the platform's
+    // function window, so a hang becomes a recordable failure.
+    const call = anthropic.messages.create({
       model: ENRICH_MODEL,
           max_tokens: 16000,
+          output_config: { effort: 'medium' } as any,
           tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 } as any],
           messages: [
             {
@@ -207,6 +212,12 @@ End your reply with ONLY this JSON (no prose after it):
             },
           ],
         } as any)
+    const response: any = await Promise.race([
+      call,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('the web check timed out after 100 seconds')), 100_000)
+      ),
+    ])
         const text = (response.content as any[])
           .filter((b) => b.type === 'text')
           .map((b) => b.text)
@@ -222,6 +233,7 @@ End your reply with ONLY this JSON (no prose after it):
     if (!parsed.context || !String(parsed.context).trim()) {
       const reason = `the model returned no context (stop_reason: ${(response as any).stop_reason ?? 'unknown'})`
       console.error(`[register] enrichment of "${row.name}" failed: ${reason}`)
+      await recordFailure(db, row.id, reason)
       return { ok: false, error: reason }
     }
 
@@ -235,14 +247,32 @@ End your reply with ONLY this JSON (no prose after it):
           ? { websiteUrl: String(parsed.websiteUrl).slice(0, 500) }
           : {}),
         lastEnrichedAt: new Date(),
+        enrichError: null,
       },
     })
     return { ok: true }
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
     console.error(`[register] enrichment of "${row.name}" threw: ${reason}`)
+    await recordFailure(db, row.id, reason)
     return { ok: false, error: reason.slice(0, 300) }
   }
+}
+
+// The failure goes on the card, time-stamped so a repeat of the same
+// error still reads as a fresh answer to the reader's retry.
+async function recordFailure(db: any, id: string, reason: string): Promise<void> {
+  try {
+    const at = new Intl.DateTimeFormat('en-GB', {
+      timeZone: TZ,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date())
+    await db.companyContext.update({
+      where: { id },
+      data: { enrichError: `${reason.slice(0, 240)} (at ${at})` },
+    })
+  } catch {}
 }
 
 // Enrich one entry now — file-time (post-response) and the Register's
