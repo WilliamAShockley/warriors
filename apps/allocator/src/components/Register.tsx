@@ -270,9 +270,9 @@ export default function Register() {
         </p>
       )}
 
-      <ul className="mt-2 md:grid md:grid-cols-2 md:gap-x-10">
+      <ul className="mt-2">
         {companies.map((c, i) => (
-          <li key={c.id} className="rule first:border-t-0 md:[&:nth-child(2)]:border-t-0">
+          <li key={c.id} className="rule first:border-t-0">
             {openId === c.id ? (
               <div className="py-5">
                 <p className="eyebrow text-oxblood">Amending the Entry</p>
