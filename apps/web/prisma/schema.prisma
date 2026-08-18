@@ -74,17 +74,38 @@ model Person {
   embedding     Unsupported("vector(1024)")?
   synthesizedBlob String?
   score         Float?
-  sourceType    String?  // linkedin_founder, linkedin_mutuals, twitter_follower
+  sourceType    String?  // linkedin_founder, linkedin_mutuals, twitter_follower, horizon_import
   sourceUrl     String?
   targetId      String?
+
+  // ── Horizon OS firm-level graph additions ─────────────────────
+  // Person is firm-scoped (shared across workspaces), not workspace-scoped.
+  // Dedupe on email/linkedinUrl is enforced in the sourcing import code, not
+  // by unique constraints — pre-existing Hermes rows may contain duplicates.
+  firmId        String?
+  emails        Json?    // additional emails beyond the primary `email`
+  enrichment    Json?    // provenance-tagged enrichment blob: {source, fetchedAt, fields}
+  tags          String[] @default([])
+  status        String   @default("active") // active | do-not-contact | bounced
+  deletedAt     DateTime? // soft delete — firm graph is never hard-deleted
+  companyId     String?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   target        Target?  @relation(fields: [targetId], references: [id], onDelete: SetNull)
+  firm          Firm?    @relation(fields: [firmId], references: [id])
+  companyRef    Company? @relation(fields: [companyId], references: [id])
+  interactions  Interaction[]
+  memberships   CampaignMembership[]
 
   @@index([targetId])
   @@index([sourceType])
+  @@index([firmId])
+  @@index([status])
+  @@index([email])
+  @@index([linkedinUrl])
+  @@index([tags], type: Gin)
 }
 
 model FundingRound {
@@ -467,4 +488,209 @@ model DocumentChunk {
   createdAt  DateTime @default(now())
 
   @@index([documentId, ordinal])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Horizon OS — firm scoping, outreach CRM layer, missions, chat
+// ═══════════════════════════════════════════════════════════════
+
+// Minimal firm/workspace scoping. Person + Interaction are firm-level
+// (shared across every workspace of the firm); Campaign/Mission/ChatSession
+// are workspace-scoped. Scope resolution lives in src/lib/horizon/scope.ts —
+// all Horizon queries go through it. Existing single-operator auth is
+// unchanged; a default Firm + Workspace row is created on first use.
+model Firm {
+  id         String      @id @default(cuid())
+  name       String
+  createdAt  DateTime    @default(now())
+  workspaces Workspace[]
+  persons    Person[]
+  interactions Interaction[]
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  firmId    String
+  name      String
+  createdAt DateTime @default(now())
+  firm      Firm     @relation(fields: [firmId], references: [id])
+  campaigns Campaign[]
+  missions  Mission[]
+  chatSessions ChatSession[]
+
+  @@index([firmId])
+}
+
+model Company {
+  id         String   @id @default(cuid())
+  firmId     String?
+  name       String
+  domain     String?
+  stage      String?
+  sector     String?
+  enrichment Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  persons    Person[]
+
+  @@index([domain])
+}
+
+// Append-only touch history on the firm graph. Never hard-deleted.
+model Interaction {
+  id             String    @id @default(cuid())
+  firmId         String?
+  personId       String
+  channel        String    // email | linkedin | call | meeting | other
+  direction      String    // outbound | inbound
+  campaignId     String?
+  body           String?
+  summary        String?
+  classification String?   // interested | not-now | referral | negative | other
+  occurredAt     DateTime  @default(now())
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+
+  person   Person    @relation(fields: [personId], references: [id])
+  firm     Firm?     @relation(fields: [firmId], references: [id])
+  campaign Campaign? @relation(fields: [campaignId], references: [id])
+
+  @@index([personId, occurredAt])
+  @@index([campaignId])
+  @@index([classification])
+}
+
+model Campaign {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  name            String
+  hypothesis      String?
+  icpDefinition   Json?    // {criteria, exclusions: {recontactDays, excludeTags, ...}}
+  messageStrategy String?
+  sequence        Json?    // ordered touches: [{channel, delayDays, template}]
+  status          String   @default("draft") // draft | sourcing | awaiting-list-approval | drafting | awaiting-strategy-approval | running | paused | completed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id])
+  memberships  CampaignMembership[]
+  interactions Interaction[]
+  missions     Mission[]
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+model CampaignMembership {
+  id                String    @id @default(cuid())
+  campaignId        String
+  personId          String
+  state             String    @default("sourced") // sourced | enriched | drafted | approved | queued | sent | replied | closed | excluded
+  outcome           String?   // interested | not-now | referral | negative | other
+  currentTouchIndex Int       @default(0)
+  nextActionAt      DateTime?
+  drafts            Json?     // [{touchIndex, channel, subject?, body, approved, editedBody?, sentAt?, placement?}]
+
+  // Placement sub-state for the CURRENT touch (LinkedIn or manual email).
+  // Kept in columns (not the drafts JSON) so runner claiming can use an
+  // atomic optimistic updateMany — two runners can never claim one touch.
+  // Historical placement info is folded back into `drafts` when a touch
+  // completes. Sub-states: queued -> claimed -> placed -> sent (or
+  // placement-failed back to the manual queue).
+  placementState String?
+  claimedAt      DateTime?
+  placedAt       DateTime?
+  placementError String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+  person   Person   @relation(fields: [personId], references: [id])
+
+  @@unique([campaignId, personId])
+  @@index([state, nextActionAt])
+  @@index([placementState])
+}
+
+model Mission {
+  id          String   @id @default(cuid())
+  workspaceId String
+  type        String   // outreach_campaign (first mission type)
+  title       String
+  instruction String   // operator's original plain-language ask, verbatim
+  campaignId  String?
+  status      String   @default("created") // created | running | awaiting-approval | paused | completed | failed
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  campaign  Campaign? @relation(fields: [campaignId], references: [id])
+  events    MissionEvent[]
+  approvals Approval[]
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+// Append-only activity log.
+model MissionEvent {
+  id        String   @id @default(cuid())
+  missionId String
+  kind      String   // status-change | progress | approval-requested | approval-resolved | error | note
+  payload   Json?
+  actor     String   @default("system") // system | user | runner | agent
+  createdAt DateTime @default(now())
+
+  mission Mission @relation(fields: [missionId], references: [id])
+
+  @@index([missionId, createdAt])
+}
+
+// Human gates. The chat agent has NO tool that writes to this table —
+// approvals are resolved only through the structured approval-queue UI.
+// Send paths verify status=approved rows exist before any external send.
+model Approval {
+  id         String    @id @default(cuid())
+  missionId  String
+  kind       String    // target-list | message-strategy | draft-batch | release
+  payload    Json?     // what exactly is being approved (person ids, draft sample, ...)
+  status     String    @default("pending") // pending | approved | rejected
+  resolvedBy String?
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  mission Mission @relation(fields: [missionId], references: [id])
+
+  @@index([missionId])
+  @@index([status])
+}
+
+model ChatSession {
+  id          String   @id @default(cuid())
+  workspaceId String
+  title       String   @default("New session")
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  messages  ChatMessage[]
+
+  @@index([workspaceId, updatedAt])
+}
+
+// Content stored in Anthropic content-block shape so history replays
+// directly into API calls. Append-only.
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String   // user | assistant
+  content   Json     // array of content blocks: text | tool_use | tool_result
+  createdAt DateTime @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId, createdAt])
 }
