@@ -164,80 +164,29 @@ export async function removeCompany(id: string): Promise<boolean> {
   }
 }
 
-// The refresh model: Sonnet-tier is the cost/quality sweet spot for
-// bounded factual lookups; override with ENRICH_MODEL to trade up.
-const ENRICH_MODEL = process.env.ENRICH_MODEL || 'claude-sonnet-5'
-
 export type RefreshResult = { ok: boolean; error?: string }
 
 // Refresh ONE entry with a focused, bounded web check. Shared by the
 // nightly pass, file-time enrichment, and the manual Research It Now.
+// The engine itself — the reader's verbatim charge, the web_search tool,
+// the 240s deadline — lives in research/providers/anthropic, where the
+// Bench runs the identical engine head-to-head against the challengers.
 // A failed refresh leaves the entry standing AND dateless, so the next
 // pass retries it; the failure is logged and returned, never swallowed.
 async function refreshEntry(db: any, row: any): Promise<RefreshResult> {
   try {
-    const { anthropic } = await import('./claude')
-    const { parseLLMJsonObject } = await import('./retry')
-    // Generous ceiling: adaptive thinking and three search rounds all
-    // count against max_tokens — a small cap truncates before the JSON.
-    // A hard client-side timeout keeps the run inside the platform's
-    // function window, so a hang becomes a recordable failure.
-    const call = anthropic.messages.create({
-      model: ENRICH_MODEL,
-          max_tokens: 16000,
-          output_config: { effort: 'medium' } as any,
-          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 } as any],
-          messages: [
-            {
-              role: 'user',
-              // The reader's own enrichment charge — filed 18 Aug 2026;
-              // change it only at his direction.
-              content: `Refresh a company-context entry with a quick web check (funding, product,
-leadership changes — anything material and current). Ask yourself these questions. Did the company recently announce a fundraise? Did the company recently share some sort of blog or product announcement? Did the company recently come out of stealth? What is the main problem the company is trying to solve? What is the company's main product? Do they have any customers listed on their website? What broader investment theme does this company sit within? For Founder first name, we are specifically focused on the CEO
-
- We define recent as in the past 3 months from the date of this search. The date of this search: ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}. Keep what still holds;
-correct what changed; add what's new. Be terse and factual.
-
-CURRENT ENTRY:
-Company: ${row.name}
-Founder first name: ${row.founderFirstName ?? '(unknown)'}
-Founder full name: ${row.founderFullName ?? '(unknown)'}
-Website: ${row.websiteUrl ?? '(unknown)'}
-Context: ${row.context ?? '(none yet)'}
-
-IDENTITY ANCHORS — read before searching. Company names collide; several unrelated companies may share this one. Whatever the entry already knows — the website, the founder, the existing context — pins WHICH company this is: every search result you use must be about THAT company, and anything about a same-name company at a different domain or with different founders must be DISCARDED, however prominent it is. If the entry has no anchors and your searches reveal multiple distinct companies under this name, do NOT guess: set context to a one-line note naming the candidates (e.g. "AMBIGUOUS — could be X at a.com or Y at b.com; add the website or founder to the entry to anchor the research") and leave founder fields null.
-
-End your reply with ONLY this JSON (no prose after it):
-{"founderFirstName": "<or null>", "founderFullName": "<or null>",
- "context": "<the refreshed running brief, 3-8 sentences>",
- "websiteUrl": "<https url or null>"}`,
-            },
-          ],
-        } as any)
-    const response: any = await Promise.race([
-      call,
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('the web check timed out after 100 seconds')), 100_000)
-      ),
-    ])
-        const text = (response.content as any[])
-          .filter((b) => b.type === 'text')
-          .map((b) => b.text)
-          .join('\n')
-        const parsed = parseLLMJsonObject<{
-          founderFirstName?: string | null
-          founderFullName?: string | null
-          context?: string | null
-          websiteUrl?: string | null
-        }>(text, {})
-    // No usable context = a failed run. Do NOT stamp lastEnrichedAt —
-    // stamping an empty result would park the entry for six days.
-    if (!parsed.context || !String(parsed.context).trim()) {
-      const reason = `the model returned no context (stop_reason: ${(response as any).stop_reason ?? 'unknown'})`
-      console.error(`[register] enrichment of "${row.name}" failed: ${reason}`)
-      await recordFailure(db, row.id, reason)
-      return { ok: false, error: reason }
-    }
+    const { anthropicProvider } = await import('./research/providers/anthropic')
+    // The provider throws on empty context, so a success here always has
+    // real fields; failures fall through to the catch, which records the
+    // reason on the card and leaves lastEnrichedAt unstamped — stamping
+    // an empty result would park the entry for six days.
+    const { fields: parsed } = await anthropicProvider.run({
+      name: row.name,
+      founderFirstName: row.founderFirstName,
+      founderFullName: row.founderFullName,
+      websiteUrl: row.websiteUrl,
+      context: row.context,
+    })
 
     await db.companyContext.update({
       where: { id: row.id },
@@ -281,11 +230,17 @@ async function recordFailure(db: any, id: string, reason: string): Promise<void>
 // manual Research It Now both come through here.
 export async function enrichCompanyById(id: string): Promise<RefreshResult> {
   if (!hasDb()) return { ok: false, error: 'no database' }
-  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, error: 'no ANTHROPIC_API_KEY configured' }
   try {
     const db = await getDb()
     const row = await db.companyContext.findUnique({ where: { id } })
     if (!row) return { ok: false, error: 'no such entry' }
+    // A missing key still lands on the card — fire-and-forget callers
+    // would otherwise swallow it and the reader would watch a spinner.
+    if (!process.env.ANTHROPIC_API_KEY) {
+      const reason = 'no ANTHROPIC_API_KEY configured'
+      await recordFailure(db, row.id, reason)
+      return { ok: false, error: reason }
+    }
     return await refreshEntry(db, row)
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'enrichment failed' }

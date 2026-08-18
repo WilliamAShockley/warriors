@@ -338,6 +338,44 @@ model CompanyContext {
   @@index([workspaceId, lastEnrichedAt])
 }
 
+// The Bench: the provider bake-off. One row per company under test; the
+// four research engines each fill their cell, the reader crowns a winner.
+// Rows persist — the sheet is a ledger, so win rates accumulate meaning.
+model BenchRow {
+  workspaceId String   @default("primary")
+  id          String   @id @default(cuid())
+  companyName String
+  founderHint String? // anchors snapshotted at filing, so results stay interpretable
+  websiteHint String?
+  contextHint String?
+  winner      String? // provider id the reader crowned
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workspaceId, createdAt])
+}
+
+// One provider's run against one row. Re-runs stack — the cell shows the
+// latest, the table keeps the history.
+model BenchTrial {
+  workspaceId   String    @default("primary")
+  id            String    @id @default(cuid())
+  rowId         String
+  provider      String // anthropic | openai | exa | parallel
+  status        String    @default("queued") // queued | running | done | failed
+  outputJson    String? // {founderFirstName, founderFullName, context, websiteUrl}
+  citationsJson String? // [{title, url}]
+  latencyMs     Int?
+  error         String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId, rowId, provider, createdAt])
+}
+
 model BookContact {
   workspaceId String    @default("primary")
   id           String   @id @default(cuid())

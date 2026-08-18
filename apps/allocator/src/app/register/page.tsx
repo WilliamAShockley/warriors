@@ -15,12 +15,18 @@ export default function RegisterPage() {
           Every company the desk has touched — who founded it, what it is, why it matters.
           The desk reads this before researching and refreshes it overnight.
         </p>
-        <p className="mt-3">
+        <p className="mt-3 flex gap-6">
           <Link
             href="/book"
             className="eyebrow text-faint underline decoration-hairline underline-offset-4"
           >
             The people are in the Book →
+          </Link>
+          <Link
+            href="/bench"
+            className="eyebrow text-faint underline decoration-hairline underline-offset-4"
+          >
+            Test the engines on the Bench →
           </Link>
         </p>
       </header>
