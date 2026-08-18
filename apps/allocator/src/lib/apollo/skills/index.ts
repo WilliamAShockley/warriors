@@ -5,9 +5,10 @@
 import { founderEmailSkill } from './founder-email'
 import { schedulerSkill } from './scheduler'
 import { addressGuessSkill } from './address-guess'
+import { podcastLineSkill } from './podcast-line'
 import { getSkillPrompt, isSkillCustom } from './store'
 
-export const APOLLO_SKILLS = [founderEmailSkill, schedulerSkill, addressGuessSkill] as const
+export const APOLLO_SKILLS = [founderEmailSkill, schedulerSkill, addressGuessSkill, podcastLineSkill] as const
 
 export type SkillMeta = (typeof APOLLO_SKILLS)[number]
 
@@ -73,6 +74,7 @@ export function getSkillMeta(id: string): SkillMeta | undefined {
 export { draftFounderEmail, founderEmailSkill } from './founder-email'
 export { proposeTimes, schedulerSkill } from './scheduler'
 export { draftWithSkill } from './custom'
+export { generatePodcastLine, podcastLineSkill } from './podcast-line'
 export {
   getSkillPrompt,
   setSkillPrompt,
