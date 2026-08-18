@@ -19,6 +19,14 @@ export default async function BookPage() {
           Relationships
         </h1>
         <p className="dek mt-2">Everyone who matters, and why.</p>
+        <p className="mt-3">
+          <Link
+            href="/register"
+            className="eyebrow text-faint underline decoration-hairline underline-offset-4"
+          >
+            The companies are in the Register →
+          </Link>
+        </p>
       </header>
 
       <AddContact />

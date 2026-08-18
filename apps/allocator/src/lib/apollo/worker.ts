@@ -22,13 +22,16 @@ const workerAsk = (todoId: string, text: string, redirect?: WorkerRedirect) => `
     : ''
 }
 
-Draft that email and stage it for the reader's signature. Follow this procedure exactly — it is a short job, not an investigation. Budget: at most 8 tool calls, at most 3 web searches.
+Draft that email and stage it for the reader's signature. Follow this procedure exactly — it is a short job, not an investigation. Budget: at most 10 tool calls, at most 3 web searches.
 
 STEP 1 — Who is this? If the to-do names a person, read_contact them first; if it names a company, read_book to see if anyone there is known. The Book's segment decides the AUDIENCE: Founders/Co-investors on a company matter → "founder"; LPs → "investor"; anything else (or advisors, counsel, scheduling) → "other". A company not in the Book at all is founder outreach.
 
+STEP 1b — The Register. When a company is in play, read_company_context BEFORE any web research. A good entry gives you the founder's first name, what the company does, the site, often the address — trust it for identity, verify only what looks time-sensitive, and spend your web searches on what it lacks.
+
 STEP 2 — Thread check. search_email for the person or company.
 - A thread EXISTS: read_email the most recent message. mode = "follow_up"; the recipient, address, and threadId come from the thread.
-- NO thread: mode = "cold". For founder audience, search the web: what the company does and — most important — WHO THE FOUNDER IS AND THEIR FIRST NAME. Also capture the founder's LinkedIn profile URL whenever it surfaces, and the company's homepage URL (https://…). Address: a real one if research surfaced it, else best-guess firstname@companydomain.com and say so plainly in the proof's summary line. If NO plausible email exists at all (no address found and no clean domain to guess against), stage with the linkedinUrl INSTEAD of "to" and say in the summary that this one goes out over LinkedIn.
+- NO thread: mode = "cold". For founder audience, whatever the Register did not already answer, search the web: what the company does and — most important — WHO THE FOUNDER IS AND THEIR FIRST NAME. Also capture the founder's LinkedIn profile URL whenever it surfaces, and the company's homepage URL (https://…). Address: a real one if research surfaced it, else best-guess firstname@companydomain.com and say so plainly in the proof's summary line. If NO plausible email exists at all (no address found and no clean domain to guess against), stage with the linkedinUrl INSTEAD of "to" and say in the summary that this one goes out over LinkedIn.
+- Either way, once you know things the Register did not: save_company_context with the company name, founder first name (and full name), a tight 3-8 sentence context, and the site/email/LinkedIn you surfaced. The next task on this company starts from your entry.
 
 STEP 2b — Scheduling check (follow-ups only). If the thread shows the other party AGREED to meet or asked for times, call propose_times (pass meeting length and their timezone if the thread reveals them) and include the returned windows in the draft VERBATIM, as a bulleted list. Never compose availability yourself; if propose_times fails, the draft says you will follow up with times rather than inventing any.
 

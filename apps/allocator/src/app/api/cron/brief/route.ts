@@ -53,6 +53,14 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         r.mailDoor = { error: err instanceof Error ? err.message : String(err) }
       }
+      try {
+        // The Register's nightly refresh: the stalest few entries get a
+        // bounded web check so context stays current without anyone asking.
+        const { enrichCompanies } = await import('@/lib/context')
+        r.register = await enrichCompanies(3)
+      } catch (err) {
+        r.register = { error: err instanceof Error ? err.message : String(err) }
+      }
       return r
     })
   }

@@ -308,6 +308,30 @@ model ContactNote {
   @@index([workspaceId, contactId, createdAt])
 }
 
+// The Register: the context table. One entry per company the desk has
+// touched — who founded it, what it is, why it matters — accumulated from
+// worker research, reader edits, and a nightly enrichment pass. Read
+// before any research; written back after. Context as an asset, not
+// per-task exhaust.
+model CompanyContext {
+  workspaceId      String    @default("primary")
+  id               String    @id @default(cuid())
+  name             String
+  nameKey          String // normalized for lookup (lowercased, squeezed)
+  founderFirstName String?
+  founderFullName  String?
+  context          String? // the running brief: what it does, stage, the hook
+  websiteUrl       String?
+  founderEmail     String?
+  linkedinUrl      String?
+  lastEnrichedAt   DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([workspaceId, nameKey])
+  @@index([workspaceId, lastEnrichedAt])
+}
+
 model BookContact {
   workspaceId String    @default("primary")
   id           String   @id @default(cuid())

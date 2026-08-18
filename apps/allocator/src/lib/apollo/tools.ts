@@ -114,6 +114,36 @@ export const APOLLO_TOOL_DEFS = [
     },
   },
   {
+    name: 'read_company_context',
+    description:
+      'Look up a company in the Register — the desk’s accumulated context table (founder, what it does, site, email, LinkedIn, when last refreshed). ALWAYS call this BEFORE researching a company on the web: a good entry answers most of what you need in one step and keeps facts consistent across tasks. An entry may be stale — trust it for identity (who the founder is, what the company is) and verify only what looks time-sensitive.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'The company name' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'save_company_context',
+    description:
+      'Write what you learned about a company back to the Register so the NEXT task starts from it. ALWAYS call this after researching a company (web or thread): pass the name, the founder’s first name (and full name if known), a tight 3-8 sentence context (what it does, stage/funding, the hook), and the website/email/LinkedIn when surfaced. Provided fields update the entry; absent fields keep their old values — never pass a guess to overwrite a fact.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string' },
+        founderFirstName: { type: 'string' },
+        founderFullName: { type: 'string' },
+        context: { type: 'string', description: '3-8 tight factual sentences' },
+        websiteUrl: { type: 'string', description: 'https://… homepage' },
+        founderEmail: { type: 'string' },
+        linkedinUrl: { type: 'string' },
+      },
+      required: ['name'],
+    },
+  },
+  {
     name: 'search_email',
     description:
       'Search the reader’s connected Gmail account. Accepts Gmail search syntax (from:, to:, subject:, newer_than:7d, quoted phrases). Returns message metadata and snippets — use read_email for a full body.',
@@ -405,6 +435,37 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
         return entry
           ? { output: 'Filed to the margin.', step: { kind: 'write', name: 'Filed a margin note', detail: clip(String(input?.text ?? ''), 60) } }
           : { output: 'Could not file the note.', step: { kind: 'note', name: 'Margin note not filed', detail: 'no database' }, isError: true }
+      }
+
+      case 'read_company_context': {
+        const { findCompany } = await import('../context')
+        const name = String(input?.name ?? '').trim()
+        const hit = await findCompany(name)
+        return hit
+          ? {
+              output: JSON.stringify(hit),
+              step: { kind: 'tool', name: 'Read the Register', detail: `${hit.name}${hit.enrichedOn ? ` · refreshed ${hit.enrichedOn}` : ''}` },
+            }
+          : {
+              output: 'No entry in the Register for that company — research it, then save_company_context what you learn.',
+              step: { kind: 'tool', name: 'Read the Register', detail: `no entry · ${clip(name, 40)}` },
+            }
+      }
+
+      case 'save_company_context': {
+        const { upsertCompany } = await import('../context')
+        const saved = await upsertCompany({
+          name: String(input?.name ?? ''),
+          founderFirstName: input?.founderFirstName ? String(input.founderFirstName) : undefined,
+          founderFullName: input?.founderFullName ? String(input.founderFullName) : undefined,
+          context: input?.context ? String(input.context) : undefined,
+          websiteUrl: input?.websiteUrl ? String(input.websiteUrl) : undefined,
+          founderEmail: input?.founderEmail ? String(input.founderEmail) : undefined,
+          linkedinUrl: input?.linkedinUrl ? String(input.linkedinUrl) : undefined,
+        })
+        return saved
+          ? { output: `Filed to the Register: ${saved.name}.`, step: { kind: 'write', name: 'Filed to the Register', detail: clip(saved.name, 50) } }
+          : { output: 'Could not file to the Register (no database, or no name).', step: { kind: 'note', name: 'Register not updated', detail: 'unavailable' }, isError: true }
       }
 
       case 'search_email': {
