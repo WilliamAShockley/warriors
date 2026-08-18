@@ -513,6 +513,46 @@ export default function ProofRoom() {
     setSaving(false)
   }
 
+  // Multi-draft proofs: put one of the staged options on deck. Choosing
+  // among the desk's own offerings is not an amendment.
+  const [switching, setSwitching] = useState(false)
+  const chooseVariant = async (index: number) => {
+    if (!proof || switching || editing || index === proof.selectedVariant) return
+    if (!live) {
+      const v = proof.variants?.[index]
+      if (!v) return
+      setProof({
+        ...proof,
+        body: v.body,
+        selectedVariant: index,
+        action: proof.action ? { ...proof.action, subject: v.subject ?? proof.action.subject } : null,
+      })
+      return
+    }
+    setSwitching(true)
+    setNote('')
+    try {
+      const res = await fetch('/api/review', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: proof.id, selectVariant: index }),
+      })
+      const data = await res.json()
+      if (data?.ok && data?.proof) {
+        setProof(data.proof)
+        baselineAction.current = data.proof.action
+          ? { to: data.proof.action.to, subject: data.proof.action.subject }
+          : null
+        setRedline([])
+      } else {
+        setNote(data?.error ?? 'That did not take. Try again.')
+      }
+    } catch {
+      setNote('Could not reach the desk. Try again.')
+    }
+    setSwitching(false)
+  }
+
   if (!loaded) return null
 
   const ledgerLine =
@@ -569,6 +609,54 @@ export default function ProofRoom() {
         </h2>
         {proof.summary && <p className="dek mt-2.5">{proof.summary}</p>}
       </header>
+
+      {/* The Drafts — every staged option; tap one to put it on deck */}
+      {proof.variants && proof.variants.length > 1 && (
+        <div className="mt-6">
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="eyebrow text-oxblood">The Drafts</p>
+            <p className="eyebrow text-faint">
+              {proof.variants.length} on offer · the desk recommends the first
+            </p>
+          </div>
+          <ul className="mt-1">
+            {proof.variants.map((v, i) => {
+              const onDeck = i === proof.selectedVariant
+              return (
+                <li key={i} className="rule first:border-t-0">
+                  <button
+                    onClick={() => chooseVariant(i)}
+                    disabled={switching || editing}
+                    className="block w-full py-3.5 text-left disabled:opacity-60"
+                  >
+                    <div className="flex items-baseline justify-between gap-4">
+                      <p className={onDeck ? 'eyebrow-ink' : 'eyebrow text-faint'}>
+                        {i + 1} · {v.label}
+                        {i === 0 ? ' · recommended' : ''}
+                      </p>
+                      <p className={onDeck ? 'eyebrow shrink-0 text-oxblood' : 'eyebrow shrink-0 text-faint'}>
+                        {onDeck ? 'on deck' : switching ? '…' : 'put on deck'}
+                      </p>
+                    </div>
+                    <p
+                      className={
+                        onDeck
+                          ? 'mt-1.5 font-serif text-[14px] italic leading-relaxed text-ink'
+                          : 'mt-1.5 font-serif text-[14px] italic leading-relaxed text-stone'
+                      }
+                    >
+                      {v.body.replace(/\s+/g, ' ').slice(0, 150)}…
+                    </p>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="eyebrow mt-1 text-faint">
+            The galley below shows the draft on deck — switching is not an amendment
+          </p>
+        </div>
+      )}
 
       {/* The galley — read it, mark it, or amend it */}
       {!editing ? (

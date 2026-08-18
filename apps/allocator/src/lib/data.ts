@@ -796,6 +796,8 @@ export const proofs = [
     dossier:
       'Marguerite Halloran runs the Halloran family office out of Charlotte — first-generation principal, careful, reads everything you send her.\n\nAnchor prospect for SPV II: $1.5m soft-circled, contingent on seeing the fee terms in writing this week.\n\nShe has asked twice about the quarterly operational letter — treat that as the tell for what she values.',
     websiteUrl: null,
+    variants: null,
+    selectedVariant: 0,
   },
   {
     id: 'p2',
@@ -814,6 +816,8 @@ export const proofs = [
     linkedinUrl: null,
     dossier: null,
     websiteUrl: null,
+    variants: null,
+    selectedVariant: 0,
   },
   {
     id: 'p3',
@@ -832,6 +836,8 @@ export const proofs = [
     linkedinUrl: null,
     dossier: null,
     websiteUrl: null,
+    variants: null,
+    selectedVariant: 0,
   },
 ] as const
 

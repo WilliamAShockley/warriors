@@ -27,6 +27,10 @@ export type ProofRecord = {
   // rendered at the foot of the review page.
   dossier: string | null
   websiteUrl: string | null
+  // Multi-draft proofs: every staged option, recommended first, and which
+  // one is on deck (the one that signs and sends).
+  variants: { label: string; subject?: string; body: string }[] | null
+  selectedVariant: number
 }
 
 export type ProofQueue = { live: boolean; total: number; proof: ProofRecord | null }
@@ -60,6 +64,8 @@ const toRecord = (r: any, todo: { id: string; text: string } | null = null): Pro
   originalBody: r.originalBody ?? null,
   dossier: r.dossier ?? null,
   websiteUrl: r.websiteUrl ?? null,
+  variants: r.variantsJson ? JSON.parse(r.variantsJson) : null,
+  selectedVariant: r.selectedVariant ?? 0,
 })
 
 const seedQueue = (): ProofQueue => ({
@@ -113,6 +119,7 @@ export async function createProof(input: {
   mode?: string
   dossier?: string
   websiteUrl?: string
+  variants?: { label: string; subject?: string; body: string }[]
 }): Promise<ProofRecord | null> {
   if (!hasDb()) return null
   try {
@@ -133,6 +140,8 @@ export async function createProof(input: {
         mode: input.mode ?? null,
         dossier: input.dossier ?? null,
         websiteUrl: input.websiteUrl ?? null,
+        variantsJson:
+          input.variants && input.variants.length >= 2 ? JSON.stringify(input.variants) : null,
       },
     })
     return toRecord(row)
@@ -284,6 +293,40 @@ export async function amendProof(
 
     const updated = await db.reviewItem.update({ where: { id }, data })
     return toRecord(updated)
+  } catch {
+    return null
+  }
+}
+
+// Put one of a multi-draft proof's options on deck: body and envelope
+// follow the chosen draft. Choosing among the desk's own offerings is NOT
+// an amendment — straight-through survives a selection.
+export async function selectProofVariant(id: string, index: number): Promise<ProofRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row || row.status !== 'pending' || !row.variantsJson) return null
+    const variants = JSON.parse(row.variantsJson) as { label: string; subject?: string; body: string }[]
+    if (!Number.isInteger(index) || index < 0 || index >= variants.length) return null
+
+    const chosen = variants[index]
+    const data: any = { body: chosen.body, selectedVariant: index }
+    if (row.actionType === 'send_email' && row.actionJson) {
+      const action = JSON.parse(row.actionJson)
+      if (chosen.subject) action.subject = chosen.subject
+      data.actionJson = JSON.stringify(action)
+    }
+    // A fresh baseline: the redline draws against the chosen draft.
+    if (!row.amended) data.originalBody = null
+
+    const updated = await db.reviewItem.update({ where: { id }, data })
+    let todo: { id: string; text: string } | null = null
+    if (updated.todoId) {
+      const t = await db.todo.findUnique({ where: { id: updated.todoId } })
+      if (t) todo = { id: t.id, text: t.text }
+    }
+    return toRecord(updated, todo)
   } catch {
     return null
   }
