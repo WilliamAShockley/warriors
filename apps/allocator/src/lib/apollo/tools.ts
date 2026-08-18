@@ -267,6 +267,23 @@ export const APOLLO_TOOL_DEFS = [
     },
   },
   {
+    name: 'podcast_context_line',
+    description:
+      'Generate the thesis-oriented context line for a PODCAST INVITATION, using the reader\u2019s line-generator skill. Call it whenever a to-do asks to invite someone onto the podcast, AFTER gathering context (read_company_context first, web research for what the Register lacks). Pass ALL gathered context — the skill strips press-release framing and finds the mechanism, the consensus being bet against, and the timing driver. It returns 2-3 labeled options plus a recommendation: take the recommended option and hand it to the drafting skill with the instruction to include VERBATIM the sentence: I think a ton of people would love to hear more about <the option>, and just in general how you\u2019re thinking about the business.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        company: { type: 'string' },
+        founder: { type: 'string', description: 'Name and profile if known (researcher vs operator calibrates the line)' },
+        context: {
+          type: 'string',
+          description: 'Everything gathered — the Register entry, research findings, announcement coverage. The line is only as sharp as this.',
+        },
+      },
+      required: ['company', 'context'],
+    },
+  },
+  {
     name: 'propose_times',
     description:
       'Propose meeting times from the reader’s REAL calendar, using his scheduling skill (working hours, buffers, exact output format). Call this whenever a task or an email thread calls for offering availability — e.g. a follow-up where the other party agreed to meet or asked for times. Reproduce the returned windows VERBATIM. Never compose availability yourself; if this tool fails, say availability could not be checked rather than inventing times.',
@@ -600,6 +617,26 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
         return {
           output: JSON.stringify(result),
           step: { kind: 'write', name: 'Drafted with an authored playbook', detail: clip(skillId, 50) },
+        }
+      }
+
+      case 'podcast_context_line': {
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { output: 'Cannot generate: no ANTHROPIC_API_KEY configured.', step: { kind: 'note', name: 'Line not generated', detail: 'no API key' }, isError: true }
+        }
+        const { generatePodcastLine } = await import('./skills')
+        const company = String(input?.company ?? '').trim()
+        if (!company) {
+          return { output: 'podcast_context_line needs a company.', step: { kind: 'note', name: 'Line not generated', detail: 'no company' }, isError: true }
+        }
+        const lines = await generatePodcastLine({
+          company,
+          founder: input?.founder ? String(input.founder) : undefined,
+          context: String(input?.context ?? ''),
+        })
+        return {
+          output: lines,
+          step: { kind: 'write', name: 'Generated the context line', detail: clip(company, 50) },
         }
       }
 
