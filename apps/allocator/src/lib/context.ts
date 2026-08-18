@@ -162,27 +162,19 @@ export async function removeCompany(id: string): Promise<boolean> {
   }
 }
 
-// The nightly pass: refresh the stalest entries with a focused, bounded
-// web check. Best-effort; a failed refresh leaves the entry standing.
-export async function enrichCompanies(limit = 3): Promise<{ enriched: number }> {
-  if (!hasDb() || !process.env.ANTHROPIC_API_KEY) return { enriched: 0 }
-  try {
-    const db = await getDb()
-    const cutoff = new Date(Date.now() - 6 * 24 * 3600 * 1000)
-    const rows = await db.companyContext.findMany({
-      where: { OR: [{ lastEnrichedAt: null }, { lastEnrichedAt: { lt: cutoff } }] },
-      orderBy: [{ lastEnrichedAt: { sort: 'asc', nulls: 'first' } }],
-      take: limit,
-    })
-    if (rows.length === 0) return { enriched: 0 }
+// The refresh model: Sonnet-tier is the cost/quality sweet spot for
+// bounded factual lookups; override with ENRICH_MODEL to trade up.
+const ENRICH_MODEL = process.env.ENRICH_MODEL || 'claude-sonnet-5'
 
+// Refresh ONE entry with a focused, bounded web check. Shared by the
+// nightly pass and file-time enrichment. Best-effort; a failed refresh
+// leaves the entry standing (and, dateless, first in line tomorrow).
+async function refreshEntry(db: any, row: any): Promise<boolean> {
+  try {
     const { anthropic } = await import('./claude')
     const { parseLLMJsonObject } = await import('./retry')
-    let enriched = 0
-    for (const row of rows) {
-      try {
-        const response = await anthropic.messages.create({
-          model: 'claude-sonnet-5',
+    const response = await anthropic.messages.create({
+      model: ENRICH_MODEL,
           max_tokens: 1200,
           tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 } as any],
           messages: [
@@ -212,22 +204,54 @@ End your reply with ONLY this JSON (no prose after it):
           context?: string | null
           websiteUrl?: string | null
         }>(text, {})
-        await db.companyContext.update({
-          where: { id: row.id },
-          data: {
-            ...(parsed.founderFirstName ? { founderFirstName: String(parsed.founderFirstName).slice(0, 60) } : {}),
-            ...(parsed.founderFullName ? { founderFullName: String(parsed.founderFullName).slice(0, 120) } : {}),
-            ...(parsed.context ? { context: String(parsed.context).slice(0, 8000) } : {}),
-            ...(parsed.websiteUrl && /^https?:\/\//.test(String(parsed.websiteUrl))
-              ? { websiteUrl: String(parsed.websiteUrl).slice(0, 500) }
-              : {}),
-            lastEnrichedAt: new Date(),
-          },
-        })
-        enriched++
-      } catch {
-        // Next entry; this one keeps its date and gets retried tomorrow.
-      }
+    await db.companyContext.update({
+      where: { id: row.id },
+      data: {
+        ...(parsed.founderFirstName ? { founderFirstName: String(parsed.founderFirstName).slice(0, 60) } : {}),
+        ...(parsed.founderFullName ? { founderFullName: String(parsed.founderFullName).slice(0, 120) } : {}),
+        ...(parsed.context ? { context: String(parsed.context).slice(0, 8000) } : {}),
+        ...(parsed.websiteUrl && /^https?:\/\//.test(String(parsed.websiteUrl))
+          ? { websiteUrl: String(parsed.websiteUrl).slice(0, 500) }
+          : {}),
+        lastEnrichedAt: new Date(),
+      },
+    })
+    return true
+  } catch {
+    // The entry keeps its date and gets retried on the next pass.
+    return false
+  }
+}
+
+// File-time enrichment: fill a just-filed entry in immediately, in the
+// background of the request that created it.
+export async function enrichCompanyById(id: string): Promise<boolean> {
+  if (!hasDb() || !process.env.ANTHROPIC_API_KEY) return false
+  try {
+    const db = await getDb()
+    const row = await db.companyContext.findUnique({ where: { id } })
+    if (!row) return false
+    return await refreshEntry(db, row)
+  } catch {
+    return false
+  }
+}
+
+// The nightly pass: refresh the stalest entries — never-enriched first,
+// then anything older than six days. Best-effort throughout.
+export async function enrichCompanies(limit = 3): Promise<{ enriched: number }> {
+  if (!hasDb() || !process.env.ANTHROPIC_API_KEY) return { enriched: 0 }
+  try {
+    const db = await getDb()
+    const cutoff = new Date(Date.now() - 6 * 24 * 3600 * 1000)
+    const rows = await db.companyContext.findMany({
+      where: { OR: [{ lastEnrichedAt: null }, { lastEnrichedAt: { lt: cutoff } }] },
+      orderBy: [{ lastEnrichedAt: { sort: 'asc', nulls: 'first' } }],
+      take: limit,
+    })
+    let enriched = 0
+    for (const row of rows) {
+      if (await refreshEntry(db, row)) enriched++
     }
     return { enriched }
   } catch {

@@ -1,9 +1,13 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { amendCompany, listCompanies, removeCompany, upsertCompany } from '@/lib/context'
 
 // The Register's API. GET lists; POST { name, ... } files or updates by
 // name; POST { id, remove: true } strikes an entry; PATCH { id, ... }
 // amends fields explicitly (empty strings clear).
+//
+// File-time enrichment runs post-response (a bounded web check can take
+// up to a minute), hence the elevated ceiling.
+export const maxDuration = 120
 
 export async function GET() {
   return NextResponse.json(await listCompanies())
@@ -28,6 +32,18 @@ export async function POST(req: Request) {
     founderEmail: body?.founderEmail ? String(body.founderEmail) : undefined,
     linkedinUrl: body?.linkedinUrl ? String(body.linkedinUrl) : undefined,
   })
+
+  // File-time enrichment: a never-refreshed entry fills itself in right
+  // after filing — the bounded web check runs behind the response, in the
+  // filer's workspace (pinned now; the request context won't survive).
+  if (company && !company.enrichedOn) {
+    const { activeWorkspaceId, runAsWorkspace } = await import('@/lib/tenant')
+    const ws = await activeWorkspaceId()
+    after(async () => {
+      const { enrichCompanyById } = await import('@/lib/context')
+      await runAsWorkspace(ws, () => enrichCompanyById(company.id))
+    })
+  }
   return NextResponse.json({ ok: Boolean(company), company })
 }
 
