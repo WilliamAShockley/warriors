@@ -47,6 +47,21 @@ searches, more consistent facts) and write back what it learns; a batch
 enrichment pass (cron) keeps entries fresh; entries should be editable in
 the UI like the Book.
 
+## The provider bench (BUILT — "The Bench", /bench)
+
+The owner wants the web-research layer contestable: Anthropic's bundled
+web_search, OpenAI's Responses web_search, Exa, and Parallel run the
+**identical enrichment charge** head-to-head, compared in a
+spreadsheet-style grid inside the app (rows = companies, columns =
+engines). The reader's eye is the judge — a crowned winner per row, a
+running tally (wins, failures, latency), and a "File to the Register"
+promotion for the best cell. Built 18 August 2026: the pluggable engine
+layer lives in `src/lib/research/` (the Register's enrichment now runs on
+the same Anthropic adapter), keys via `OPENAI_API_KEY` / `EXA_API_KEY` /
+`PARALLEL_API_KEY`, model/processor overrides via `BENCH_OPENAI_MODEL` /
+`BENCH_PARALLEL_PROCESSOR`. The standing intent: once the tally crowns a
+sustained winner, the Register's default engine becomes a setting.
+
 ## Other standing intents
 
 - **Open-source release** planned: the app as a clonable "operating
