@@ -32,9 +32,9 @@ export default async function BookPage() {
         return (
           <section key={segment} className="pt-8">
             <p className="eyebrow-ink">{segment}</p>
-            <ul className="mt-1">
+            <ul className="mt-1 md:grid md:grid-cols-2 md:gap-x-10">
               {seeded.map((c) => (
-                <li key={c.id} className="rule first:border-t-0">
+                <li key={c.id} className="rule first:border-t-0 md:[&:nth-child(2)]:border-t-0">
                   <Link href={`/book/${c.id}`} className="block py-5">
                     <div className="flex items-baseline justify-between gap-4">
                       <h3 className="font-serif text-[19px] font-medium leading-snug tracking-tight">
@@ -52,7 +52,7 @@ export default async function BookPage() {
                 </li>
               ))}
               {added.map((c) => (
-                <li key={c.id} className="rule first:border-t-0">
+                <li key={c.id} className="rule first:border-t-0 md:[&:nth-child(2)]:border-t-0">
                   <Link href={`/book/${c.id}`} className="block py-5">
                     <div className="flex items-baseline justify-between gap-4">
                       <h3 className="font-serif text-[19px] font-medium leading-snug tracking-tight">
