@@ -9,6 +9,7 @@ import {
   ledger,
   nextProof,
   redoProof,
+  spikeAndCloseProof,
   spikeProof,
   superviseDelivery,
 } from '@/lib/review'
@@ -64,6 +65,11 @@ export async function POST(req: Request) {
       const result = await approveViaLinkedIn(id)
       if (result.ok) after(() => distillProofLesson(id))
       return NextResponse.json(result, { status: result.ok ? 200 : 502 })
+    }
+    if (body.action === 'spike_close') {
+      const ok = await spikeAndCloseProof(id)
+      if (ok) after(() => distillProofLesson(id))
+      return NextResponse.json({ ok })
     }
     if (body.action === 'hold') return NextResponse.json({ ok: await holdProof(id) })
     if (body.action === 'spike') {

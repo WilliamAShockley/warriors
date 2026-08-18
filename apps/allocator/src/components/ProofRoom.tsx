@@ -400,6 +400,33 @@ export default function ProofRoom() {
     setWorking(false)
   }
 
+  // Spike & close out: the draft dies and its to-do clears with it —
+  // the whole errand is done, nothing re-runs.
+  const submitCloseOut = async () => {
+    if (!proof || working) return
+    if (!live) {
+      setProof(null)
+      setTotal((t) => Math.max(0, t - 1))
+      return
+    }
+    setWorking(true)
+    setNote('')
+    try {
+      await saveCommentary()
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'spike_close', id: proof.id }),
+      })
+      const data = await res.json()
+      if (data?.ok) await fetchNext()
+      else setNote(data?.error ?? 'That did not take. Try again.')
+    } catch {
+      setNote('Could not reach the desk. Try again.')
+    }
+    setWorking(false)
+  }
+
   const submitRedirect = async () => {
     if (!proof || !correction.trim() || working) return
     setWorking(true)
@@ -744,7 +771,8 @@ export default function ProofRoom() {
           <p className="eyebrow text-oxblood">Redirect the Desk</p>
           <p className="dek mt-1.5 text-[13px]">
             Wrong company or wrong person? Say what the search got wrong — this draft is spiked
-            and the desk re-runs from your correction.
+            and the desk re-runs from your correction. Or close the whole errand out: the draft
+            is spiked and its to-do clears with it.
           </p>
           <textarea
             value={correction}
@@ -762,13 +790,24 @@ export default function ProofRoom() {
             >
               Never Mind
             </button>
-            <button
-              type="submit"
-              disabled={working || !correction.trim()}
-              className="eyebrow-ink underline decoration-hairline underline-offset-4 disabled:opacity-40"
-            >
-              {working ? 'Redirecting' : 'Spike & Re-run'}
-            </button>
+            <div className="flex items-center gap-5">
+              <button
+                type="button"
+                onClick={submitCloseOut}
+                disabled={working}
+                title="Kill the draft AND clear its to-do — the errand is done, nothing re-runs"
+                className="eyebrow text-faint underline decoration-hairline underline-offset-4 transition-colors hover:text-oxblood disabled:opacity-40"
+              >
+                {working ? 'Closing' : 'Spike & Close Out'}
+              </button>
+              <button
+                type="submit"
+                disabled={working || !correction.trim()}
+                className="eyebrow-ink underline decoration-hairline underline-offset-4 disabled:opacity-40"
+              >
+                {working ? 'Redirecting' : 'Spike & Re-run'}
+              </button>
+            </div>
           </div>
         </form>
       )}

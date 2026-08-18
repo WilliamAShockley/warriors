@@ -670,6 +670,37 @@ export async function redoProof(
 }
 
 
+// Spike & close out: the draft dies AND the errand dies with it — the
+// Docket item it served clears, and nothing re-runs. For when the redirect
+// form reveals the whole task was misconceived, not just mistargeted.
+export async function spikeAndCloseProof(id: string): Promise<boolean> {
+  if (!hasDb()) return false
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row || row.status !== 'pending') return false
+
+    await db.reviewItem.update({
+      where: { id },
+      data: {
+        status: 'spiked',
+        reviewedAt: new Date(),
+        executionResult: 'spiked and closed out — its to-do went with it',
+      },
+    })
+    if (row.todoId) {
+      await db.todo.updateMany({
+        where: { id: row.todoId, status: 'open' },
+        data: { status: 'cleared', clearedAt: new Date() },
+      })
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+
 // The LinkedIn handoff: the reader sent the draft himself over LinkedIn
 // (no email existed). Files the proof as approved — same ledger, same
 // to-do clearing — with the channel on record. No thread to watch.
