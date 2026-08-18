@@ -53,6 +53,7 @@ export default function Register() {
   // The add form
   const [newName, setNewName] = useState('')
   const [newFounder, setNewFounder] = useState('')
+  const [newSite, setNewSite] = useState('')
   const [newContext, setNewContext] = useState('')
 
   const refetch = () =>
@@ -123,13 +124,19 @@ export default function Register() {
       const res = await fetch('/api/context', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, founderFirstName: newFounder.trim(), context: newContext.trim() }),
+        body: JSON.stringify({
+          name,
+          founderFirstName: newFounder.trim(),
+          websiteUrl: newSite.trim(),
+          context: newContext.trim(),
+        }),
       })
       const data = await res.json()
       if (data?.ok && data?.company) {
         setCompanies((prev) => [data.company, ...prev.filter((c) => c.id !== data.company.id)])
         setNewName('')
         setNewFounder('')
+        setNewSite('')
         setNewContext('')
         if (live && !data.company.enrichedOn) {
           setResearching((prev) => ({ ...prev, [data.company.id]: fingerprint(data.company) }))
@@ -241,6 +248,12 @@ export default function Register() {
             className={field}
           />
         </div>
+        <input
+          value={newSite}
+          onChange={(e) => setNewSite(e.target.value)}
+          placeholder="https:// site — anchors the research when names collide"
+          className={field + ' mt-3'}
+        />
         <textarea
           value={newContext}
           onChange={(e) => setNewContext(e.target.value)}
@@ -249,7 +262,7 @@ export default function Register() {
           className="mt-3 w-full resize-none bg-transparent font-serif text-[15px] leading-relaxed text-ink placeholder:italic placeholder:text-faint focus:outline-none"
         />
         <div className="mt-2 flex items-center justify-between border-t border-hairline pt-2.5">
-          <span className="eyebrow text-faint">Files, then researches itself — context arrives in a minute</span>
+          <span className="eyebrow text-faint">Files, then researches itself — the site pins which company it is</span>
           <button
             type="submit"
             disabled={!newName.trim()}
