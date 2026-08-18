@@ -167,6 +167,41 @@ export default function Register() {
     }
   }
 
+  // Research It Now: synchronous, honest — a failure surfaces its reason.
+  const [researchingNow, setResearchingNow] = useState(false)
+  const researchNow = async (id: string) => {
+    if (researchingNow) return
+    setResearchingNow(true)
+    setNote('')
+    try {
+      const res = await fetch('/api/context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, enrich: true }),
+      })
+      const data = await res.json()
+      if (data?.ok && data?.company) {
+        setCompanies((prev) => prev.map((c) => (c.id === id ? data.company : c)))
+        setOpenId(null)
+        setArrived((prev) => ({ ...prev, [id]: true }))
+        setTimeout(
+          () =>
+            setArrived((prev) => {
+              const next = { ...prev }
+              delete next[id]
+              return next
+            }),
+          6000
+        )
+      } else {
+        setNote(`The research failed: ${data?.error ?? 'no reason given'}`)
+      }
+    } catch {
+      setNote('Could not reach the desk.')
+    }
+    setResearchingNow(false)
+  }
+
   const strike = async (id: string) => {
     if (!window.confirm('Strike this entry from the Register?')) return
     try {
@@ -265,9 +300,19 @@ export default function Register() {
                       Strike
                     </button>
                   </div>
-                  <button onClick={() => save(c.id)} className="eyebrow-ink underline decoration-hairline underline-offset-4">
-                    File the Amendment
-                  </button>
+                  <div className="flex gap-5">
+                    <button
+                      onClick={() => researchNow(c.id)}
+                      disabled={researchingNow}
+                      title="Run the web check now — takes up to a minute; a failure reports its reason"
+                      className="eyebrow text-oxblood underline decoration-hairline underline-offset-4 disabled:opacity-40"
+                    >
+                      {researchingNow ? 'Researching…' : 'Research It Now'}
+                    </button>
+                    <button onClick={() => save(c.id)} className="eyebrow-ink underline decoration-hairline underline-offset-4">
+                      File the Amendment
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (

@@ -20,6 +20,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: await removeCompany(String(body.id)) })
   }
 
+  // Research It Now: run the enrichment synchronously and answer honestly —
+  // the reader sees the real error instead of a spinner that gives up.
+  if (body?.id && body?.enrich === true) {
+    const { enrichCompanyById, listCompanies } = await import('@/lib/context')
+    const result = await enrichCompanyById(String(body.id))
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error ?? 'enrichment failed' }, { status: 502 })
+    }
+    const { companies } = await listCompanies()
+    return NextResponse.json({ ok: true, company: companies.find((c) => c.id === String(body.id)) ?? null })
+  }
+
   const name = String(body?.name ?? '').trim()
   if (!name) return NextResponse.json({ error: 'a company name is required' }, { status: 400 })
 

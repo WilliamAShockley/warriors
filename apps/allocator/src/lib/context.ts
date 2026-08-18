@@ -166,16 +166,21 @@ export async function removeCompany(id: string): Promise<boolean> {
 // bounded factual lookups; override with ENRICH_MODEL to trade up.
 const ENRICH_MODEL = process.env.ENRICH_MODEL || 'claude-sonnet-5'
 
+export type RefreshResult = { ok: boolean; error?: string }
+
 // Refresh ONE entry with a focused, bounded web check. Shared by the
-// nightly pass and file-time enrichment. Best-effort; a failed refresh
-// leaves the entry standing (and, dateless, first in line tomorrow).
-async function refreshEntry(db: any, row: any): Promise<boolean> {
+// nightly pass, file-time enrichment, and the manual Research It Now.
+// A failed refresh leaves the entry standing AND dateless, so the next
+// pass retries it; the failure is logged and returned, never swallowed.
+async function refreshEntry(db: any, row: any): Promise<RefreshResult> {
   try {
     const { anthropic } = await import('./claude')
     const { parseLLMJsonObject } = await import('./retry')
+    // Generous ceiling: adaptive thinking and three search rounds all
+    // count against max_tokens — a small cap truncates before the JSON.
     const response = await anthropic.messages.create({
       model: ENRICH_MODEL,
-          max_tokens: 1200,
+          max_tokens: 16000,
           tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 } as any],
           messages: [
             {
@@ -212,36 +217,46 @@ End your reply with ONLY this JSON (no prose after it):
           context?: string | null
           websiteUrl?: string | null
         }>(text, {})
+    // No usable context = a failed run. Do NOT stamp lastEnrichedAt —
+    // stamping an empty result would park the entry for six days.
+    if (!parsed.context || !String(parsed.context).trim()) {
+      const reason = `the model returned no context (stop_reason: ${(response as any).stop_reason ?? 'unknown'})`
+      console.error(`[register] enrichment of "${row.name}" failed: ${reason}`)
+      return { ok: false, error: reason }
+    }
+
     await db.companyContext.update({
       where: { id: row.id },
       data: {
         ...(parsed.founderFirstName ? { founderFirstName: String(parsed.founderFirstName).slice(0, 60) } : {}),
         ...(parsed.founderFullName ? { founderFullName: String(parsed.founderFullName).slice(0, 120) } : {}),
-        ...(parsed.context ? { context: String(parsed.context).slice(0, 8000) } : {}),
+        context: String(parsed.context).slice(0, 8000),
         ...(parsed.websiteUrl && /^https?:\/\//.test(String(parsed.websiteUrl))
           ? { websiteUrl: String(parsed.websiteUrl).slice(0, 500) }
           : {}),
         lastEnrichedAt: new Date(),
       },
     })
-    return true
-  } catch {
-    // The entry keeps its date and gets retried on the next pass.
-    return false
+    return { ok: true }
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    console.error(`[register] enrichment of "${row.name}" threw: ${reason}`)
+    return { ok: false, error: reason.slice(0, 300) }
   }
 }
 
-// File-time enrichment: fill a just-filed entry in immediately, in the
-// background of the request that created it.
-export async function enrichCompanyById(id: string): Promise<boolean> {
-  if (!hasDb() || !process.env.ANTHROPIC_API_KEY) return false
+// Enrich one entry now — file-time (post-response) and the Register's
+// manual Research It Now both come through here.
+export async function enrichCompanyById(id: string): Promise<RefreshResult> {
+  if (!hasDb()) return { ok: false, error: 'no database' }
+  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, error: 'no ANTHROPIC_API_KEY configured' }
   try {
     const db = await getDb()
     const row = await db.companyContext.findUnique({ where: { id } })
-    if (!row) return false
+    if (!row) return { ok: false, error: 'no such entry' }
     return await refreshEntry(db, row)
-  } catch {
-    return false
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'enrichment failed' }
   }
 }
 
@@ -253,13 +268,17 @@ export async function enrichCompanies(limit = 3): Promise<{ enriched: number }> 
     const db = await getDb()
     const cutoff = new Date(Date.now() - 6 * 24 * 3600 * 1000)
     const rows = await db.companyContext.findMany({
-      where: { OR: [{ lastEnrichedAt: null }, { lastEnrichedAt: { lt: cutoff } }] },
+      // Contextless entries are always candidates, stamped or not — an
+      // earlier bug stamped empty results; this un-parks them.
+      where: {
+        OR: [{ lastEnrichedAt: null }, { lastEnrichedAt: { lt: cutoff } }, { context: null }],
+      },
       orderBy: [{ lastEnrichedAt: { sort: 'asc', nulls: 'first' } }],
       take: limit,
     })
     let enriched = 0
     for (const row of rows) {
-      if (await refreshEntry(db, row)) enriched++
+      if ((await refreshEntry(db, row)).ok) enriched++
     }
     return { enriched }
   } catch {
