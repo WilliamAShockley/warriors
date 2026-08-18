@@ -24,6 +24,7 @@ const TENANT_MODELS = new Set([
   'FiledNote',
   'BookContact',
   'ContactNote',
+  'CompanyContext',
   'CalendarEvent',
   'MeetingNote',
   'InboundEmail',

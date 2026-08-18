@@ -25,7 +25,7 @@ Three layers, top to bottom (per the owner's notebook diagram):
    **improving the quality of task output**. Getting tasks right is
    mostly getting context right.
 
-## The context table (next structural build)
+## The context table (BUILT — "The Register", /register)
 
 The owner's words: a context table that tracks, per company —
 
@@ -41,7 +41,7 @@ outreach drafting, follow-ups, dossiers, analyses. Today's per-proof
 `dossier`/`grounding` fields are per-task exhaust; the context table makes
 that knowledge cumulative and reusable.
 
-Design notes when building it: per-workspace like everything else; the
+Built 18 August 2026: CompanyContext model, read_company_context/save_company_context Apollo tools, nightly enrichment in the cron, editable Register page. Original design notes: per-workspace like everything else; the
 docket worker should read it before researching (cache hit = fewer web
 searches, more consistent facts) and write back what it learns; a batch
 enrichment pass (cron) keeps entries fresh; entries should be editable in
