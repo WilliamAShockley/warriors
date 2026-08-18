@@ -29,7 +29,7 @@ export default function Register() {
   const [newFounder, setNewFounder] = useState('')
   const [newContext, setNewContext] = useState('')
 
-  useEffect(() => {
+  const refetch = () =>
     fetch('/api/context')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -38,8 +38,17 @@ export default function Register() {
         setCompanies(data.companies ?? [])
       })
       .catch(() => {})
-      .finally(() => setLoaded(true))
+
+  useEffect(() => {
+    refetch().finally(() => setLoaded(true))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // After filing, the desk enriches the entry in the background — watch
+  // for the refresh to land without making the reader reload.
+  const watchForRefresh = () => {
+    for (const ms of [20_000, 45_000, 80_000]) setTimeout(refetch, ms)
+  }
 
   const add = async () => {
     const name = newName.trim()
@@ -57,6 +66,7 @@ export default function Register() {
         setNewName('')
         setNewFounder('')
         setNewContext('')
+        if (!data.company.enrichedOn) watchForRefresh()
       } else {
         setNote(data?.error ?? 'That did not take.')
       }
@@ -141,7 +151,7 @@ export default function Register() {
           className="mt-3 w-full resize-none bg-transparent font-serif text-[15px] leading-relaxed text-ink placeholder:italic placeholder:text-faint focus:outline-none"
         />
         <div className="mt-2 flex items-center justify-between border-t border-hairline pt-2.5">
-          <span className="eyebrow text-faint">The desk fills in the rest as it works</span>
+          <span className="eyebrow text-faint">Files, then researches itself — context arrives in a minute</span>
           <button
             type="submit"
             disabled={!newName.trim()}
