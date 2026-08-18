@@ -14,6 +14,21 @@ type Company = {
   enrichedOn: string | null
 }
 
+// While the desk researches a just-filed entry, the line cycles through
+// these — half status report, half company. The reader watches the work.
+const RESEARCHING_PHRASES = [
+  'Loading the context…',
+  'Doing the research…',
+  'Doing your bidding…',
+  'AI agents are so fun…',
+  'Reading the trade press…',
+  'Checking the filings…',
+  'Asking around town…',
+  'Thumbing the rolodex…',
+  'Ringing the switchboard…',
+  'The desk is on it…',
+]
+
 // The Register: the context table, editable in place. Tap an entry to open
 // its fields; the worker and the nightly pass write here too.
 export default function Register() {
@@ -23,6 +38,12 @@ export default function Register() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [note, setNote] = useState('')
+
+  // Entries filed this session whose research is still in flight, and
+  // entries whose context just landed (for the arrival flourish).
+  const [researching, setResearching] = useState<Record<string, boolean>>({})
+  const [arrived, setArrived] = useState<Record<string, boolean>>({})
+  const [tick, setTick] = useState(0)
 
   // The add form
   const [newName, setNewName] = useState('')
@@ -44,11 +65,47 @@ export default function Register() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // After filing, the desk enriches the entry in the background — watch
-  // for the refresh to land without making the reader reload.
-  const watchForRefresh = () => {
-    for (const ms of [20_000, 45_000, 80_000]) setTimeout(refetch, ms)
-  }
+  // While research is in flight: rotate the phrases and poll the desk.
+  // A hard stop after three minutes returns the entry to its quiet state
+  // (the nightly pass retries anything the file-time check missed).
+  const researchingCount = Object.keys(researching).length
+  useEffect(() => {
+    if (researchingCount === 0) return
+    const spinner = setInterval(() => setTick((t) => t + 1), 2200)
+    const poll = setInterval(refetch, 6000)
+    const giveUp = setTimeout(() => setResearching({}), 180_000)
+    return () => {
+      clearInterval(spinner)
+      clearInterval(poll)
+      clearTimeout(giveUp)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [researchingCount])
+
+  // The moment an in-flight entry comes back enriched, retire its loading
+  // state and flash the arrival.
+  useEffect(() => {
+    const done = companies.filter((c) => researching[c.id] && c.enrichedOn)
+    if (done.length === 0) return
+    setResearching((prev) => {
+      const next = { ...prev }
+      for (const c of done) delete next[c.id]
+      return next
+    })
+    setArrived((prev) => ({ ...prev, ...Object.fromEntries(done.map((c) => [c.id, true])) }))
+    for (const c of done) {
+      setTimeout(
+        () =>
+          setArrived((prev) => {
+            const next = { ...prev }
+            delete next[c.id]
+            return next
+          }),
+        6000
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companies])
 
   const add = async () => {
     const name = newName.trim()
@@ -66,7 +123,9 @@ export default function Register() {
         setNewName('')
         setNewFounder('')
         setNewContext('')
-        if (!data.company.enrichedOn) watchForRefresh()
+        if (live && !data.company.enrichedOn) {
+          setResearching((prev) => ({ ...prev, [data.company.id]: true }))
+        }
       } else {
         setNote(data?.error ?? 'That did not take.')
       }
@@ -173,7 +232,7 @@ export default function Register() {
       )}
 
       <ul className="mt-2 md:grid md:grid-cols-2 md:gap-x-10">
-        {companies.map((c) => (
+        {companies.map((c, i) => (
           <li key={c.id} className="rule first:border-t-0 md:[&:nth-child(2)]:border-t-0">
             {openId === c.id ? (
               <div className="py-5">
@@ -215,8 +274,16 @@ export default function Register() {
               <button onClick={() => open(c)} className="block w-full py-5 text-left">
                 <div className="flex items-baseline justify-between gap-4">
                   <h3 className="font-serif text-[19px] font-medium leading-snug tracking-tight">{c.name}</h3>
-                  <p className="eyebrow shrink-0 text-faint">
-                    {c.enrichedOn ? `refreshed ${c.enrichedOn}` : 'not yet refreshed'}
+                  <p className="eyebrow shrink-0">
+                    {researching[c.id] ? (
+                      <span className="animate-pulse text-oxblood">researching…</span>
+                    ) : arrived[c.id] ? (
+                      <span className="text-oxblood">fresh off the wire</span>
+                    ) : (
+                      <span className="text-faint">
+                        {c.enrichedOn ? `refreshed ${c.enrichedOn}` : 'not yet refreshed'}
+                      </span>
+                    )}
                   </p>
                 </div>
                 {(c.founderFirstName || c.founderFullName) && (
@@ -225,8 +292,22 @@ export default function Register() {
                     {c.founderEmail ? ` · ${c.founderEmail}` : ''}
                   </p>
                 )}
-                {c.context && (
-                  <p className="mt-2 font-serif text-[14px] italic leading-relaxed text-stone">{c.context}</p>
+                {researching[c.id] && !c.context ? (
+                  <p className="mt-2 animate-pulse font-serif text-[14px] italic leading-relaxed text-stone">
+                    {RESEARCHING_PHRASES[(tick + i) % RESEARCHING_PHRASES.length]}
+                  </p>
+                ) : (
+                  c.context && (
+                    <p
+                      className={
+                        arrived[c.id]
+                          ? 'mt-2 font-serif text-[14px] italic leading-relaxed text-ink transition-colors duration-1000'
+                          : 'mt-2 font-serif text-[14px] italic leading-relaxed text-stone transition-colors duration-1000'
+                      }
+                    >
+                      {c.context}
+                    </p>
+                  )
                 )}
               </button>
             )}
