@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${display.variable} ${ui.variable}`}>
       <body className="font-sans">
         <GuestNotice />
-        <div className="mx-auto min-h-dvh w-full max-w-[430px] px-6 pb-32">
+        <div className="mx-auto min-h-dvh w-full max-w-[430px] px-6 pb-32 md:max-w-[680px] lg:max-w-[760px]">
           {children}
         </div>
         <Chrome />
