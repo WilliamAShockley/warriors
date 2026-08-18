@@ -180,7 +180,13 @@ async function refreshEntry(db: any, row: any): Promise<boolean> {
           messages: [
             {
               role: 'user',
-              content: `Refresh a company-context entry with a quick web check (funding, product, leadership changes — anything material and current). Keep what still holds; correct what changed; add what's new. Be terse and factual.
+              // The reader's own enrichment charge — filed 18 Aug 2026;
+              // change it only at his direction.
+              content: `Refresh a company-context entry with a quick web check (funding, product,
+leadership changes — anything material and current). Ask yourself these questions. Did the company recently announce a fundraise? Did the company recently share some sort of blog or product announcement? Did the company recently come out of stealth? What is the main problem the company is trying to solve? What is the company's main product? Do they have any customers listed on their website? What broader investment theme does this company sit within? For Founder first name, we are specifically focused on the CEO
+
+ We define recent as in the past 3 months from the date of this search. The date of this search: ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}. Keep what still holds;
+correct what changed; add what's new. Be terse and factual.
 
 CURRENT ENTRY:
 Company: ${row.name}
@@ -190,7 +196,9 @@ Website: ${row.websiteUrl ?? '(unknown)'}
 Context: ${row.context ?? '(none yet)'}
 
 End your reply with ONLY this JSON (no prose after it):
-{"founderFirstName": "<or null>", "founderFullName": "<or null>", "context": "<the refreshed running brief, 3-8 tight sentences>", "websiteUrl": "<https url or null>"}`,
+{"founderFirstName": "<or null>", "founderFullName": "<or null>",
+ "context": "<the refreshed running brief, 3-8 sentences>",
+ "websiteUrl": "<https url or null>"}`,
             },
           ],
         } as any)
