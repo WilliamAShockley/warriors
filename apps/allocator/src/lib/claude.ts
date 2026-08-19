@@ -36,6 +36,11 @@ async function resolveClient(): Promise<Anthropic> {
 
 export const anthropic = {
   messages: {
-    create: async (args: any): Promise<any> => (await resolveClient()).messages.create(args),
+    create: async (args: any, opts?: any): Promise<any> =>
+      (await resolveClient()).messages.create(args, opts),
+    // Streaming, for long-running calls (the research engine): returns the
+    // SDK's MessageStream once the workspace's client is resolved.
+    stream: async (args: any, opts?: any): Promise<any> =>
+      (await resolveClient()).messages.stream(args, opts),
   },
 } as unknown as Anthropic
