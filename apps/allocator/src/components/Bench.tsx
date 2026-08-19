@@ -146,18 +146,37 @@ export default function Bench() {
       )
     if (t.status === 'failed')
       return <span className="font-serif text-[12px] italic leading-snug text-oxblood">{t.error ?? 'failed'}</span>
+    const crowned = r.winner === pid
     return (
-      <span className="block">
-        <span className="eyebrow block text-faint">
-          {secs(t.latencyMs)}
-          {t.fields?.founderFullName || t.fields?.founderFirstName
-            ? ` · ${t.fields.founderFullName ?? t.fields.founderFirstName}`
-            : ''}
-        </span>
-        <span className="mt-1 line-clamp-4 block font-serif text-[13px] leading-snug text-ink">
+      <div>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="eyebrow text-faint">
+            {secs(t.latencyMs)}
+            {t.fields?.founderFullName || t.fields?.founderFirstName
+              ? ` · ${t.fields.founderFullName ?? t.fields.founderFirstName}`
+              : ''}
+          </span>
+          {/* One click marks this response the row's best; the standings
+              and tally roll it up. Clicking again unmarks. */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              act({ verdict: { rowId: r.id, winner: crowned ? null : pid } })
+            }}
+            disabled={busy}
+            title={crowned ? 'Unmark as the best response' : 'Mark this response the best of the row'}
+            className={
+              'eyebrow shrink-0 disabled:opacity-40 ' +
+              (crowned ? 'text-oxblood' : 'text-faint hover:text-ink')
+            }
+          >
+            {crowned ? '★ best' : '☆ best'}
+          </button>
+        </div>
+        <div className="mt-1 line-clamp-4 font-serif text-[13px] leading-snug text-ink">
           {t.fields?.context ?? ''}
-        </span>
-      </span>
+        </div>
+      </div>
     )
   }
 
@@ -244,24 +263,70 @@ export default function Bench() {
         </p>
       )}
 
+      {/* The standings: every crowned cell rolls up here, cumulatively. */}
+      {sheet.rows.some((r) => r.winner) && (
+        <div className="mt-6 border border-hairline px-4 py-3">
+          {(() => {
+            const judged = sheet.rows.filter((r) => r.winner).length
+            const order = [...providers].sort(
+              (a, b) => (sheet.tally[b.id]?.wins ?? 0) - (sheet.tally[a.id]?.wins ?? 0)
+            )
+            const leader = order[0]
+            return (
+              <>
+                <p className="eyebrow text-faint">
+                  The Standings · {judged} {judged === 1 ? 'row' : 'rows'} judged
+                </p>
+                <p className="mt-1.5 font-serif text-[15px] leading-snug">
+                  {order.map((p, idx) => (
+                    <span key={p.id}>
+                      {idx > 0 && <span className="text-faint"> · </span>}
+                      <span className={idx === 0 ? 'font-medium text-oxblood' : 'text-stone'}>
+                        {p.label} {sheet.tally[p.id]?.wins ?? 0}
+                      </span>
+                    </span>
+                  ))}
+                  {(sheet.tally[leader.id]?.wins ?? 0) > 0 && (
+                    <span className="text-faint"> — {leader.label} leads</span>
+                  )}
+                </p>
+              </>
+            )
+          })()}
+        </div>
+      )}
+
       {sheet.rows.length > 0 && (
-        <div className="mt-6 overflow-x-auto">
-          <table className="w-full min-w-[920px] border-collapse">
+        // Desktop: the sheet breaks out of the reading column to run
+        // edge-to-edge, half an inch off each browser border. Mobile keeps
+        // the in-column horizontal scroll.
+        <div className="mt-6 overflow-x-auto md:w-[calc(100vw-96px)] md:ml-[calc(50%-50vw+48px)]">
+          <table className="w-full min-w-[920px] border-collapse md:table-fixed">
+            {/* Fixed proportions on desktop: the four engine columns hold
+                equal, stable widths however long their entries run. */}
+            <colgroup>
+              <col className="md:w-[13%]" />
+              {providers.map((p) => (
+                <col key={p.id} className="md:w-[19%]" />
+              ))}
+              <col className="md:w-[6%]" />
+              <col className="md:w-[5%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-ink/60">
-                <th className="w-[15%] py-2 pr-3 text-left align-bottom">
+                <th className="py-2 pr-3 text-left align-bottom">
                   <span className="eyebrow">Company</span>
                 </th>
                 {providers.map((p) => (
-                  <th key={p.id} className="w-[17.5%] px-3 py-2 text-left align-bottom">
+                  <th key={p.id} className="px-3 py-2 text-left align-bottom">
                     <span className="eyebrow">{p.label}</span>
                     {!p.keyed && <span className="eyebrow block text-oxblood">no key filed</span>}
                   </th>
                 ))}
-                <th className="w-[8%] py-2 pl-3 text-right align-bottom">
+                <th className="py-2 pl-3 text-right align-bottom">
                   <span className="eyebrow">Verdict</span>
                 </th>
-                <th className="w-[7%] py-2 pl-3 text-right align-bottom">
+                <th className="py-2 pl-3 text-right align-bottom">
                   <span className="eyebrow">Retry</span>
                 </th>
               </tr>
