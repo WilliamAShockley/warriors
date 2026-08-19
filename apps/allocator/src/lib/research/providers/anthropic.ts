@@ -47,7 +47,12 @@ Keep it short. End your reply with ONLY this JSON (no prose after it):
 // tool-using turn (stop_reason "pause_turn"); re-sending the paused
 // content resumes it where it left off.
 const MODEL = process.env.ENRICH_MODEL || 'claude-sonnet-5'
-const MAX_ROUNDS = 4
+// ONE resume, not four. A resumed request gets a FRESH web_search
+// allowance — max_uses caps per request, not per conversation — so
+// generous resumes let a search-happy run loop pause→resume→search until
+// the deadline dies (observed: 13 searches, 31 chars drafted). One
+// resume exists to let a paused run finish WRITING, not to keep digging.
+const MAX_ROUNDS = 1
 
 async function run(input: ResearchInput): Promise<ResearchResult> {
   const { anthropic } = await import('../../claude')
@@ -78,11 +83,16 @@ async function run(input: ResearchInput): Promise<ResearchResult> {
   }
 
   try {
+    // The BASIC search variant: the newer _20260209 tool runs code
+    // execution under the hood to filter results — each search fans out
+    // into extra server-side work, which is how runs drowned in tool
+    // rounds. Basic search is one operation per search. Effort low keeps
+    // thinking between searches short; this is a lookup, not a thesis.
     const base: any = {
       model: MODEL,
       max_tokens: 16000,
-      output_config: { effort: 'medium' },
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
+      output_config: { effort: 'low' },
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }],
     }
     let messages: any[] = [{ role: 'user', content: simpleCharge(input) }]
     let response: any
