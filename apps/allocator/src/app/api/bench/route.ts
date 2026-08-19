@@ -8,9 +8,11 @@ import { NextResponse, after } from 'next/server'
 export const maxDuration = 300
 
 // One "run the sheet" click caps at this many rows (× four engines) so the
-// whole batch concludes inside the function window. The sheet says so
-// when rows are left over; a second click picks them up.
-const RUN_ALL_CAP = 8
+// whole batch concludes inside the function window — each engine takes its
+// rows one at a time (per-provider lanes), so the cap × a realistic run
+// must fit 300s. The sheet says so when rows are left over; a second
+// click picks them up.
+const RUN_ALL_CAP = 3
 
 export async function GET() {
   const { listBench } = await import('@/lib/bench')
@@ -56,6 +58,21 @@ export async function POST(req: Request) {
   if (body?.run) {
     const started = await startRun([String(body.run)])
     return NextResponse.json({ ok: started > 0, started })
+  }
+
+  // Retry: fresh trials only for this row's failed engines.
+  if (body?.retry) {
+    const { queueRetries } = await import('@/lib/bench')
+    const { activeWorkspaceId, runAsWorkspace } = await import('@/lib/tenant')
+    const ws = await activeWorkspaceId()
+    const queued = await queueRetries(String(body.retry))
+    if (queued.length > 0) {
+      after(async () => {
+        const { runQueuedTrials } = await import('@/lib/bench')
+        await runAsWorkspace(ws, () => runQueuedTrials(queued))
+      })
+    }
+    return NextResponse.json({ ok: queued.length > 0, started: queued.length })
   }
 
   if (body?.runAll === true) {

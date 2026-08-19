@@ -246,20 +246,23 @@ export default function Bench() {
 
       {sheet.rows.length > 0 && (
         <div className="mt-6 overflow-x-auto">
-          <table className="w-full min-w-[860px] border-collapse">
+          <table className="w-full min-w-[920px] border-collapse">
             <thead>
               <tr className="border-b border-ink/60">
                 <th className="w-[15%] py-2 pr-3 text-left align-bottom">
                   <span className="eyebrow">Company</span>
                 </th>
                 {providers.map((p) => (
-                  <th key={p.id} className="w-[19%] px-3 py-2 text-left align-bottom">
+                  <th key={p.id} className="w-[17.5%] px-3 py-2 text-left align-bottom">
                     <span className="eyebrow">{p.label}</span>
                     {!p.keyed && <span className="eyebrow block text-oxblood">no key filed</span>}
                   </th>
                 ))}
-                <th className="w-[9%] py-2 pl-3 text-right align-bottom">
+                <th className="w-[8%] py-2 pl-3 text-right align-bottom">
                   <span className="eyebrow">Verdict</span>
+                </th>
+                <th className="w-[7%] py-2 pl-3 text-right align-bottom">
+                  <span className="eyebrow">Retry</span>
                 </th>
               </tr>
             </thead>
@@ -314,6 +317,20 @@ export default function Bench() {
                       <span className="eyebrow text-faint">open</span>
                     )}
                   </td>
+                  <td className="py-3 pl-3 text-right">
+                    {Object.values(r.trials).some((t) => t.status === 'failed') ? (
+                      <button
+                        onClick={() => act({ retry: r.id })}
+                        disabled={busy}
+                        title="Send the failed engines back out — successful cells stand"
+                        className="eyebrow text-oxblood underline decoration-hairline underline-offset-4 disabled:opacity-40"
+                      >
+                        Retry
+                      </button>
+                    ) : (
+                      <span className="eyebrow text-faint">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -336,6 +353,7 @@ export default function Bench() {
                     </td>
                   )
                 })}
+                <td />
                 <td />
               </tr>
             </tfoot>

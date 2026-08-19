@@ -81,11 +81,26 @@ const toTrial = (t: any): TrialRecord => ({
   ranOn: dateLabel(t.finishedAt ?? t.startedAt ?? null),
 })
 
+// A trial can be orphaned mid-run when the platform's function window
+// closes under it — the janitor turns those eternal spinners into honest
+// failures the Retry button can pick up. Six minutes clears the 240s
+// deadline with slack.
+const STALE_MS = 6 * 60_000
+
 export async function listBench(): Promise<BenchSheet> {
   const providers = RESEARCH_PROVIDERS.map((p) => ({ id: p.id, label: p.label, keyed: keyedFor(p.id) }))
   if (!hasDb()) return { live: false, providers, rows: [], tally: {} }
   try {
     const db = await getDb()
+    await db.benchTrial
+      .updateMany({
+        where: {
+          status: { in: ['queued', 'running'] },
+          updatedAt: { lt: new Date(Date.now() - STALE_MS) },
+        },
+        data: { status: 'failed', error: 'the run was cut off before it finished — Retry sends it back out' },
+      })
+      .catch(() => {})
     const rows = await db.benchRow.findMany({ orderBy: { createdAt: 'desc' }, take: 100 })
     const trials = rows.length
       ? await db.benchTrial.findMany({
@@ -261,13 +276,49 @@ export async function queueTrials(rowId: string): Promise<string[]> {
   }
 }
 
-// Run queued trials — all providers in parallel; each cell lands (or
-// fails) independently, and every failure is written to the cell, never
+// Re-queue only what failed: one fresh trial per keyed provider whose
+// latest run on this row ended in failure. The Retry column's verb.
+export async function queueRetries(rowId: string): Promise<string[]> {
+  if (!hasDb()) return []
+  try {
+    const db = await getDb()
+    const trials = await db.benchTrial.findMany({ where: { rowId }, orderBy: { createdAt: 'asc' } })
+    const latest = new Map<string, any>()
+    for (const t of trials as any[]) latest.set(t.provider, t)
+    const ids: string[] = []
+    for (const p of RESEARCH_PROVIDERS) {
+      const last = latest.get(p.id)
+      if (!last || last.status !== 'failed' || !keyedFor(p.id)) continue
+      const trial = await db.benchTrial.create({ data: { rowId, provider: p.id } })
+      ids.push(trial.id)
+    }
+    return ids
+  } catch {
+    return []
+  }
+}
+
+// Run queued trials in per-provider lanes: the four vendors work in
+// parallel, but each vendor takes its trials one at a time — a sheet-wide
+// run no longer fires eight concurrent calls at one API, which is what
+// rate-limits the slow ones past the 240s deadline. Each cell still lands
+// (or fails) independently, every failure written to the cell, never
 // swallowed. Called from after(), inside the pinned workspace.
 export async function runQueuedTrials(trialIds: string[]): Promise<void> {
   if (!hasDb() || trialIds.length === 0) return
   const db = await getDb()
-  await Promise.allSettled(trialIds.map((id) => runTrial(db, id)))
+  const trials = await db.benchTrial.findMany({ where: { id: { in: trialIds } } })
+  const lanes = new Map<string, string[]>()
+  for (const t of trials as any[]) {
+    const lane = lanes.get(t.provider) ?? []
+    lane.push(t.id)
+    lanes.set(t.provider, lane)
+  }
+  await Promise.allSettled(
+    [...lanes.values()].map(async (lane) => {
+      for (const id of lane) await runTrial(db, id)
+    })
+  )
 }
 
 async function runTrial(db: any, trialId: string): Promise<void> {
