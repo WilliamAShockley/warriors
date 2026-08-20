@@ -15,8 +15,9 @@ export const maxDuration = 300
 const RUN_ALL_CAP = 3
 
 export async function GET() {
-  const { listBench } = await import('@/lib/bench')
-  return NextResponse.json(await listBench())
+  const { listBench, listCharges } = await import('@/lib/bench')
+  const [sheet, charges] = await Promise.all([listBench(), listCharges()])
+  return NextResponse.json({ ...sheet, charges })
 }
 
 async function startRun(rowIds: string[]) {
@@ -101,6 +102,16 @@ export async function POST(req: Request) {
 
   if (body?.promote?.rowId && body?.promote?.provider) {
     const ok = await bench.promoteTrial(String(body.promote.rowId), String(body.promote.provider))
+    return NextResponse.json({ ok })
+  }
+
+  if (body?.charge?.provider) {
+    const ok = await bench.setCharge(String(body.charge.provider), String(body.charge.template ?? ''))
+    return NextResponse.json({ ok })
+  }
+
+  if (typeof body?.chargeAll === 'string') {
+    const ok = await bench.setAllCharges(body.chargeAll)
     return NextResponse.json({ ok })
   }
 

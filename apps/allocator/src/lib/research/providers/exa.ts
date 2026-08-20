@@ -1,6 +1,6 @@
 import type { Citation, ResearchInput, ResearchProvider, ResearchResult } from '../types'
 import { withDeadline } from '../types'
-import { buildCharge } from '../charge'
+import { chargeFor } from '../charge'
 
 // Exa's /answer: a synchronous LLM answer grounded in their neural search,
 // citations attached. The search-native contender in its simplest dress —
@@ -16,7 +16,7 @@ async function run(input: ResearchInput): Promise<ResearchResult> {
     fetch('https://api.exa.ai/answer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-      body: JSON.stringify({ query: buildCharge(input), text: true }),
+      body: JSON.stringify({ query: await chargeFor('exa', input), text: true }),
     }),
     'the Exa check'
   )

@@ -1,6 +1,6 @@
 import type { Citation, ResearchInput, ResearchProvider, ResearchResult } from '../types'
 import { RESEARCH_TIMEOUT_MS } from '../types'
-import { buildCharge, OUTPUT_SCHEMA } from '../charge'
+import { chargeFor, OUTPUT_SCHEMA } from '../charge'
 
 // Parallel's Task API: hand it the charge and our exact output schema, it
 // runs multi-hop research and returns structured JSON with per-field
@@ -31,7 +31,7 @@ async function run(input: ResearchInput): Promise<ResearchResult> {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      input: buildCharge(input),
+      input: await chargeFor('parallel', input),
       processor: PROCESSOR,
       task_spec: {
         output_schema: { type: 'json', json_schema: OUTPUT_SCHEMA },

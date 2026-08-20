@@ -1,6 +1,6 @@
 import type { Citation, ResearchInput, ResearchProvider, ResearchResult } from '../types'
 import { withDeadline } from '../types'
-import { buildCharge } from '../charge'
+import { chargeFor } from '../charge'
 
 // OpenAI's bundle: the Responses API with the web_search tool — the same
 // shape as Anthropic's engine, so this is the apples-to-apples comparison.
@@ -20,7 +20,7 @@ async function run(input: ResearchInput): Promise<ResearchResult> {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model: MODEL,
-        input: buildCharge(input),
+        input: await chargeFor('openai', input),
         tools: [{ type: 'web_search' }],
         max_output_tokens: 16000,
       }),
