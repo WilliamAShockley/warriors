@@ -88,6 +88,26 @@ export default function Bench() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inFlight])
 
+  // Popup keyboard: Escape closes, arrows page through the cells.
+  useEffect(() => {
+    if (!picked) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return setPicked(null)
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      setPicked((cur) => {
+        if (!cur || !sheet) return cur
+        const list = sheet.rows.flatMap((r) =>
+          sheet.providers.map((p) => ({ rowId: r.id, provider: p.id }))
+        )
+        const idx = list.findIndex((c) => c.rowId === cur.rowId && c.provider === cur.provider)
+        if (idx < 0) return cur
+        return list[(idx + (e.key === 'ArrowRight' ? 1 : -1) + list.length) % list.length]
+      })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [picked, sheet])
+
   const post = async (body: Record<string, unknown>): Promise<any> => {
     setNote('')
     try {
@@ -136,6 +156,17 @@ export default function Bench() {
   const providers = sheet.providers
   const pickedTrial = picked ? sheet.rows.find((r) => r.id === picked.rowId)?.trials[picked.provider] : null
   const pickedRow = picked ? sheet.rows.find((r) => r.id === picked.rowId) : null
+
+  // The popup pages through every cell in reading order — across a row's
+  // engines, then down to the next row — wrapping at the ends.
+  const cellList = sheet.rows.flatMap((r) => providers.map((p) => ({ rowId: r.id, provider: p.id })))
+  const pickedIdx = picked
+    ? cellList.findIndex((c) => c.rowId === picked.rowId && c.provider === picked.provider)
+    : -1
+  const step = (dir: number) => {
+    if (cellList.length === 0 || pickedIdx < 0) return
+    setPicked(cellList[(pickedIdx + dir + cellList.length) % cellList.length])
+  }
 
   const cell = (r: Row, pid: string, i: number) => {
     const t = r.trials[pid]
@@ -433,19 +464,50 @@ export default function Bench() {
         </div>
       )}
 
-      {/* The reading room: the picked cell in full */}
+      {/* The reading room: the picked cell in a centered popup. ✕ or
+          Escape closes; ‹ › (or arrow keys) page through every cell. */}
       {picked && pickedRow && (
-        <div className="mt-8 border border-hairline p-5">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4"
+          onClick={() => setPicked(null)}
+        >
+          <div
+            className="max-h-[82vh] w-full max-w-[720px] overflow-y-auto border border-ink/40 bg-paper p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
           <div className="flex items-baseline justify-between gap-4">
             <p className="eyebrow text-oxblood">
               {providers.find((p) => p.id === picked.provider)?.label ?? picked.provider} on {pickedRow.companyName}
+              <span className="ml-2 text-faint">
+                {pickedIdx + 1} of {cellList.length}
+              </span>
             </p>
-            <button
-              onClick={() => setPicked(null)}
-              className="eyebrow text-faint underline decoration-hairline underline-offset-4"
-            >
-              Close
-            </button>
+            <div className="flex shrink-0 items-baseline gap-4">
+              <button
+                onClick={() => step(-1)}
+                aria-label="Previous cell"
+                title="Previous cell (←)"
+                className="eyebrow text-faint hover:text-ink"
+              >
+                ‹ prev
+              </button>
+              <button
+                onClick={() => step(1)}
+                aria-label="Next cell"
+                title="Next cell (→)"
+                className="eyebrow text-faint hover:text-ink"
+              >
+                next ›
+              </button>
+              <button
+                onClick={() => setPicked(null)}
+                aria-label="Close"
+                title="Close (Esc)"
+                className="font-sans text-[15px] leading-none text-faint hover:text-ink"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {!pickedTrial && <p className="dek mt-3">This engine has not run against this row yet.</p>}
@@ -520,11 +582,20 @@ export default function Bench() {
                   })
                 }
                 disabled={busy}
-                className="eyebrow text-oxblood underline decoration-hairline underline-offset-4 disabled:opacity-40"
+                title={
+                  pickedRow.winner === picked.provider
+                    ? 'Unmark as the best response'
+                    : 'Mark this response the best of the row'
+                }
+                className={
+                  'eyebrow disabled:opacity-40 ' +
+                  (pickedRow.winner === picked.provider ? 'text-oxblood' : 'text-faint hover:text-ink')
+                }
               >
-                {pickedRow.winner === picked.provider ? 'Uncrown' : 'Crown the Winner'}
+                {pickedRow.winner === picked.provider ? '★ best' : '☆ best'}
               </button>
             </div>
+          </div>
           </div>
         </div>
       )}
