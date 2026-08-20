@@ -27,6 +27,7 @@ const TENANT_MODELS = new Set([
   'CompanyContext',
   'BenchRow',
   'BenchTrial',
+  'BenchCharge',
   'CalendarEvent',
   'MeetingNote',
   'InboundEmail',
