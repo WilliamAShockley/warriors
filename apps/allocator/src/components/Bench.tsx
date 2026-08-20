@@ -104,7 +104,9 @@ export default function Bench() {
   }
 
   const seat = async () => {
-    const companyName = newName.trim()
+    // Company or the site URL alone is enough — a URL-only seat derives
+    // its name from the domain on the server.
+    const companyName = newName.trim() || newSite.trim()
     if (!companyName) return
     setBusy(true)
     const data = await post({
@@ -217,7 +219,7 @@ export default function Bench() {
           <span className="eyebrow text-faint">Seats the row and sends all four engines at once</span>
           <button
             type="submit"
-            disabled={!newName.trim() || busy}
+            disabled={(!newName.trim() && !newSite.trim()) || busy}
             className="eyebrow-ink underline decoration-hairline underline-offset-4 disabled:opacity-40"
           >
             Seat It &amp; Run
