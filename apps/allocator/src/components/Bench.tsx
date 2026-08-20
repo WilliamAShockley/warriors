@@ -573,19 +573,31 @@ export default function Bench() {
                 </button>
               )}
               <button
-                onClick={() =>
+                onClick={() => {
+                  const marking = pickedRow.winner !== picked.provider
                   act({
                     verdict: {
                       rowId: pickedRow.id,
-                      winner: pickedRow.winner === picked.provider ? null : picked.provider,
+                      winner: marking ? picked.provider : null,
                     },
                   })
-                }
+                  // Starring keeps the review moving: jump to the first
+                  // cell of the next unjudged row (wrapping), and when
+                  // this star finishes the sheet, close the popup.
+                  if (marking) {
+                    const rows = sheet.rows
+                    const curIdx = rows.findIndex((r) => r.id === pickedRow.id)
+                    const next = [...rows.slice(curIdx + 1), ...rows.slice(0, curIdx)].find(
+                      (r) => !r.winner
+                    )
+                    setPicked(next ? { rowId: next.id, provider: providers[0].id } : null)
+                  }
+                }}
                 disabled={busy}
                 title={
                   pickedRow.winner === picked.provider
                     ? 'Unmark as the best response'
-                    : 'Mark this response the best of the row'
+                    : 'Mark this response the best of the row — moves to the next unjudged row'
                 }
                 className={
                   'eyebrow disabled:opacity-40 ' +
