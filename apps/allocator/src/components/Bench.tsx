@@ -40,6 +40,7 @@ type Sheet = {
   providers: { id: string; label: string; keyed: boolean }[]
   rows: Row[]
   tally: Record<string, { wins: number; runs: number; failures: number; avgLatencyMs: number | null }>
+  charges?: { id: string; label: string; template: string; custom: boolean }[]
 }
 
 const RUNNING_PHRASES = [
@@ -109,6 +110,17 @@ function BenchSheet({ mode }: { mode: BenchMode }) {
   const [newPerson, setNewPerson] = useState('')
   const [newCompany, setNewCompany] = useState('')
   const [newLinkedIn, setNewLinkedIn] = useState('')
+
+  // The charge editors: local drafts, re-seeded from the server after
+  // every save or apply-all (null = seed from the next sheet fetch).
+  // Company sheet only — person charges are the house defaults.
+  const [chargeDrafts, setChargeDrafts] = useState<Record<string, string> | null>(null)
+  useEffect(() => {
+    if (sheet?.charges && chargeDrafts === null) {
+      setChargeDrafts(Object.fromEntries(sheet.charges.map((c) => [c.id, c.template])))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheet])
 
   const refetch = () =>
     fetch(`/api/bench?kind=${mode}`)
@@ -225,9 +237,9 @@ function BenchSheet({ mode }: { mode: BenchMode }) {
   const act = async (body: Record<string, unknown>, then?: (data: any) => void) => {
     setBusy(true)
     const data = await post(body)
-    setBusy(false)
     if (data) then?.(data)
-    refetch()
+    await refetch()
+    setBusy(false)
   }
 
   if (!sheet) return <p className="dek pt-10 text-center">Dealing the sheet…</p>
@@ -616,6 +628,78 @@ function BenchSheet({ mode }: { mode: BenchMode }) {
             </tfoot>
           </table>
         </div>
+      )}
+
+      {/* The Charges: what each engine is asked, editable in place. */}
+      {sheet.live && (sheet.charges?.length ?? 0) > 0 && chargeDrafts && (
+        <section className="mt-12">
+          <div className="rule-masthead" />
+          <p className="eyebrow mt-5">The Charges</p>
+          <p className="dek mt-1 text-[13px]">
+            What each engine is asked, verbatim. The tokens{' '}
+            <span className="font-mono text-[12px]">
+              {'{company} {founderFirst} {founderFull} {website} {context} {date}'}
+            </span>{' '}
+            fill in from the row at run time. Save an emptied box to restore the house default.
+          </p>
+          <div className="mt-5 space-y-6">
+            {sheet.charges!.map((c) => (
+              <div key={c.id} className="border border-hairline p-4 focus-within:border-ink">
+                <div className="flex items-baseline justify-between gap-4">
+                  <p className="eyebrow">
+                    {c.label}{' '}
+                    <span className={c.custom ? 'text-oxblood' : 'text-faint'}>
+                      · {c.custom ? 'amended' : 'house default'}
+                    </span>
+                  </p>
+                  <div className="flex shrink-0 gap-5">
+                    <button
+                      onClick={async () => {
+                        const t = (chargeDrafts[c.id] ?? '').trim()
+                        if (!t) return
+                        if (!window.confirm('Run THIS charge on all four engines? Each engine’s current charge is replaced.'))
+                          return
+                        await act({ chargeAll: t }, (d) =>
+                          setNote(d?.ok ? 'The charge now runs on all four engines.' : 'That did not take.')
+                        )
+                        setChargeDrafts(null)
+                      }}
+                      disabled={busy || !(chargeDrafts[c.id] ?? '').trim()}
+                      className="eyebrow text-faint underline decoration-hairline underline-offset-4 disabled:opacity-40"
+                    >
+                      Apply to All Engines
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await act({ charge: { provider: c.id, template: chargeDrafts[c.id] ?? '' } }, (d) =>
+                          setNote(
+                            d?.ok
+                              ? (chargeDrafts[c.id] ?? '').trim()
+                                ? `The ${c.label} charge is filed.`
+                                : `${c.label} returns to the house default.`
+                              : 'That did not take.'
+                          )
+                        )
+                        setChargeDrafts(null)
+                      }}
+                      disabled={busy}
+                      className="eyebrow-ink underline decoration-hairline underline-offset-4 disabled:opacity-40"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  value={chargeDrafts[c.id] ?? ''}
+                  onChange={(e) => setChargeDrafts((prev) => ({ ...(prev ?? {}), [c.id]: e.target.value }))}
+                  rows={9}
+                  spellCheck={false}
+                  className="mt-3 w-full resize-y border border-hairline bg-transparent p-3 font-mono text-[12px] leading-relaxed text-ink focus:border-ink focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* The reading room: the picked cell in a centered popup. ✕ or

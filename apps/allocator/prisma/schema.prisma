@@ -379,6 +379,19 @@ model BenchTrial {
   @@index([workspaceId, rowId, provider, createdAt])
 }
 
+// A reader-amended research charge for one Bench engine. No row = the
+// house default in code. Tokens ({company}, {founderFirst}, {founderFull},
+// {website}, {context}, {date}) fill in from the row at run time.
+model BenchCharge {
+  workspaceId String   @default("primary")
+  id          String // provider id: anthropic | openai | exa | parallel
+  charge      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@id([workspaceId, id])
+}
+
 model BookContact {
   workspaceId String    @default("primary")
   id           String   @id @default(cuid())

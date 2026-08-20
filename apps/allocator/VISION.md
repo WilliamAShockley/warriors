@@ -61,6 +61,10 @@ the same Anthropic adapter), keys via `OPENAI_API_KEY` / `EXA_API_KEY` /
 `PARALLEL_API_KEY`, model/processor overrides via `BENCH_OPENAI_MODEL` /
 `BENCH_PARALLEL_PROCESSOR`. The standing intent: once the tally crowns a
 sustained winner, the Register's default engine becomes a setting.
+The charges themselves are editable in-app (the Bench's "The Charges"
+section, per engine with apply-to-all); templates store per workspace in
+`BenchCharge`, tokens fill in per row, and an emptied save restores the
+house default in code.
 
 Added 20 August 2026: the Bench runs two sheets — **Company** (the
 original bake-off) and **People** — switched by buttons under the

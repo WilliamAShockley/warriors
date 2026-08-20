@@ -14,11 +14,15 @@ export const maxDuration = 300
 // click picks them up.
 const RUN_ALL_CAP = 3
 
-// ?kind=person deals the People sheet; anything else deals Company.
+// ?kind=person deals the People sheet; anything else deals Company. The
+// editable charges ride along only for Company — person charges are the
+// house defaults, not (yet) reader-amendable.
 export async function GET(req: Request) {
-  const { listBench } = await import('@/lib/bench')
+  const { listBench, listCharges } = await import('@/lib/bench')
   const kind = new URL(req.url).searchParams.get('kind') === 'person' ? 'person' : 'company'
-  return NextResponse.json(await listBench(kind))
+  if (kind === 'person') return NextResponse.json(await listBench('person'))
+  const [sheet, charges] = await Promise.all([listBench('company'), listCharges()])
+  return NextResponse.json({ ...sheet, charges })
 }
 
 async function startRun(rowIds: string[]) {
@@ -117,6 +121,16 @@ export async function POST(req: Request) {
 
   if (body?.promote?.rowId && body?.promote?.provider) {
     const ok = await bench.promoteTrial(String(body.promote.rowId), String(body.promote.provider))
+    return NextResponse.json({ ok })
+  }
+
+  if (body?.charge?.provider) {
+    const ok = await bench.setCharge(String(body.charge.provider), String(body.charge.template ?? ''))
+    return NextResponse.json({ ok })
+  }
+
+  if (typeof body?.chargeAll === 'string') {
+    const ok = await bench.setAllCharges(body.chargeAll)
     return NextResponse.json({ ok })
   }
 

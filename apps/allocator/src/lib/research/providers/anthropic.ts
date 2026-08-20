@@ -1,59 +1,11 @@
 import type { Citation, ResearchInput, ResearchProvider, ResearchResult } from '../types'
 import { RESEARCH_TIMEOUT_MS } from '../types'
+import { chargeFor } from '../charge'
 
-// The Anthropic engine runs a deliberately DEAD-SIMPLE charge — the
-// reader's call, 19 Aug 2026, after the full charge sent the model on an
-// exhaustive search spree that spent the whole deadline searching and
-// never started writing. The other engines still run the full shared
-// charge from ../charge; the JSON contract is identical.
-const today = () =>
-  new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(
-    new Date()
-  )
-
-const simpleCharge = (input: ResearchInput) =>
-  input.kind === 'person' ? simplePersonCharge(input) : simpleCompanyCharge(input)
-
-const simpleCompanyCharge = (input: ResearchInput) => `Quick web check on one company. Today is ${today()}.
-
-Company: ${input.name}
-CEO / founder: ${input.founderFullName ?? input.founderFirstName ?? '(unknown)'}
-Website: ${input.websiteUrl ?? '(unknown)'}
-What we already know: ${input.context ?? '(nothing yet)'}
-
-Search the web — one or two searches, no more — then answer plainly:
-1. What does the company do?
-2. Who is the CEO (first and full name)?
-3. Any news from the past 3 months — funding, launches, big announcements?
-
-If other companies share this name, only trust results matching the website or founder above. If you cannot tell which company this is, write "AMBIGUOUS —" plus the candidates as the context and leave the founder fields null.
-
-Keep it short. End your reply with ONLY this JSON (no prose after it):
-{"founderFirstName": "<or null>", "founderFullName": "<or null>",
- "context": "<3-6 factual sentences>",
- "websiteUrl": "<https url or null>"}`
-
-// The People sheet's simple charge: same dead-simple shape, person
-// semantics. The contract keys are shared with the company charge (the
-// founder fields carry the person's own name) so one parser serves both.
-const simplePersonCharge = (input: ResearchInput) => `Quick web check on one person. Today is ${today()}.
-
-Person: ${input.name?.trim() || '(unknown)'}
-Company: ${input.company ?? '(unknown)'}
-LinkedIn: ${input.linkedinUrl ?? '(unknown)'}
-
-Search the web — one or two searches, no more — then answer plainly:
-1. Their professional background: current role, prior roles and companies, education, anything notable. 3-6 terse factual sentences.
-2. Their first and full name, confirmed.
-3. Best guess at their work email — a published address, or the company's email pattern applied to their name; null if there is no basis.
-
-If several people share this name, only trust results matching the company or LinkedIn above. If you cannot tell which person this is, write "AMBIGUOUS —" plus the candidates as the context and leave the other fields null.
-
-Keep it short. End your reply with ONLY this JSON (no prose after it):
-{"founderFirstName": "<or null>", "founderFullName": "<or null>",
- "context": "<3-6 factual sentences on their background>",
- "websiteUrl": "<their LinkedIn https url or null>",
- "guessedEmail": "<best-guess work email or null>"}`
+// The Anthropic engine's house charge is the deliberately DEAD-SIMPLE one
+// (see ../charge) — the reader's call, 19 Aug 2026, after the full charge
+// sent the model on an exhaustive search spree. Reader amendments in the
+// Bench's Charges section override it per workspace.
 
 // The incumbent: Sonnet with the web_search server tool — the model
 // composes up to three searches, Anthropic runs them server-side, and the
@@ -114,7 +66,7 @@ async function run(input: ResearchInput): Promise<ResearchResult> {
       output_config: { effort: 'low' },
       tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }],
     }
-    let messages: any[] = [{ role: 'user', content: simpleCharge(input) }]
+    let messages: any[] = [{ role: 'user', content: await chargeFor('anthropic', input) }]
     let response: any
     for (let round = 0; ; round++) {
       // maxRetries 1: the SDK's default 2 silent retries can re-run a

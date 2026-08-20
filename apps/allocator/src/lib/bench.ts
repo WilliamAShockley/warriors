@@ -459,6 +459,60 @@ async function runTrial(db: any, trialId: string): Promise<void> {
   }
 }
 
+// The charges, as shown and edited in the Bench: the reader's amendment
+// when one is filed, else the house default from code.
+export type ChargeRecord = { id: string; label: string; template: string; custom: boolean }
+
+export async function listCharges(): Promise<ChargeRecord[]> {
+  const { defaultTemplateFor } = await import('./research/charge')
+  let rows: any[] = []
+  if (hasDb()) {
+    try {
+      rows = await (await getDb()).benchCharge.findMany()
+    } catch {}
+  }
+  const byId = new Map(rows.map((r: any) => [r.id, r]))
+  return RESEARCH_PROVIDERS.map((p) => {
+    const row: any = byId.get(p.id)
+    const custom = Boolean(row?.charge?.trim())
+    return {
+      id: p.id,
+      label: p.label,
+      template: custom ? row.charge : defaultTemplateFor(p.id),
+      custom,
+    }
+  })
+}
+
+// Save one engine's charge. An empty save strikes the amendment — the
+// engine returns to the house default.
+export async function setCharge(providerId: string, template: string): Promise<boolean> {
+  if (!hasDb() || !providerById(providerId)) return false
+  try {
+    const db = await getDb()
+    const t = template.trim()
+    if (!t) {
+      await db.benchCharge.deleteMany({ where: { id: providerId } })
+      return true
+    }
+    const { activeWorkspaceId } = await import('./tenant')
+    await db.benchCharge.upsert({
+      where: { workspaceId_id: { workspaceId: await activeWorkspaceId(), id: providerId } },
+      create: { id: providerId, charge: t.slice(0, 8000) },
+      update: { charge: t.slice(0, 8000) },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function setAllCharges(template: string): Promise<boolean> {
+  const results = []
+  for (const p of RESEARCH_PROVIDERS) results.push(await setCharge(p.id, template))
+  return results.every(Boolean)
+}
+
 // File the crowned cell into the Register — the bake-off's whole point.
 // Merge-style via upsertCompany, so a sparse result never clobbers facts.
 export async function promoteTrial(rowId: string, provider: string): Promise<boolean> {
