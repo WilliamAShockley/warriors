@@ -194,7 +194,12 @@ export default function Bench() {
         className="mt-7 border border-hairline p-4 focus-within:border-ink"
       >
         <div className="flex gap-4">
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Company" className={field} />
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Company — or just paste the site URL"
+            className={field}
+          />
           <input
             value={newFounder}
             onChange={(e) => setNewFounder(e.target.value)}
