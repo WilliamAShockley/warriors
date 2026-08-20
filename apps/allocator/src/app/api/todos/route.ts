@@ -4,6 +4,7 @@ import {
   autoTagTodo,
   createTodo,
   listTodos,
+  moveTodoToNote,
   tagTodo,
   toggleTodo,
   updateTodoText,
@@ -31,6 +32,7 @@ export async function GET() {
 // { id } toggles an existing item; { id, text } amends its wording (a
 // correction — it re-tags quietly but never re-runs the worker); { id, tag }
 // lets an agent categorize it (infrastructure only — the tag never renders);
+// { id, moveToNotes } closes the item out and files it to The File as a note;
 // { text } files a new one, which the desk classifier tags in the background.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
@@ -42,6 +44,11 @@ export async function POST(req: Request) {
       String(body?.taggedBy ?? 'agent').slice(0, 60)
     )
     return NextResponse.json({ ok })
+  }
+
+  if (body?.id && body?.moveToNotes) {
+    const note = await moveTodoToNote(String(body.id))
+    return NextResponse.json({ ok: Boolean(note), note })
   }
 
   if (body?.id && typeof body?.update === 'string') {

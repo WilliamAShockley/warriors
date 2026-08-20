@@ -143,6 +143,23 @@ export default function Docket() {
     )
   }
 
+  // Close an item out and file it to The File as a note. The item leaves
+  // the docket immediately either way; in mock mode the move is session-only.
+  const moveToNotes = (id: string) => {
+    setItems((prev) => prev.filter((t) => t.id !== id))
+    if (logOpenId === id) {
+      setLogOpenId(null)
+      setLogDraft('')
+    }
+    if (live) {
+      fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, moveToNotes: true }),
+      }).catch(() => {})
+    }
+  }
+
   const open = items.filter((t) => t.status === 'open')
   const cleared = items.filter((t) => t.status === 'cleared')
 
@@ -233,19 +250,28 @@ export default function Docket() {
                           ↳ {t.updates![t.updates!.length - 1].text}
                         </p>
                       )}
-                      <button
-                        onClick={() => {
-                          setLogOpenId(logOpenId === t.id ? null : t.id)
-                          setLogDraft('')
-                        }}
-                        className="eyebrow mt-2 text-faint underline decoration-hairline underline-offset-4"
-                      >
-                        {logOpenId === t.id
-                          ? 'Close the Log'
-                          : t.updates?.length
-                            ? `Updates · ${t.updates.length} ▾`
-                            : 'Add an Update ▾'}
-                      </button>
+                      <div className="mt-2 flex items-center gap-4">
+                        <button
+                          onClick={() => {
+                            setLogOpenId(logOpenId === t.id ? null : t.id)
+                            setLogDraft('')
+                          }}
+                          className="eyebrow text-faint underline decoration-hairline underline-offset-4"
+                        >
+                          {logOpenId === t.id
+                            ? 'Close the Log'
+                            : t.updates?.length
+                              ? `Updates · ${t.updates.length} ▾`
+                              : 'Add an Update ▾'}
+                        </button>
+                        <button
+                          onClick={() => moveToNotes(t.id)}
+                          title="Close it out and file it as a note"
+                          className="eyebrow text-faint underline decoration-hairline underline-offset-4"
+                        >
+                          Move to Notes
+                        </button>
+                      </div>
 
                       {logOpenId === t.id && (
                         <div className="mt-3 border-l border-hairline pl-4">

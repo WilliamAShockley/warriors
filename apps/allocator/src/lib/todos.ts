@@ -163,6 +163,37 @@ export async function addTodoUpdate(
   }
 }
 
+// Close an item out and file it to The File as a note. The note takes the
+// item's text as its title and the running log as its body; the item goes
+// straight to 'done' — filed elsewhere, it skips Cleared Today entirely.
+export async function moveTodoToNote(
+  id: string
+): Promise<import('./notes').NoteRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const todo = await db.todo.findUnique({ where: { id } })
+    if (!todo || todo.status === 'done') return null
+    const updates = await db.todoUpdate.findMany({
+      where: { todoId: id },
+      orderBy: { createdAt: 'asc' },
+    })
+    const body = updates.length
+      ? updates.map((u) => `${updateDate(u.createdAt)} — ${u.text}`).join('\n')
+      : todo.text
+    const { createNote } = await import('./notes')
+    const note = await createNote({ title: todo.text.slice(0, 200), body })
+    if (!note) return null
+    await db.todo.update({
+      where: { id },
+      data: { status: 'done', clearedAt: new Date() },
+    })
+    return note
+  } catch {
+    return null
+  }
+}
+
 // Amend an item's text in place. Deliberately does NOT re-run the docket
 // worker — an edit is a correction, not a new commission.
 export async function updateTodoText(id: string, text: string): Promise<boolean> {
