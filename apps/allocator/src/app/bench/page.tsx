@@ -13,8 +13,8 @@ export default function BenchPage() {
         </h1>
         <p className="dek mt-2">
           Four research engines — Anthropic, OpenAI, Exa, Parallel — run the identical charge
-          against the same companies. Read the cells, crown the winners, and let the tally
-          decide who powers the Register.
+          against the same companies or people. Read the cells, crown the winners, and let the
+          tally decide who powers the Register.
         </p>
         <p className="mt-3">
           <Link
@@ -26,8 +26,8 @@ export default function BenchPage() {
         </p>
       </header>
 
-      <div className="rule-masthead mt-6" />
-
+      {/* The Company/People switch and the masthead rules render inside
+          Bench — the switch sits between the back link and the rules. */}
       <Bench />
     </main>
   )

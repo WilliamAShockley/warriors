@@ -66,6 +66,14 @@ section, per engine with apply-to-all); templates store per workspace in
 `BenchCharge`, tokens fill in per row, and an emptied save restores the
 house default in code.
 
+Added 20 August 2026: the Bench runs two sheets — **Company** (the
+original bake-off) and **People** — switched by buttons under the
+back-to-Register link. A person seats with any two of full name /
+company / LinkedIn URL; the identical four engines then summarize their
+professional background and best-guess a work email (published address
+or the company's email pattern). Same crowning, tally, and standings
+machinery; People rows don't file to the Register (it holds companies).
+
 ## Other standing intents
 
 - **Open-source release** planned: the app as a clonable "operating

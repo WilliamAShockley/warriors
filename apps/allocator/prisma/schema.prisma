@@ -344,7 +344,10 @@ model CompanyContext {
 model BenchRow {
   workspaceId String   @default("primary")
   id          String   @id @default(cuid())
-  companyName String
+  kind        String   @default("company") // company | person — which sheet the row sits on
+  companyName String // person rows: the company affiliation (may be empty)
+  personName  String? // person rows only: the full name (any 2 of name/company/LinkedIn seats one)
+  linkedinUrl String? // person rows only: the LinkedIn identity anchor
   founderHint String? // anchors snapshotted at filing, so results stay interpretable
   websiteHint String?
   contextHint String?

@@ -13,6 +13,11 @@ async function getDb() {
   return db
 }
 
+// The Bench runs two sheets on the same machinery: Company rows (the
+// original bake-off) and People rows — an individual researched for their
+// professional background and a best-guess work email.
+export type BenchKind = 'company' | 'person'
+
 export type TrialRecord = {
   id: string
   provider: string
@@ -22,6 +27,7 @@ export type TrialRecord = {
     founderFullName?: string | null
     context?: string | null
     websiteUrl?: string | null
+    guessedEmail?: string | null
   } | null
   citations: { title?: string; url: string }[]
   latencyMs: number | null
@@ -31,7 +37,10 @@ export type TrialRecord = {
 
 export type BenchRowRecord = {
   id: string
+  kind: BenchKind
   companyName: string
+  personName: string | null
+  linkedinUrl: string | null
   founderHint: string | null
   websiteHint: string | null
   contextHint: string | null
@@ -42,6 +51,7 @@ export type BenchRowRecord = {
 
 export type BenchSheet = {
   live: boolean
+  kind: BenchKind
   providers: { id: string; label: string; keyed: boolean }[]
   rows: BenchRowRecord[]
   tally: Record<string, { wins: number; runs: number; failures: number; avgLatencyMs: number | null }>
@@ -87,9 +97,9 @@ const toTrial = (t: any): TrialRecord => ({
 // deadline with slack.
 const STALE_MS = 6 * 60_000
 
-export async function listBench(): Promise<BenchSheet> {
+export async function listBench(kind: BenchKind = 'company'): Promise<BenchSheet> {
   const providers = RESEARCH_PROVIDERS.map((p) => ({ id: p.id, label: p.label, keyed: keyedFor(p.id) }))
-  if (!hasDb()) return { live: false, providers, rows: [], tally: {} }
+  if (!hasDb()) return { live: false, kind, providers, rows: [], tally: {} }
   try {
     const db = await getDb()
     await db.benchTrial
@@ -101,7 +111,7 @@ export async function listBench(): Promise<BenchSheet> {
         data: { status: 'failed', error: 'the run was cut off before it finished — Retry sends it back out' },
       })
       .catch(() => {})
-    const rows = await db.benchRow.findMany({ orderBy: { createdAt: 'desc' }, take: 100 })
+    const rows = await db.benchRow.findMany({ where: { kind }, orderBy: { createdAt: 'desc' }, take: 100 })
     const trials = rows.length
       ? await db.benchTrial.findMany({
           where: { rowId: { in: rows.map((r: any) => r.id) } },
@@ -135,10 +145,14 @@ export async function listBench(): Promise<BenchSheet> {
 
     return {
       live: true,
+      kind,
       providers,
       rows: (rows as any[]).map((r) => ({
         id: r.id,
+        kind: (r.kind ?? 'company') as BenchKind,
         companyName: r.companyName,
+        personName: r.personName ?? null,
+        linkedinUrl: r.linkedinUrl ?? null,
         founderHint: r.founderHint,
         websiteHint: r.websiteHint,
         contextHint: r.contextHint,
@@ -154,7 +168,7 @@ export async function listBench(): Promise<BenchSheet> {
       tally,
     }
   } catch {
-    return { live: false, providers, rows: [], tally: {} }
+    return { live: false, kind, providers, rows: [], tally: {} }
   }
 }
 
@@ -163,13 +177,35 @@ export async function listBench(): Promise<BenchSheet> {
 // as the identity anchor — one-paste entry.
 const URLISH = /^(https?:\/\/)?([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?$/i
 
+// A pasted LinkedIn slug reads back as a name when none was typed:
+// /in/jane-doe-1a2b3c → "Jane Doe" (id-looking segments dropped).
+const nameFromLinkedIn = (url: string): string => {
+  try {
+    const u = new URL(url)
+    const m = u.pathname.match(/\/in\/([^/]+)/i)
+    if (!m) return ''
+    return decodeURIComponent(m[1])
+      .split('-')
+      .filter((s) => s && !/\d/.test(s))
+      .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+      .join(' ')
+  } catch {
+    return ''
+  }
+}
+
 export async function addBenchRow(input: {
-  companyName: string
+  kind?: BenchKind
+  companyName?: string
+  personName?: string
+  linkedinUrl?: string
   founderHint?: string
   websiteHint?: string
   contextHint?: string
 }): Promise<string | null> {
-  if (!hasDb() || !input.companyName.trim()) return null
+  if (!hasDb()) return null
+  if (input.kind === 'person') return addPersonRow(input)
+  if (!input.companyName?.trim()) return null
   try {
     let name = input.companyName.trim()
     let site =
@@ -200,6 +236,39 @@ export async function addBenchRow(input: {
   }
 }
 
+// Seat a person: any two of the three anchors (full name, company,
+// LinkedIn URL) identify someone well enough to research — the third is
+// what the engines go find. A missing name derives from the LinkedIn slug.
+async function addPersonRow(input: {
+  companyName?: string
+  personName?: string
+  linkedinUrl?: string
+  contextHint?: string
+}): Promise<string | null> {
+  try {
+    const company = input.companyName?.trim() ?? ''
+    let linkedin = input.linkedinUrl?.trim() ?? ''
+    if (linkedin && !/^https?:\/\//i.test(linkedin)) linkedin = `https://${linkedin}`
+    let name = input.personName?.trim() ?? ''
+    const provided = [name, company, linkedin].filter(Boolean).length
+    if (provided < 2) return null
+    if (!name && linkedin) name = nameFromLinkedIn(linkedin)
+    const db = await getDb()
+    const row = await db.benchRow.create({
+      data: {
+        kind: 'person',
+        personName: name.slice(0, 120) || null,
+        companyName: company.slice(0, 120),
+        linkedinUrl: linkedin ? linkedin.slice(0, 500) : null,
+        contextHint: input.contextHint?.trim().slice(0, 4000) || null,
+      },
+    })
+    return row.id
+  } catch {
+    return null
+  }
+}
+
 // Pull the Register onto the Bench: one row per entry not already seated
 // (matched loosely by name). Anchors come along — the engines deserve the
 // same identity pins the incumbent gets.
@@ -209,7 +278,7 @@ export async function importRegister(): Promise<{ added: number }> {
     const db = await getDb()
     const { nameKeyOf } = await import('./context')
     const companies = await db.companyContext.findMany({ orderBy: { updatedAt: 'desc' }, take: 100 })
-    const rows = await db.benchRow.findMany({ take: 200 })
+    const rows = await db.benchRow.findMany({ where: { kind: 'company' }, take: 200 })
     const seated = new Set((rows as any[]).map((r) => nameKeyOf(r.companyName)))
     let added = 0
     for (const c of companies as any[]) {
@@ -350,12 +419,21 @@ async function runTrial(db: any, trialId: string): Promise<void> {
     data: { status: 'running', startedAt: new Date() },
   })
 
-  const input: ResearchInput = {
-    name: row.companyName,
-    founderFullName: row.founderHint,
-    websiteUrl: row.websiteHint,
-    context: row.contextHint,
-  }
+  const input: ResearchInput =
+    row.kind === 'person'
+      ? {
+          kind: 'person',
+          name: row.personName ?? '',
+          company: row.companyName || null,
+          linkedinUrl: row.linkedinUrl,
+          context: row.contextHint,
+        }
+      : {
+          name: row.companyName,
+          founderFullName: row.founderHint,
+          websiteUrl: row.websiteHint,
+          context: row.contextHint,
+        }
   try {
     const result = await provider.run(input)
     await db.benchTrial.update({
@@ -447,6 +525,8 @@ export async function promoteTrial(rowId: string, provider: string): Promise<boo
     })
     const row = await db.benchRow.findUnique({ where: { id: rowId } })
     if (!trial || !row) return false
+    // The Register holds companies — a person row has nowhere to promote.
+    if (row.kind === 'person') return false
     const fields = parseJson((trial as any).outputJson)
     if (!fields?.context) return false
     const { upsertCompany } = await import('./context')

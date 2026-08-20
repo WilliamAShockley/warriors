@@ -1,6 +1,6 @@
 import type { Citation, ResearchInput, ResearchProvider, ResearchResult } from '../types'
 import { RESEARCH_TIMEOUT_MS } from '../types'
-import { chargeFor, OUTPUT_SCHEMA } from '../charge'
+import { chargeFor, outputSchemaFor } from '../charge'
 
 // Parallel's Task API: hand it the charge and our exact output schema, it
 // runs multi-hop research and returns structured JSON with per-field
@@ -34,7 +34,7 @@ async function run(input: ResearchInput): Promise<ResearchResult> {
       input: await chargeFor('parallel', input),
       processor: PROCESSOR,
       task_spec: {
-        output_schema: { type: 'json', json_schema: OUTPUT_SCHEMA },
+        output_schema: { type: 'json', json_schema: outputSchemaFor(input) },
       },
     }),
   })
@@ -86,6 +86,7 @@ async function run(input: ResearchInput): Promise<ResearchResult> {
     founderFullName: content?.founderFullName ?? null,
     context: content?.context ?? null,
     websiteUrl: content?.websiteUrl ?? null,
+    guessedEmail: content?.guessedEmail ?? null,
   }
   if (!fields.context || !String(fields.context).trim()) {
     throw new Error('Parallel completed but returned no context')

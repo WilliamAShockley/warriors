@@ -14,9 +14,14 @@ export const maxDuration = 300
 // click picks them up.
 const RUN_ALL_CAP = 3
 
-export async function GET() {
+// ?kind=person deals the People sheet; anything else deals Company. The
+// editable charges ride along only for Company — person charges are the
+// house defaults, not (yet) reader-amendable.
+export async function GET(req: Request) {
   const { listBench, listCharges } = await import('@/lib/bench')
-  const [sheet, charges] = await Promise.all([listBench(), listCharges()])
+  const kind = new URL(req.url).searchParams.get('kind') === 'person' ? 'person' : 'company'
+  if (kind === 'person') return NextResponse.json(await listBench('person'))
+  const [sheet, charges] = await Promise.all([listBench('company'), listCharges()])
   return NextResponse.json({ ...sheet, charges })
 }
 
@@ -39,14 +44,27 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const bench = await import('@/lib/bench')
 
-  if (body?.add?.companyName) {
+  if (body?.add) {
+    const kind = body.add.kind === 'person' ? 'person' : 'company'
     const id = await bench.addBenchRow({
-      companyName: String(body.add.companyName),
+      kind,
+      companyName: body.add.companyName ? String(body.add.companyName) : undefined,
+      personName: body.add.personName ? String(body.add.personName) : undefined,
+      linkedinUrl: body.add.linkedinUrl ? String(body.add.linkedinUrl) : undefined,
       founderHint: body.add.founderHint ? String(body.add.founderHint) : undefined,
       websiteHint: body.add.websiteHint ? String(body.add.websiteHint) : undefined,
       contextHint: body.add.contextHint ? String(body.add.contextHint) : undefined,
     })
-    if (!id) return NextResponse.json({ error: 'the row did not take' }, { status: 500 })
+    if (!id)
+      return NextResponse.json(
+        {
+          error:
+            kind === 'person'
+              ? 'a person needs at least two of the three: full name, company, LinkedIn URL'
+              : 'the row did not take',
+        },
+        { status: kind === 'person' ? 400 : 500 }
+      )
     // Seat and run in one motion when asked.
     const started = body.add.run === true ? await startRun([id]) : 0
     return NextResponse.json({ ok: true, id, started })
@@ -78,7 +96,8 @@ export async function POST(req: Request) {
 
   if (body?.runAll === true) {
     const { db } = await import('@/lib/db')
-    const rows = await db.benchRow.findMany({ orderBy: { createdAt: 'desc' }, take: 100 })
+    const kind = body.kind === 'person' ? 'person' : 'company'
+    const rows = await db.benchRow.findMany({ where: { kind }, orderBy: { createdAt: 'desc' }, take: 100 })
     const trials = await db.benchTrial.findMany({
       where: { status: { in: ['queued', 'running'] } },
       select: { rowId: true } as any,
