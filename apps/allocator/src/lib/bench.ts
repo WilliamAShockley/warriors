@@ -158,6 +158,11 @@ export async function listBench(): Promise<BenchSheet> {
   }
 }
 
+// A bare URL (or naked domain) pasted into the Company field seats the
+// row anyway: the name derives from the domain and the URL files itself
+// as the identity anchor — one-paste entry.
+const URLISH = /^(https?:\/\/)?([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?$/i
+
 export async function addBenchRow(input: {
   companyName: string
   founderHint?: string
@@ -166,15 +171,26 @@ export async function addBenchRow(input: {
 }): Promise<string | null> {
   if (!hasDb() || !input.companyName.trim()) return null
   try {
+    let name = input.companyName.trim()
+    let site =
+      input.websiteHint && /^https?:\/\//.test(input.websiteHint.trim())
+        ? input.websiteHint.trim()
+        : ''
+    if (URLISH.test(name)) {
+      try {
+        const url = new URL(name.includes('://') ? name : `https://${name}`)
+        const host = url.hostname.replace(/^www\./, '')
+        if (!site) site = `https://${host}`
+        const label = host.split('.')[0]
+        name = label.charAt(0).toUpperCase() + label.slice(1)
+      } catch {}
+    }
     const db = await getDb()
     const row = await db.benchRow.create({
       data: {
-        companyName: input.companyName.trim().slice(0, 120),
+        companyName: name.slice(0, 120),
         founderHint: input.founderHint?.trim().slice(0, 120) || null,
-        websiteHint:
-          input.websiteHint && /^https?:\/\//.test(input.websiteHint.trim())
-            ? input.websiteHint.trim().slice(0, 500)
-            : null,
+        websiteHint: site ? site.slice(0, 500) : null,
         contextHint: input.contextHint?.trim().slice(0, 4000) || null,
       },
     })
