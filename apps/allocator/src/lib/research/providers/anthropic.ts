@@ -6,17 +6,15 @@ import { RESEARCH_TIMEOUT_MS } from '../types'
 // exhaustive search spree that spent the whole deadline searching and
 // never started writing. The other engines still run the full shared
 // charge from ../charge; the JSON contract is identical.
-const simpleCharge = (input: {
-  name: string
-  founderFirstName?: string | null
-  founderFullName?: string | null
-  websiteUrl?: string | null
-  context?: string | null
-}) => `Quick web check on one company. Today is ${new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-}).format(new Date())}.
+const today = () =>
+  new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(
+    new Date()
+  )
+
+const simpleCharge = (input: ResearchInput) =>
+  input.kind === 'person' ? simplePersonCharge(input) : simpleCompanyCharge(input)
+
+const simpleCompanyCharge = (input: ResearchInput) => `Quick web check on one company. Today is ${today()}.
 
 Company: ${input.name}
 CEO / founder: ${input.founderFullName ?? input.founderFirstName ?? '(unknown)'}
@@ -34,6 +32,28 @@ Keep it short. End your reply with ONLY this JSON (no prose after it):
 {"founderFirstName": "<or null>", "founderFullName": "<or null>",
  "context": "<3-6 factual sentences>",
  "websiteUrl": "<https url or null>"}`
+
+// The People sheet's simple charge: same dead-simple shape, person
+// semantics. The contract keys are shared with the company charge (the
+// founder fields carry the person's own name) so one parser serves both.
+const simplePersonCharge = (input: ResearchInput) => `Quick web check on one person. Today is ${today()}.
+
+Person: ${input.name?.trim() || '(unknown)'}
+Company: ${input.company ?? '(unknown)'}
+LinkedIn: ${input.linkedinUrl ?? '(unknown)'}
+
+Search the web — one or two searches, no more — then answer plainly:
+1. Their professional background: current role, prior roles and companies, education, anything notable. 3-6 terse factual sentences.
+2. Their first and full name, confirmed.
+3. Best guess at their work email — a published address, or the company's email pattern applied to their name; null if there is no basis.
+
+If several people share this name, only trust results matching the company or LinkedIn above. If you cannot tell which person this is, write "AMBIGUOUS —" plus the candidates as the context and leave the other fields null.
+
+Keep it short. End your reply with ONLY this JSON (no prose after it):
+{"founderFirstName": "<or null>", "founderFullName": "<or null>",
+ "context": "<3-6 factual sentences on their background>",
+ "websiteUrl": "<their LinkedIn https url or null>",
+ "guessedEmail": "<best-guess work email or null>"}`
 
 // The incumbent: Sonnet with the web_search server tool — the model
 // composes up to three searches, Anthropic runs them server-side, and the

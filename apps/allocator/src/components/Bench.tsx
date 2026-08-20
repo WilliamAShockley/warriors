@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+type BenchMode = 'company' | 'person'
+
 type Trial = {
   id: string
   provider: string
@@ -11,6 +13,7 @@ type Trial = {
     founderFullName?: string | null
     context?: string | null
     websiteUrl?: string | null
+    guessedEmail?: string | null
   } | null
   citations: { title?: string; url: string }[]
   latencyMs: number | null
@@ -20,7 +23,10 @@ type Trial = {
 
 type Row = {
   id: string
+  kind?: BenchMode
   companyName: string
+  personName: string | null
+  linkedinUrl: string | null
   founderHint: string | null
   websiteHint: string | null
   contextHint: string | null
@@ -46,9 +52,49 @@ const RUNNING_PHRASES = [
 
 const secs = (ms: number | null) => (ms == null ? '' : `${Math.round(ms / 1000)}s`)
 
-// The Bench: rows are companies, columns are engines, the reader's eye is
-// the judge. Tap a cell to read the full brief and crown the winner.
+// The Bench runs two sheets on one machine: Company (the original
+// bake-off) and People — a person researched for their professional
+// background and a best-guess work email. The switch sits between the
+// back link and the masthead rules, per the reader's placement.
 export default function Bench() {
+  const [mode, setMode] = useState<BenchMode>('company')
+  return (
+    <>
+      <div className="mt-5 flex gap-2">
+        {(
+          [
+            ['company', 'Company'],
+            ['person', 'People'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setMode(id)}
+            className={
+              'border px-4 py-1.5 font-sans text-[10px] font-medium uppercase tracking-[0.14em] transition-colors duration-300 ease-editorial ' +
+              (mode === id
+                ? 'border-ink bg-ink text-paper'
+                : 'border-hairline text-faint hover:border-ink hover:text-ink')
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="rule-masthead mt-6" />
+
+      {/* Keyed by mode: switching sheets remounts — fresh fetch, popup
+          and drafts reset, no state bleeding between Company and People. */}
+      <BenchSheet key={mode} mode={mode} />
+    </>
+  )
+}
+
+// One sheet: rows are companies (or people), columns are engines, the
+// reader's eye is the judge. Tap a cell to read the full brief and crown
+// the winner.
+function BenchSheet({ mode }: { mode: BenchMode }) {
   const [sheet, setSheet] = useState<Sheet | null>(null)
   const [note, setNote] = useState('')
   const [picked, setPicked] = useState<{ rowId: string; provider: string } | null>(null)
@@ -59,8 +105,13 @@ export default function Bench() {
   const [newFounder, setNewFounder] = useState('')
   const [newSite, setNewSite] = useState('')
 
+  // The People seat: any two of the three anchors seats the person.
+  const [newPerson, setNewPerson] = useState('')
+  const [newCompany, setNewCompany] = useState('')
+  const [newLinkedIn, setNewLinkedIn] = useState('')
+
   const refetch = () =>
-    fetch('/api/bench')
+    fetch(`/api/bench?kind=${mode}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data) setSheet(data)
@@ -123,7 +174,35 @@ export default function Bench() {
     }
   }
 
+  // Two of the three person anchors on hand means the seat can happen.
+  const personAnchors = [newPerson.trim(), newCompany.trim(), newLinkedIn.trim()].filter(
+    Boolean
+  ).length
+
   const seat = async () => {
+    if (mode === 'person') {
+      if (personAnchors < 2) return
+      setBusy(true)
+      const data = await post({
+        add: {
+          kind: 'person',
+          personName: newPerson.trim(),
+          companyName: newCompany.trim(),
+          linkedinUrl: newLinkedIn.trim(),
+          run: true,
+        },
+      })
+      setBusy(false)
+      if (data?.ok) {
+        setNewPerson('')
+        setNewCompany('')
+        setNewLinkedIn('')
+        refetch()
+      } else if (data) {
+        setNote(data?.error ?? 'That did not take.')
+      }
+      return
+    }
     // Company or the site URL alone is enough — a URL-only seat derives
     // its name from the domain on the server.
     const companyName = newName.trim() || newSite.trim()
@@ -209,16 +288,26 @@ export default function Bench() {
         <div className="mt-1 line-clamp-4 font-serif text-[13px] leading-snug text-ink">
           {t.fields?.context ?? ''}
         </div>
+        {/* The People sheet's second deliverable: the best-guess address. */}
+        {t.fields?.guessedEmail && (
+          <div className="mt-1 truncate font-serif text-[12.5px] italic text-oxblood">
+            ✉ {t.fields.guessedEmail}
+          </div>
+        )}
       </div>
     )
   }
+
+  // A person row's display name: the typed name, the one derived from the
+  // LinkedIn slug at seating, or the company as a last resort.
+  const rowTitle = (r: Row) => (mode === 'person' ? r.personName || r.companyName || '—' : r.companyName)
 
   const field =
     'w-full border-b border-hairline bg-transparent pb-1.5 font-serif text-[15px] text-ink placeholder:italic placeholder:text-faint focus:border-ink focus:outline-none'
 
   return (
     <>
-      {/* Seat a company */}
+      {/* Seat a company — or a person */}
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -226,53 +315,97 @@ export default function Bench() {
         }}
         className="mt-7 border border-hairline p-4 focus-within:border-ink"
       >
-        <div className="flex gap-4">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Company — or just paste the site URL"
-            className={field}
-          />
-          <input
-            value={newFounder}
-            onChange={(e) => setNewFounder(e.target.value)}
-            placeholder="Founder (anchors identity)"
-            className={field}
-          />
-        </div>
-        <input
-          value={newSite}
-          onChange={(e) => setNewSite(e.target.value)}
-          placeholder="https:// site — same anchor every engine gets"
-          className={field + ' mt-3'}
-        />
-        <div className="mt-2 flex items-center justify-between border-t border-hairline pt-2.5">
-          <span className="eyebrow text-faint">Seats the row and sends all four engines at once</span>
-          <button
-            type="submit"
-            disabled={(!newName.trim() && !newSite.trim()) || busy}
-            className="eyebrow-ink underline decoration-hairline underline-offset-4 disabled:opacity-40"
-          >
-            Seat It &amp; Run
-          </button>
-        </div>
+        {mode === 'person' ? (
+          <>
+            <div className="flex gap-4">
+              <input
+                value={newPerson}
+                onChange={(e) => setNewPerson(e.target.value)}
+                placeholder="Full name"
+                className={field}
+              />
+              <input
+                value={newCompany}
+                onChange={(e) => setNewCompany(e.target.value)}
+                placeholder="Company"
+                className={field}
+              />
+            </div>
+            <input
+              value={newLinkedIn}
+              onChange={(e) => setNewLinkedIn(e.target.value)}
+              placeholder="https://linkedin.com/in/… — the identity anchor"
+              className={field + ' mt-3'}
+            />
+            <div className="mt-2 flex items-center justify-between border-t border-hairline pt-2.5">
+              <span className="eyebrow text-faint">
+                Any two of the three seats the person and sends all four engines at once
+              </span>
+              <button
+                type="submit"
+                disabled={personAnchors < 2 || busy}
+                className="eyebrow-ink underline decoration-hairline underline-offset-4 disabled:opacity-40"
+              >
+                Seat It &amp; Run
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex gap-4">
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Company — or just paste the site URL"
+                className={field}
+              />
+              <input
+                value={newFounder}
+                onChange={(e) => setNewFounder(e.target.value)}
+                placeholder="Founder (anchors identity)"
+                className={field}
+              />
+            </div>
+            <input
+              value={newSite}
+              onChange={(e) => setNewSite(e.target.value)}
+              placeholder="https:// site — same anchor every engine gets"
+              className={field + ' mt-3'}
+            />
+            <div className="mt-2 flex items-center justify-between border-t border-hairline pt-2.5">
+              <span className="eyebrow text-faint">Seats the row and sends all four engines at once</span>
+              <button
+                type="submit"
+                disabled={(!newName.trim() && !newSite.trim()) || busy}
+                className="eyebrow-ink underline decoration-hairline underline-offset-4 disabled:opacity-40"
+              >
+                Seat It &amp; Run
+              </button>
+            </div>
+          </>
+        )}
       </form>
 
       <div className="mt-4 flex items-center justify-between">
+        {/* The Register holds companies — People has nothing to pull on. */}
+        {mode === 'company' ? (
+          <button
+            onClick={() =>
+              act({ importRegister: true }, (d) =>
+                setNote(d?.added ? `${d.added} pulled from the Register.` : 'Nothing new to pull — the Register is already seated.')
+              )
+            }
+            disabled={busy}
+            className="eyebrow text-faint underline decoration-hairline underline-offset-4 disabled:opacity-40"
+          >
+            Pull the Register On
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           onClick={() =>
-            act({ importRegister: true }, (d) =>
-              setNote(d?.added ? `${d.added} pulled from the Register.` : 'Nothing new to pull — the Register is already seated.')
-            )
-          }
-          disabled={busy}
-          className="eyebrow text-faint underline decoration-hairline underline-offset-4 disabled:opacity-40"
-        >
-          Pull the Register On
-        </button>
-        <button
-          onClick={() =>
-            act({ runAll: true }, (d) =>
+            act({ runAll: true, kind: mode }, (d) =>
               setNote(
                 d?.rowsLeft > 0
                   ? `${d.rowsRun} rows running — ${d.rowsLeft} more wait their turn; run the sheet again when these land.`
@@ -297,7 +430,9 @@ export default function Bench() {
 
       {sheet.live && sheet.rows.length === 0 && (
         <p className="dek pt-10 text-center">
-          An empty sheet. Seat a company above, or pull the Register on and run it.
+          {mode === 'person'
+            ? 'An empty sheet. Seat a person above — any two of name, company, and LinkedIn will do.'
+            : 'An empty sheet. Seat a company above, or pull the Register on and run it.'}
         </p>
       )}
 
@@ -353,7 +488,7 @@ export default function Bench() {
             <thead>
               <tr className="border-b border-ink/60">
                 <th className="py-2 pr-3 text-left align-bottom">
-                  <span className="eyebrow">Company</span>
+                  <span className="eyebrow">{mode === 'person' ? 'Person' : 'Company'}</span>
                 </th>
                 {providers.map((p) => (
                   <th key={p.id} className="px-3 py-2 text-left align-bottom">
@@ -373,8 +508,27 @@ export default function Bench() {
               {sheet.rows.map((r, i) => (
                 <tr key={r.id} className="border-b border-hairline align-top">
                   <td className="py-3 pr-3">
-                    <p className="font-serif text-[15px] font-medium leading-snug">{r.companyName}</p>
-                    {r.founderHint && <p className="eyebrow mt-1 text-faint">{r.founderHint}</p>}
+                    <p className="font-serif text-[15px] font-medium leading-snug">{rowTitle(r)}</p>
+                    {mode === 'person' ? (
+                      <>
+                        {r.personName && r.companyName && (
+                          <p className="eyebrow mt-1 text-faint">{r.companyName}</p>
+                        )}
+                        {r.linkedinUrl && (
+                          <a
+                            href={r.linkedinUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="eyebrow mt-1 inline-block text-faint underline decoration-hairline underline-offset-4"
+                          >
+                            LinkedIn ↗
+                          </a>
+                        )}
+                      </>
+                    ) : (
+                      r.founderHint && <p className="eyebrow mt-1 text-faint">{r.founderHint}</p>
+                    )}
                     <div className="mt-2 flex gap-3">
                       <button
                         onClick={() => act({ run: r.id })}
@@ -477,7 +631,7 @@ export default function Bench() {
           >
           <div className="flex items-baseline justify-between gap-4">
             <p className="eyebrow text-oxblood">
-              {providers.find((p) => p.id === picked.provider)?.label ?? picked.provider} on {pickedRow.companyName}
+              {providers.find((p) => p.id === picked.provider)?.label ?? picked.provider} on {rowTitle(pickedRow)}
               <span className="ml-2 text-faint">
                 {pickedIdx + 1} of {cellList.length}
               </span>
@@ -529,6 +683,7 @@ export default function Bench() {
                 {pickedTrial.ranOn ? ` · ran ${pickedTrial.ranOn}` : ''}
                 {pickedTrial.fields?.founderFullName ? ` · ${pickedTrial.fields.founderFullName}` : ''}
                 {pickedTrial.fields?.websiteUrl ? ` · ${pickedTrial.fields.websiteUrl}` : ''}
+                {pickedTrial.fields?.guessedEmail ? ` · ✉ ${pickedTrial.fields.guessedEmail}` : ''}
               </p>
               <p className="mt-3 whitespace-pre-wrap font-serif text-[15px] leading-relaxed text-ink">
                 {pickedTrial.fields?.context ?? ''}
@@ -563,7 +718,8 @@ export default function Bench() {
               onSave={(notes) => act({ notes: { rowId: pickedRow.id, notes } })}
             />
             <div className="flex shrink-0 gap-5">
-              {pickedTrial?.status === 'done' && (
+              {/* The Register holds companies; a person has nowhere to file. */}
+              {mode === 'company' && pickedTrial?.status === 'done' && (
                 <button
                   onClick={() => act({ promote: { rowId: pickedRow.id, provider: picked.provider } }, (d) => setNote(d?.ok ? 'Filed to the Register.' : 'The filing did not take.'))}
                   disabled={busy}

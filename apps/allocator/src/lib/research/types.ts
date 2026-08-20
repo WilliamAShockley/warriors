@@ -4,18 +4,29 @@
 // must come back with the identical JSON fields.
 
 export type ResearchInput = {
-  name: string
+  // 'company' (the default) researches a company; 'person' researches an
+  // individual's professional background and best-guesses a work email.
+  kind?: 'company' | 'person'
+  name: string // the company name — or, for a person, their full name
   founderFirstName?: string | null
   founderFullName?: string | null
   websiteUrl?: string | null
   context?: string | null
+  // Person anchors: the company affiliation and the LinkedIn URL.
+  company?: string | null
+  linkedinUrl?: string | null
 }
 
+// One JSON contract for both kinds so every engine and the parser share a
+// single shape: on a person run, founderFirstName/founderFullName carry the
+// person's own name, context carries the background brief, websiteUrl their
+// LinkedIn URL, and guessedEmail the best-guess address.
 export type ResearchFields = {
   founderFirstName?: string | null
   founderFullName?: string | null
   context?: string | null
   websiteUrl?: string | null
+  guessedEmail?: string | null
 }
 
 export type Citation = { title?: string; url: string }
