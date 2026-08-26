@@ -10,9 +10,16 @@ export default function ReviewPage() {
       <header>
         <div className="flex items-baseline justify-between gap-4">
           <p className="eyebrow">Review</p>
-          <Link href="/record" className="eyebrow text-faint underline decoration-hairline underline-offset-4">
-            The Record →
-          </Link>
+          <p className="eyebrow text-faint">
+            <Link href="/experiment" className="underline decoration-hairline underline-offset-4">
+              The Experiment
+            </Link>
+            {' · '}
+            <Link href="/record" className="underline decoration-hairline underline-offset-4">
+              The Record
+            </Link>
+            {' →'}
+          </p>
         </div>
         <h1 className="mt-2 font-serif text-[32px] font-semibold leading-none tracking-tight">
           The Proofs

@@ -60,6 +60,9 @@ model ReaderContextNote {
 model ReaderSetting {
   id        String   @id // workspace id
   name      String
+  // The context experiment: when on, cold founder drafts come as an A/B
+  // pair — with and without Dez's Context — decided in The Experiment.
+  contextExperiment Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -168,6 +171,14 @@ model ReviewItem {
   // Straight-through checks, run at staging: [{id,label,pass,detail}].
   // All-pass is the gate a future auto-send would stand behind.
   stpJson         String?
+  // The recipient's company as the Register names it — lets the checks
+  // re-run whenever the draft on deck changes.
+  company         String?
+  // The context experiment: this proof carries two arms of the same email
+  // — drafted with and without Dez's Context — and the reader's verdict.
+  // {arms:[{label,subject,body}], chosen: 0|1|null, chosenAt} — arms are
+  // the drafts as staged, immutable; live edits ride on variantsJson.
+  experimentJson  String?
   // Audience routing and drafting mode, set at staging: exemplar retrieval
   // and the ledger segment on these so playbooks never cross-contaminate.
   audience        String? // founder | investor | other

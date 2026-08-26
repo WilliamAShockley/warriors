@@ -18,6 +18,7 @@ const CSV_COLUMNS: { header: string; value: (e: RecordEntry) => unknown }[] = [
   { header: 'mode', value: (e) => e.mode },
   { header: 'straight_through', value: (e) => e.straightThrough },
   { header: 'amended', value: (e) => e.amended },
+  { header: 'experiment_arm', value: (e) => e.experimentArm },
   { header: 'staged_to', value: (e) => e.stagedTo },
   { header: 'final_to', value: (e) => e.finalTo },
   { header: 'staged_subject', value: (e) => e.stagedSubject },

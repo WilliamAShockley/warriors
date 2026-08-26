@@ -47,6 +47,40 @@ export async function setReaderName(name: string): Promise<boolean> {
   }
 }
 
+// The context experiment switch: when on, cold founder drafts come as an
+// A/B pair — with and without Dez's Context — decided in The Experiment.
+// On by default; no row means on.
+export async function getContextExperiment(): Promise<boolean> {
+  if (!hasDb()) return false
+  try {
+    const db = await getDb()
+    const { activeWorkspaceId } = await import('./tenant')
+    const row = await db.readerSetting.findUnique({ where: { id: await activeWorkspaceId() } })
+    return row ? Boolean(row.contextExperiment) : true
+  } catch {
+    return false
+  }
+}
+
+export async function setContextExperiment(on: boolean): Promise<boolean> {
+  if (!hasDb()) return false
+  try {
+    const db = await getDb()
+    const { activeWorkspaceId, ensureAdopted } = await import('./tenant')
+    await ensureAdopted()
+    const ws = await activeWorkspaceId()
+    const name = await getReaderName()
+    await db.readerSetting.upsert({
+      where: { id: ws },
+      create: { id: ws, name, contextExperiment: on },
+      update: { contextExperiment: on },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // The Google account the calendar is connected as, for display.
 export async function getConnectedAccount(): Promise<string | null> {
   if (!hasDb()) return null

@@ -1,8 +1,18 @@
 import { NextResponse } from 'next/server'
-import { getConnectedAccount, getReaderName, setReaderName } from '@/lib/settings'
+import {
+  getConnectedAccount,
+  getContextExperiment,
+  getReaderName,
+  setContextExperiment,
+  setReaderName,
+} from '@/lib/settings'
 
 export async function GET() {
-  const [name, account] = await Promise.all([getReaderName(), getConnectedAccount()])
+  const [name, account, contextExperiment] = await Promise.all([
+    getReaderName(),
+    getConnectedAccount(),
+    getContextExperiment(),
+  ])
 
   // The workspace's provisioned inbound address, when the deployment has
   // an inbound-mail domain wired up (INBOUND_EMAIL_DOMAIN).
@@ -24,12 +34,20 @@ export async function GET() {
     name,
     account,
     inboundAddress,
+    contextExperiment,
     live: Boolean(process.env.DATABASE_URL),
   })
 }
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
+
+  // The context-experiment switch, its own quiet toggle.
+  if (typeof body?.contextExperiment === 'boolean') {
+    const ok = await setContextExperiment(body.contextExperiment)
+    return NextResponse.json({ ok, contextExperiment: body.contextExperiment })
+  }
+
   const name = String(body?.name ?? '')
     .trim()
     .slice(0, 60)
