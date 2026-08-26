@@ -14,6 +14,8 @@ type UiTodo = {
   group: string
   status: 'open' | 'cleared'
   updates?: UiUpdate[]
+  // A proof for this item awaits signature — the row links into the tray.
+  onReview?: boolean
 }
 
 const seedUi: UiTodo[] = seedTodos.map((t) => ({ ...t, status: 'open', updates: [] }))
@@ -251,6 +253,15 @@ export default function Docket() {
                         </p>
                       )}
                       <div className="mt-2 flex items-center gap-4">
+                        {t.onReview && (
+                          <Link
+                            href={`/review?todo=${t.id}`}
+                            title="A proof for this item awaits your signature"
+                            className="eyebrow text-oxblood underline decoration-hairline underline-offset-4"
+                          >
+                            On Review →
+                          </Link>
+                        )}
                         <button
                           onClick={() => {
                             setLogOpenId(logOpenId === t.id ? null : t.id)

@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import ProofRoom from '@/components/ProofRoom'
 
 export default function ReviewPage() {
@@ -15,7 +16,9 @@ export default function ReviewPage() {
 
       <div className="rule-masthead mt-6" />
 
-      <ProofRoom />
+      <Suspense fallback={null}>
+        <ProofRoom />
+      </Suspense>
     </main>
   )
 }

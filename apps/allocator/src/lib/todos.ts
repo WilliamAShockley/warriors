@@ -15,6 +15,8 @@ export type TodoRecord = {
   status: 'open' | 'cleared'
   // The running log on the item — dated status updates, oldest first.
   updates: TodoUpdateRecord[]
+  // A proof staged for this item sits in the tray — the Docket links to it.
+  onReview: boolean
 }
 
 const TZ = process.env.APP_TIMEZONE ?? 'America/New_York'
@@ -48,6 +50,7 @@ const seedRecords = (): TodoRecord[] =>
     group: t.group,
     status: 'open' as const,
     updates: [],
+    onReview: false,
   }))
 
 // Dynamic imports keep the zero-env mock path from ever touching Prisma.
@@ -102,6 +105,14 @@ export async function listTodos(): Promise<{ live: boolean; todos: TodoRecord[] 
           orderBy: { createdAt: 'asc' },
         })
       : []
+    // Which items have a proof waiting in the tray, one query likewise.
+    const pendingProofs = rows.length
+      ? await db.reviewItem.findMany({
+          where: { status: 'pending', todoId: { in: rows.map((r) => r.id) } },
+          select: { todoId: true },
+        })
+      : []
+    const onReviewIds = new Set(pendingProofs.map((p) => p.todoId))
     const updatesByTodo = new Map<string, TodoUpdateRecord[]>()
     for (const u of updateRows) {
       const list = updatesByTodo.get(u.todoId) ?? []
@@ -118,6 +129,7 @@ export async function listTodos(): Promise<{ live: boolean; todos: TodoRecord[] 
         group: bucketFor(r.createdAt, now),
         status: r.status as 'open' | 'cleared',
         updates: updatesByTodo.get(r.id) ?? [],
+        onReview: onReviewIds.has(r.id),
       })),
     }
   } catch {
@@ -228,6 +240,7 @@ export async function createTodo(input: {
       group: 'Today',
       status: 'open',
       updates: [],
+      onReview: false,
     }
   } catch {
     return null
