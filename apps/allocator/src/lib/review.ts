@@ -37,6 +37,10 @@ export type ProofRecord = {
   stagedBody: string | null
   staged: { to?: string; subject?: string } | null
   stp: import('./stp').StpResult[] | null
+  // The recipient's company (as the Register names it), and the context
+  // experiment riding this proof, when one does.
+  company: string | null
+  experiment: import('./apollo/experiment').ExperimentRecord | null
 }
 
 export type ProofQueue = { live: boolean; total: number; proof: ProofRecord | null }
@@ -75,6 +79,8 @@ const toRecord = (r: any, todo: { id: string; text: string } | null = null): Pro
   stagedBody: r.stagedBody ?? null,
   staged: r.stagedJson ? JSON.parse(r.stagedJson) : null,
   stp: r.stpJson ? JSON.parse(r.stpJson) : null,
+  company: r.company ?? null,
+  experiment: r.experimentJson ? JSON.parse(r.experimentJson) : null,
 })
 
 // Seed proofs predate the staging record — the mocked edition backfills.
@@ -82,8 +88,38 @@ const withRecordDefaults = (p: any): ProofRecord => ({
   stagedBody: null,
   staged: null,
   stp: null,
+  company: null,
+  experiment: null,
   ...p,
 })
+
+// The straight-through checks for an email's current state — run at
+// staging, and re-run whenever the draft on deck changes (a variant
+// selection, an experiment pick). Returns the JSON to file, or null.
+async function computeStpJson(input: {
+  body: string
+  subject: string | null
+  to: string | null
+  mode: string | null
+  audience: string | null
+  grounding: string | null
+  company: string | null
+}): Promise<string | null> {
+  const { runStpChecks } = await import('./stp')
+  let register: { founderFirstName: string | null; founderFullName: string | null } | null = null
+  if (input.company) {
+    const { findCompany } = await import('./context')
+    const hit = await findCompany(input.company).catch(() => null)
+    if (hit) {
+      register = {
+        founderFirstName: hit.founderFirstName ?? null,
+        founderFullName: hit.founderFullName ?? null,
+      }
+    }
+  }
+  const results = await runStpChecks({ ...input, register })
+  return results.length ? JSON.stringify(results) : null
+}
 
 const seedQueue = (): ProofQueue => ({
   live: false,
@@ -166,8 +202,10 @@ export async function createProof(input: {
   websiteUrl?: string
   variants?: { label: string; subject?: string; body: string }[]
   // The company in play, when the caller knows it — the straight-through
-  // checks verify the draft against its Register entry. Not persisted.
+  // checks verify the draft against its Register entry.
   company?: string
+  // The context experiment record, when this proof carries an A/B pair.
+  experimentJson?: string
 }): Promise<ProofRecord | null> {
   if (!hasDb()) return null
   try {
@@ -184,31 +222,18 @@ export async function createProof(input: {
             ...(action?.subject ? { subject: action.subject } : {}),
           })
         : null
-    let stpJson: string | null = null
-    if (input.kind === 'email') {
-      const { runStpChecks } = await import('./stp')
-      let register: { founderFirstName: string | null; founderFullName: string | null } | null = null
-      if (input.company) {
-        const { findCompany } = await import('./context')
-        const hit = await findCompany(input.company).catch(() => null)
-        if (hit) {
-          register = {
-            founderFirstName: hit.founderFirstName ?? null,
-            founderFullName: hit.founderFullName ?? null,
-          }
-        }
-      }
-      const results = await runStpChecks({
-        body: input.body,
-        subject: action?.subject ?? null,
-        to: action?.to ?? null,
-        mode: input.mode ?? null,
-        audience: input.audience ?? null,
-        grounding: input.grounding ?? null,
-        register,
-      })
-      stpJson = results.length ? JSON.stringify(results) : null
-    }
+    const stpJson =
+      input.kind === 'email'
+        ? await computeStpJson({
+            body: input.body,
+            subject: action?.subject ?? null,
+            to: action?.to ?? null,
+            mode: input.mode ?? null,
+            audience: input.audience ?? null,
+            grounding: input.grounding ?? null,
+            company: input.company ?? null,
+          })
+        : null
 
     const row = await db.reviewItem.create({
       data: {
@@ -231,6 +256,8 @@ export async function createProof(input: {
         stagedBody: input.body,
         stagedJson,
         stpJson,
+        company: input.company?.trim().slice(0, 120) || null,
+        experimentJson: input.experimentJson ?? null,
       },
     })
     return toRecord(row)
@@ -401,13 +428,24 @@ export async function selectProofVariant(id: string, index: number): Promise<Pro
 
     const chosen = variants[index]
     const data: any = { body: chosen.body, selectedVariant: index }
+    let action: any = null
     if (row.actionType === 'send_email' && row.actionJson) {
-      const action = JSON.parse(row.actionJson)
+      action = JSON.parse(row.actionJson)
       if (chosen.subject) action.subject = chosen.subject
       data.actionJson = JSON.stringify(action)
     }
     // A fresh baseline: the redline draws against the chosen draft.
     if (!row.amended) data.originalBody = null
+    // The checks follow the draft on deck.
+    data.stpJson = await computeStpJson({
+      body: chosen.body,
+      subject: action?.subject ?? chosen.subject ?? null,
+      to: action?.to ?? null,
+      mode: row.mode ?? null,
+      audience: row.audience ?? null,
+      grounding: row.grounding ?? null,
+      company: row.company ?? null,
+    })
 
     const updated = await db.reviewItem.update({ where: { id }, data })
     let todo: { id: string; text: string } | null = null
@@ -522,6 +560,227 @@ Rules: "research"/"thread" only when the context above actually supports the pas
   }
 }
 
+// ————————————————————————————————— The Experiment
+
+// One A/B pair on the reader's desk: the staged arms (immutable), the
+// live drafts (arms plus any inline edits), and where the verdict stands.
+export type ExperimentEntry = {
+  id: string
+  title: string
+  summary: string | null
+  filedOn: string
+  todo: { id: string; text: string } | null
+  to: string | null
+  company: string | null
+  arms: import('./apollo/experiment').ExperimentArm[]
+  live: { label: string; subject?: string; body: string }[]
+  selected: number
+  chosen: number | null
+  stp: import('./stp').StpResult[] | null
+  grounding: string | null
+  dossier: string | null
+  websiteUrl: string | null
+  linkedinUrl: string | null
+}
+
+const toExperimentEntry = (
+  r: any,
+  todo: { id: string; text: string } | null
+): ExperimentEntry | null => {
+  const exp = r.experimentJson ? JSON.parse(r.experimentJson) : null
+  if (!exp?.arms?.length) return null
+  const action = r.actionJson ? JSON.parse(r.actionJson) : null
+  return {
+    id: r.id,
+    title: r.title,
+    summary: r.summary ?? null,
+    filedOn: dateLabel(r.createdAt),
+    todo,
+    to: action?.to ?? null,
+    company: r.company ?? null,
+    arms: exp.arms,
+    live: r.variantsJson ? JSON.parse(r.variantsJson) : exp.arms,
+    selected: r.selectedVariant ?? 0,
+    chosen: exp.chosen ?? null,
+    stp: r.stpJson ? JSON.parse(r.stpJson) : null,
+    grounding: r.grounding ?? null,
+    dossier: r.dossier ?? null,
+    websiteUrl: r.websiteUrl ?? null,
+    linkedinUrl: r.linkedinUrl ?? null,
+  }
+}
+
+// The pairs awaiting a verdict, oldest first.
+export async function listExperiments(): Promise<{ live: boolean; entries: ExperimentEntry[] }> {
+  if (!hasDb()) return { live: false, entries: [] }
+  try {
+    const db = await getDb()
+    const rows = await db.reviewItem.findMany({
+      where: { status: 'pending', experimentJson: { not: null } },
+      orderBy: { queuedAt: 'asc' },
+    })
+    const todoIds = rows.map((r: any) => r.todoId).filter(Boolean)
+    const todos = todoIds.length
+      ? await db.todo.findMany({ where: { id: { in: todoIds } } })
+      : []
+    const todoById = new Map(todos.map((t: any) => [t.id, { id: t.id, text: t.text }]))
+    return {
+      live: true,
+      entries: rows
+        .map((r: any) => toExperimentEntry(r, r.todoId ? (todoById.get(r.todoId) ?? null) : null))
+        .filter(Boolean) as ExperimentEntry[],
+    }
+  } catch {
+    return { live: false, entries: [] }
+  }
+}
+
+// The running score, over every decided pair.
+export type ExperimentScore = {
+  decided: number
+  withWins: number
+  withoutWins: number
+  editedBeforeChoosing: number
+}
+
+export async function experimentScoreboard(): Promise<ExperimentScore | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const rows = await db.reviewItem.findMany({
+      where: { experimentJson: { not: null } },
+      select: { experimentJson: true, amended: true },
+      take: 500,
+    })
+    const score: ExperimentScore = { decided: 0, withWins: 0, withoutWins: 0, editedBeforeChoosing: 0 }
+    for (const r of rows) {
+      const exp = r.experimentJson ? JSON.parse(r.experimentJson) : null
+      if (exp?.chosen === null || exp?.chosen === undefined) continue
+      score.decided++
+      if (exp.chosen === 0) score.withWins++
+      else score.withoutWins++
+      if (r.amended) score.editedBeforeChoosing++
+    }
+    return score
+  } catch {
+    return null
+  }
+}
+
+// Amend one arm inline. Edits land on the live drafts (variantsJson); the
+// staged arms in experimentJson never move — they are the diff baseline.
+// When the edited arm is on deck, the proof's own body and envelope follow.
+export async function editExperimentArm(
+  id: string,
+  index: number,
+  input: { body?: string; subject?: string }
+): Promise<ExperimentEntry | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row || row.status !== 'pending' || !row.experimentJson || !row.variantsJson) return null
+    const variants = JSON.parse(row.variantsJson) as { label: string; subject?: string; body: string }[]
+    if (!Number.isInteger(index) || index < 0 || index >= variants.length) return null
+
+    if (input.body !== undefined) {
+      const text = input.body.trim()
+      if (!text) return null
+      variants[index] = { ...variants[index], body: text.slice(0, 20_000) }
+    }
+    if (input.subject !== undefined && input.subject.trim()) {
+      variants[index] = { ...variants[index], subject: input.subject.trim().slice(0, 200) }
+    }
+
+    const data: any = { variantsJson: JSON.stringify(variants) }
+    if (index === (row.selectedVariant ?? 0)) {
+      data.body = variants[index].body
+      if (row.actionType === 'send_email' && row.actionJson) {
+        const action = JSON.parse(row.actionJson)
+        if (variants[index].subject) action.subject = variants[index].subject
+        data.actionJson = JSON.stringify(action)
+      }
+      data.stpJson = await computeStpJson({
+        body: variants[index].body,
+        subject: variants[index].subject ?? null,
+        to: row.actionJson ? (JSON.parse(row.actionJson).to ?? null) : null,
+        mode: row.mode ?? null,
+        audience: row.audience ?? null,
+        grounding: row.grounding ?? null,
+        company: row.company ?? null,
+      })
+    }
+
+    const updated = await db.reviewItem.update({ where: { id }, data })
+    let todo: { id: string; text: string } | null = null
+    if (updated.todoId) {
+      const t = await db.todo.findUnique({ where: { id: updated.todoId } })
+      if (t) todo = { id: t.id, text: t.text }
+    }
+    return toExperimentEntry(updated, todo)
+  } catch {
+    return null
+  }
+}
+
+// The verdict: the reader picks an arm. The pick is filed on the
+// experiment (that tally never changes afterward), the chosen draft goes
+// on deck exactly as it stands — edits included — and amended/originalBody
+// are set against the CHOSEN arm's staged original, so the ledger, the
+// redline, and the distilled lesson all judge the arm he actually sent.
+export async function pickExperimentArm(id: string, index: number): Promise<ExperimentEntry | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.reviewItem.findUnique({ where: { id } })
+    if (!row || row.status !== 'pending' || !row.experimentJson || !row.variantsJson) return null
+    const exp = JSON.parse(row.experimentJson)
+    const variants = JSON.parse(row.variantsJson) as { label: string; subject?: string; body: string }[]
+    if (!Number.isInteger(index) || index < 0 || index >= variants.length || !exp.arms?.[index])
+      return null
+
+    const live = variants[index]
+    const original = exp.arms[index]
+    const editedBody = live.body !== original.body
+    const editedSubject = (live.subject ?? '') !== (original.subject ?? '')
+
+    let action: any = null
+    if (row.actionType === 'send_email' && row.actionJson) {
+      action = JSON.parse(row.actionJson)
+      if (live.subject) action.subject = live.subject
+    }
+
+    const updated = await db.reviewItem.update({
+      where: { id },
+      data: {
+        selectedVariant: index,
+        body: live.body,
+        ...(action ? { actionJson: JSON.stringify(action) } : {}),
+        experimentJson: JSON.stringify({ ...exp, chosen: index, chosenAt: new Date().toISOString() }),
+        amended: editedBody || editedSubject,
+        originalBody: editedBody ? original.body : null,
+        stpJson: await computeStpJson({
+          body: live.body,
+          subject: action?.subject ?? live.subject ?? null,
+          to: action?.to ?? null,
+          mode: row.mode ?? null,
+          audience: row.audience ?? null,
+          grounding: row.grounding ?? null,
+          company: row.company ?? null,
+        }),
+      },
+    })
+    let todo: { id: string; text: string } | null = null
+    if (updated.todoId) {
+      const t = await db.todo.findUnique({ where: { id: updated.todoId } })
+      if (t) todo = { id: t.id, text: t.text }
+    }
+    return toExperimentEntry(updated, todo)
+  } catch {
+    return null
+  }
+}
+
 // ————————————————————————————————— The Record
 
 // One signed (or spiked) email, staged-vs-sent: everything the reader
@@ -550,6 +809,9 @@ export type RecordEntry = {
   replyStatus: string | null
   deliveryStatus: string | null
   executionResult: string | null
+  // The context experiment, when this email was one: which arm the reader
+  // chose ("With your context" / "Without your context").
+  experimentArm: string | null
 }
 
 // The reviewed email proofs, newest verdict first — the Record's ledger
@@ -568,6 +830,11 @@ export async function listRecord(limit = 200): Promise<{ live: boolean; entries:
       entries: rows.map((r: any) => {
         const action = r.actionJson ? JSON.parse(r.actionJson) : null
         const staged = r.stagedJson ? JSON.parse(r.stagedJson) : null
+        // An experiment's diff baseline is the CHOSEN arm as staged — the
+        // signed version is judged against the draft it actually came from.
+        const exp = r.experimentJson ? JSON.parse(r.experimentJson) : null
+        const chosenArm =
+          exp && exp.chosen !== null && exp.chosen !== undefined ? exp.arms?.[exp.chosen] : null
         return {
           id: r.id,
           title: r.title,
@@ -580,11 +847,11 @@ export async function listRecord(limit = 200): Promise<{ live: boolean; entries:
           amended: Boolean(r.amended),
           // Proofs staged before the Record existed fall back to the
           // amendment snapshot; an untouched pre-Record proof diffs empty.
-          stagedBody: r.stagedBody ?? r.originalBody ?? r.body,
+          stagedBody: chosenArm?.body ?? r.stagedBody ?? r.originalBody ?? r.body,
           finalBody: r.body,
           stagedTo: staged?.to ?? action?.to ?? null,
           finalTo: action?.to ?? null,
-          stagedSubject: staged?.subject ?? action?.subject ?? null,
+          stagedSubject: chosenArm?.subject ?? staged?.subject ?? action?.subject ?? null,
           finalSubject: action?.subject ?? null,
           stp: r.stpJson ? JSON.parse(r.stpJson) : null,
           commentary: r.commentary ?? null,
@@ -592,6 +859,7 @@ export async function listRecord(limit = 200): Promise<{ live: boolean; entries:
           replyStatus: r.replyStatus ?? null,
           deliveryStatus: r.deliveryStatus ?? null,
           executionResult: r.executionResult ?? null,
+          experimentArm: chosenArm?.label ?? null,
         }
       }),
     }

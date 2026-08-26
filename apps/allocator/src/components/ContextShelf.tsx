@@ -14,6 +14,7 @@ export default function ContextShelf() {
   const [loaded, setLoaded] = useState(false)
   const [draft, setDraft] = useState('')
   const [filing, setFiling] = useState(false)
+  const [experiment, setExperiment] = useState<boolean | null>(null)
 
   useEffect(() => {
     fetch('/api/context')
@@ -26,7 +27,24 @@ export default function ContextShelf() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true))
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (typeof data?.contextExperiment === 'boolean') setExperiment(data.contextExperiment)
+      })
+      .catch(() => {})
   }, [])
+
+  const toggleExperiment = () => {
+    if (experiment === null || !live) return
+    const next = !experiment
+    setExperiment(next)
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextExperiment: next }),
+    }).catch(() => {})
+  }
 
   const add = async () => {
     const text = draft.trim()
@@ -94,6 +112,26 @@ export default function ContextShelf() {
           </button>
         </div>
       </form>
+
+      {/* The experiment switch: cold drafts arrive as an A/B pair while on */}
+      {experiment !== null && (
+        <div className="mt-4 flex items-baseline justify-between gap-4 border-l border-oxblood pl-4">
+          <div>
+            <p className="eyebrow-ink">The Experiment</p>
+            <p className="dek mt-1 text-[13px]">
+              {experiment
+                ? 'On — every cold email drafts both ways, decided side by side in The Experiment.'
+                : 'Off — cold emails draft once, with your context, straight to the tray.'}
+            </p>
+          </div>
+          <button
+            onClick={toggleExperiment}
+            className="eyebrow-ink shrink-0 underline decoration-hairline underline-offset-4"
+          >
+            {experiment ? 'Turn It Off' : 'Turn It On'}
+          </button>
+        </div>
+      )}
 
       {loaded && notes.length === 0 && (
         <p className="dek pt-6 text-center text-[13px]">

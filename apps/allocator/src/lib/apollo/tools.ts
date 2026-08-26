@@ -603,6 +603,19 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
         if (kind === 'email' && !String(input?.to ?? '').trim() && !String(input?.linkedinUrl ?? '').trim()) {
           return { output: 'An email proof needs a recipient (to) or a linkedinUrl.', step: { kind: 'note', name: 'Proof not staged', detail: 'no recipient' }, isError: true }
         }
+        // The context experiment rejoins here: when this exact body was
+        // drafted as an A/B pair, both arms ride the proof — the
+        // with-context draft on deck, the control beside it.
+        let experimentJson: string | undefined
+        let experimentVariants: { label: string; subject?: string; body: string }[] | undefined
+        if (kind === 'email') {
+          const { takeExperimentPair, newExperimentRecord } = await import('./experiment')
+          const arms = takeExperimentPair(body)
+          if (arms) {
+            experimentVariants = arms
+            experimentJson = JSON.stringify(newExperimentRecord(arms))
+          }
+        }
         const proof = await createProof({
           kind,
           title: title.slice(0, 160),
@@ -628,16 +641,19 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
           websiteUrl: /^https?:\/\//.test(String(input?.websiteUrl ?? '').trim())
             ? String(input.websiteUrl).trim().slice(0, 500)
             : undefined,
-          variants: Array.isArray(input?.variants)
-            ? input.variants
-                .filter((v: any) => v && String(v.body ?? '').trim())
-                .slice(0, 4)
-                .map((v: any) => ({
-                  label: String(v.label ?? 'option').slice(0, 60),
-                  ...(v.subject ? { subject: String(v.subject).slice(0, 200) } : {}),
-                  body: String(v.body).slice(0, 20_000),
-                }))
-            : undefined,
+          variants:
+            experimentVariants ??
+            (Array.isArray(input?.variants)
+              ? input.variants
+                  .filter((v: any) => v && String(v.body ?? '').trim())
+                  .slice(0, 4)
+                  .map((v: any) => ({
+                    label: String(v.label ?? 'option').slice(0, 60),
+                    ...(v.subject ? { subject: String(v.subject).slice(0, 200) } : {}),
+                    body: String(v.body).slice(0, 20_000),
+                  }))
+              : undefined),
+          experimentJson,
         })
         return proof
           ? { output: `Staged for review: ${proof.title} (${kind}). It awaits the reader's signature in The Proofs.`, step: { kind: 'write', name: 'Staged a proof', detail: `${kind} · ${clip(title, 50)}` } }
@@ -654,23 +670,54 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
           return { output: 'Cannot draft: no founder named.', step: { kind: 'note', name: 'Email not drafted', detail: 'no founder' }, isError: true }
         }
         const readerName = await getReaderName()
+        // Resolve Dez's Context here (the handed block, else the Settings
+        // shelf) so the experiment knows whether there is anything to test.
+        let readerView = input?.readerView ? String(input.readerView).trim() : ''
+        if (mode === 'cold' && !readerView) {
+          readerView = await import('../reader-context')
+            .then((m) => m.contextNotesBlock())
+            .catch(() => '')
+        }
+        const base = {
+          mode: mode as 'cold' | 'follow_up',
+          founder,
+          firm: input?.firm ? String(input.firm) : undefined,
+          goal: input?.goal ? String(input.goal) : undefined,
+          context: String(input?.context ?? ''),
+        }
         const draft = await draftFounderEmail(
-          {
-            mode,
-            founder,
-            firm: input?.firm ? String(input.firm) : undefined,
-            goal: input?.goal ? String(input.goal) : undefined,
-            context: String(input?.context ?? ''),
-            readerView: input?.readerView ? String(input.readerView) : undefined,
-          },
+          { ...base, readerView: readerView || undefined },
           readerName
         )
+
+        // The context experiment: a cold draft with context to test also
+        // drafts its control arm — same context, Dez's Context withheld —
+        // and the pair rejoins at staging. Apollo only ever sees arm A.
+        let experimented = false
+        if (mode === 'cold' && readerView) {
+          const { getContextExperiment } = await import('../settings')
+          if (await getContextExperiment()) {
+            try {
+              const control = await draftFounderEmail({ ...base, suppressReaderView: true }, readerName)
+              const { rememberExperimentPair, ARM_WITH, ARM_WITHOUT } = await import('./experiment')
+              rememberExperimentPair(
+                { label: ARM_WITH, subject: draft.subject, body: draft.body },
+                { label: ARM_WITHOUT, subject: control.subject, body: control.body }
+              )
+              experimented = true
+            } catch {
+              // The control arm is an experiment, not a dependency — the
+              // with-context draft stages alone if it fails.
+            }
+          }
+        }
+
         return {
           output: JSON.stringify(draft),
           step: {
             kind: 'write',
             name: mode === 'cold' ? 'Drafted a cold email' : 'Drafted a follow-up',
-            detail: `${founder}${input?.firm ? ` · ${clip(String(input.firm), 30)}` : ''}`,
+            detail: `${founder}${input?.firm ? ` · ${clip(String(input.firm), 30)}` : ''}${experimented ? ' · A/B pair' : ''}`,
           },
         }
       }

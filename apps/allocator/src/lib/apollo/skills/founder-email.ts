@@ -25,6 +25,10 @@ export type FounderEmailInput = {
   // the thesis line and the hook, and is never quoted to the recipient as
   // if it were research about them.
   readerView?: string
+  // The experiment's control arm: draft WITHOUT Dez's Context — skips the
+  // readerView AND the skill's own Settings-shelf floor. Only the context
+  // experiment sets this; every ordinary cold draft gets the context.
+  suppressReaderView?: boolean
 }
 
 export type FounderEmailDraft = {
@@ -98,9 +102,10 @@ export async function draftFounderEmail(
 
   // Dez's Context reaches every cold draft: when the caller did not hand
   // one over (research errored, or an older path), the Settings shelf is
-  // read directly — the standing notes are the floor, not a bonus.
-  let readerView = input.readerView?.trim() || ''
-  if (input.mode === 'cold' && !readerView) {
+  // read directly — the standing notes are the floor, not a bonus. The
+  // experiment's control arm suppresses both channels deliberately.
+  let readerView = input.suppressReaderView ? '' : input.readerView?.trim() || ''
+  if (input.mode === 'cold' && !readerView && !input.suppressReaderView) {
     readerView = await import('../../reader-context')
       .then((m) => m.contextNotesBlock())
       .catch(() => '')
