@@ -9,6 +9,7 @@ import {
   holdProof,
   ledger,
   nextProof,
+  proofForTodo,
   redoProof,
   spikeAndCloseProof,
   spikeProof,
@@ -24,9 +25,14 @@ export const maxDuration = 300
 const PROOF_KINDS = ['email', 'post', 'analysis'] as const
 
 // The head of the queue — one proof at a time, never a list — plus the
-// straight-through ledger.
-export async function GET() {
-  const [queue, theLedger] = await Promise.all([nextProof(), ledger()])
+// straight-through ledger. `?todo=<id>` pulls that Docket item's proof to
+// the front instead: the click-through from the to-dos.
+export async function GET(req: Request) {
+  const todoId = new URL(req.url).searchParams.get('todo')?.trim()
+  const [queue, theLedger] = await Promise.all([
+    todoId ? proofForTodo(todoId) : nextProof(),
+    ledger(),
+  ])
   return NextResponse.json({ ...queue, ledger: theLedger })
 }
 

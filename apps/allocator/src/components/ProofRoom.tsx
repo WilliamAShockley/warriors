@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { Ledger, ProofRecord } from '@/lib/review'
@@ -163,6 +164,11 @@ function Para({ text, highlight }: { text: string; highlight: string | null }) {
 }
 
 export default function ProofRoom() {
+  // Arriving from the Docket: ?todo=<id> puts that item's proof on deck
+  // first. Consumed once — every verdict thereafter walks the queue.
+  const searchParams = useSearchParams()
+  const todoFocus = useRef<string | null>(searchParams.get('todo'))
+
   const [proof, setProof] = useState<ProofRecord | null>(null)
   const [theLedger, setTheLedger] = useState<Ledger | null>(null)
   const [total, setTotal] = useState(0)
@@ -218,8 +224,10 @@ export default function ProofRoom() {
   }
 
   const fetchNext = useCallback(async () => {
+    const focus = todoFocus.current
+    todoFocus.current = null
     try {
-      const res = await fetch('/api/review')
+      const res = await fetch(focus ? `/api/review?todo=${encodeURIComponent(focus)}` : '/api/review')
       const data = await res.json()
       const p = data?.proof ?? null
       setProof(p)

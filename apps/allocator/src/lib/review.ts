@@ -94,6 +94,34 @@ export async function nextProof(): Promise<ProofQueue> {
   }
 }
 
+// The proof serving a specific Docket item, pulled to the front of the
+// desk — the click-through from the to-dos. When that item has nothing
+// pending (already signed, spiked, or never staged), the head of the
+// queue stands in.
+export async function proofForTodo(todoId: string): Promise<ProofQueue> {
+  if (!hasDb()) {
+    const hit = seedProofs.find((p) => p.todo?.id === todoId)
+    return hit ? { live: false, total: seedProofs.length, proof: hit } : seedQueue()
+  }
+  try {
+    const db = await getDb()
+    const [total, row] = await Promise.all([
+      db.reviewItem.count({ where: { status: 'pending' } }),
+      db.reviewItem.findFirst({
+        where: { status: 'pending', todoId },
+        orderBy: { queuedAt: 'asc' },
+      }),
+    ])
+    if (!row) return nextProof()
+    let todo: { id: string; text: string } | null = null
+    const t = await db.todo.findUnique({ where: { id: todoId } })
+    if (t) todo = { id: t.id, text: t.text }
+    return { live: true, total, proof: toRecord(row, todo) }
+  } catch {
+    return seedQueue()
+  }
+}
+
 export async function countPendingProofs(): Promise<number> {
   if (!hasDb()) return seedProofs.length
   try {
