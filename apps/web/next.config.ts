@@ -4,6 +4,11 @@ import path from 'path'
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, '../../'),
   serverExternalPackages: ['parallel-web'],
+  // /map scans src/app at request time; make sure the source tree ships
+  // with that function on Vercel.
+  outputFileTracingIncludes: {
+    '/map': ['./src/app/**/*'],
+  },
 }
 
 export default nextConfig
