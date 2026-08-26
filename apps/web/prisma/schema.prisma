@@ -694,3 +694,21 @@ model ChatMessage {
 
   @@index([sessionId, createdAt])
 }
+
+// ── OG — drafting diagnostic bench ─────────────────────────────
+// One row per test run: drop in a company name or URL, research it,
+// generate a structured touch-1 draft, store the full JSON evidence
+// (enrichment, parts, checks) for row-level diagnosis.
+model OgRun {
+  id          String   @id @default(cuid())
+  mode        String   // 'name' | 'url' — which input tab produced the run
+  input       String
+  founderName String?
+  company     String?
+  enrichment  Json?    // research/enrichment payload shown to the model
+  result      Json?    // { parts, checks, checksPassed, repaired, subject, body }
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([mode, createdAt])
+}
