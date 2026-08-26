@@ -95,6 +95,7 @@ export async function semanticSearch(
   filters?: SearchFilters,
 ): Promise<SearchResult[]> {
   const vectorStr = toPgVector(queryEmbedding)
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit), 1000))
 
   // Build WHERE clauses dynamically
   const conditions: string[] = ['embedding IS NOT NULL']
@@ -117,11 +118,10 @@ export async function semanticSearch(
     paramIdx++
   }
 
-  conditions.push(`1 = 1`) // sentinel for trailing AND safety
   const whereClause = conditions.join(' AND ')
 
-  params.push(limit)
-  const limitParam = `$${paramIdx}`
+  params.push(safeLimit)
+  const limitParamIdx = paramIdx
 
   const sql = `
     SELECT id, name, company, "synthesizedBlob", score, "sourceType", "clusterId",
@@ -129,7 +129,7 @@ export async function semanticSearch(
     FROM "Target"
     WHERE ${whereClause}
     ORDER BY embedding <=> $1::vector
-    LIMIT ${limitParam}
+    LIMIT $${limitParamIdx}
   `
 
   const rows = await db.$queryRawUnsafe(sql, ...params) as any[]
@@ -201,23 +201,40 @@ export async function findSimilarEntities(
 
 /**
  * Fetch all target embeddings as raw number arrays.
- * Used for clustering. Returns only targets that have embeddings.
+ * Used for clustering. Paginated to avoid OOM on large datasets.
  */
-export async function fetchAllEmbeddings(): Promise<
-  { id: string; name: string; company: string; embedding: number[] }[]
-> {
-  const rows = await db.$queryRawUnsafe(`
-    SELECT id, name, company, embedding::text
-    FROM "Target"
-    WHERE embedding IS NOT NULL
-  `) as any[]
+export async function fetchAllEmbeddings(
+  maxTargets: number = 5000,
+): Promise<{ id: string; name: string; company: string; embedding: number[] }[]> {
+  const PAGE_SIZE = 500
+  const results: { id: string; name: string; company: string; embedding: number[] }[] = []
 
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    company: r.company,
-    embedding: parseVectorText(r.embedding),
-  }))
+  for (let offset = 0; offset < maxTargets; offset += PAGE_SIZE) {
+    const rows = await db.$queryRawUnsafe(
+      `SELECT id, name, company, embedding::text
+       FROM "Target"
+       WHERE embedding IS NOT NULL
+       ORDER BY "createdAt" ASC
+       LIMIT $1 OFFSET $2`,
+      PAGE_SIZE,
+      offset,
+    ) as any[]
+
+    if (rows.length === 0) break
+
+    for (const r of rows) {
+      results.push({
+        id: r.id,
+        name: r.name,
+        company: r.company,
+        embedding: parseVectorText(r.embedding),
+      })
+    }
+
+    if (rows.length < PAGE_SIZE) break
+  }
+
+  return results
 }
 
 /**

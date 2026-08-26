@@ -1,15 +1,17 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 import { getOAuthClient } from '@/lib/gmail'
 import { db } from '@/lib/db'
 import { google } from 'googleapis'
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
+  const state = searchParams.get('state')
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:5820'
 
-  if (!code) {
+  const expectedState = req.cookies.get('gmail_oauth_state')?.value
+  if (!code || !state || !expectedState || state !== expectedState) {
     return NextResponse.redirect(`${appUrl}/settings?gmail=error`)
   }
 
@@ -38,5 +40,7 @@ export async function GET(req: Request) {
     },
   })
 
-  return NextResponse.redirect(`${appUrl}/settings?gmail=connected`)
+  const res = NextResponse.redirect(`${appUrl}/settings?gmail=connected`)
+  res.cookies.delete('gmail_oauth_state')
+  return res
 }

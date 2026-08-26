@@ -206,20 +206,21 @@ export async function runEnrichment(
   emit(makeStep(7, 'Write enriched record', 'running', 0))
 
   try {
-    // Save FundingRound records
+    // Save FundingRound records (atomic replace — rollback if create fails)
     if (result.fundingRounds && result.fundingRounds.length > 0) {
-      // Delete existing funding rounds and replace with fresh data
-      await db.fundingRound.deleteMany({ where: { targetId } })
-      await db.fundingRound.createMany({
-        data: result.fundingRounds.map((r) => ({
-          targetId,
-          amount: r.amount ?? null,
-          stage: r.stage ?? null,
-          date: r.date ? new Date(r.date) : null,
-          leadInvestor: r.leadInvestor ?? null,
-          coInvestors: r.coInvestors ? JSON.stringify(r.coInvestors) : null,
-          sourceUrl: r.sourceUrl ?? null,
-        })),
+      await db.$transaction(async (tx) => {
+        await tx.fundingRound.deleteMany({ where: { targetId } })
+        await tx.fundingRound.createMany({
+          data: result.fundingRounds!.map((r) => ({
+            targetId,
+            amount: r.amount ?? null,
+            stage: r.stage ?? null,
+            date: r.date ? new Date(r.date) : null,
+            leadInvestor: r.leadInvestor ?? null,
+            coInvestors: r.coInvestors ? JSON.stringify(r.coInvestors) : null,
+            sourceUrl: r.sourceUrl ?? null,
+          })),
+        })
       })
     }
 
