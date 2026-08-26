@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot, FileText, Lightbulb, Footprints } from 'lucide-react'
+import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot, FileText, Lightbulb, Footprints, Map as MapIcon } from 'lucide-react'
 
 const sections = [
   {
@@ -168,6 +168,24 @@ export default function Home() {
             </div>
             <p className="text-sm text-[#888884] leading-snug">
               Pipeline debugger — run and inspect each data processing block step by step
+            </p>
+          </button>
+        </div>
+
+        {/* Site Map — live route tree */}
+        <div className="max-w-3xl">
+          <button
+            onClick={() => router.push('/map')}
+            className="w-full text-left p-6 rounded-2xl border bg-white border-[#E8E7E3] hover:border-[#C8C7C3] hover:shadow-sm transition-all duration-150 group cursor-pointer"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-[#F7F6F3] flex items-center justify-center">
+                <MapIcon size={16} className="text-[#1A1A1A]" />
+              </div>
+              <span className="font-medium text-[#1A1A1A]">Site Map</span>
+            </div>
+            <p className="text-sm text-[#888884] leading-snug">
+              A living tree of every page in the app — updates itself as new sections get built
             </p>
           </button>
         </div>
