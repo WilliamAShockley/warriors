@@ -19,10 +19,11 @@ export type FounderEmailInput = {
   // and the single concrete ask this email should land.
   context: string
   goal?: string
-  // The reader's own view of the recipient's space — his active theses that
-  // bear on it, matched by research_company. His private thinking: it
-  // sharpens the thesis line and the hook, and is never quoted to the
-  // recipient as if it were research about them.
+  // Dez's Context: the reader's own view — his standing notes (filed by
+  // hand in Settings → Context) plus the active theses that bear on this
+  // space, composed by research_company. His private thinking: it sharpens
+  // the thesis line and the hook, and is never quoted to the recipient as
+  // if it were research about them.
   readerView?: string
 }
 
@@ -95,6 +96,16 @@ export async function draftFounderEmail(
       ? 'This is a COLD OUTBOUND email — the first contact with this founder.'
       : 'This is a FOLLOW-UP email — there is already a thread or a meeting behind it.'
 
+  // Dez's Context reaches every cold draft: when the caller did not hand
+  // one over (research errored, or an older path), the Settings shelf is
+  // read directly — the standing notes are the floor, not a bonus.
+  let readerView = input.readerView?.trim() || ''
+  if (input.mode === 'cold' && !readerView) {
+    readerView = await import('../../reader-context')
+      .then((m) => m.contextNotesBlock())
+      .catch(() => '')
+  }
+
   const user = `${modeLine}
 
 Founder: ${input.founder}${input.firm ? ` — ${input.firm}` : ''}
@@ -102,10 +113,10 @@ ${input.goal ? `What this email should accomplish: ${input.goal}\n` : ''}
 Context gathered from the reader's workspace (ground every specific in this; invent nothing):
 ${input.context.trim() || '(no context supplied — say plainly in the body that you lacked specifics, and keep the email honest and minimal)'}
 ${
-  input.readerView?.trim()
+  readerView
     ? `
-How the sender currently thinks about this space — his own active thesis, in his workspace's words. Use it to make the thesis line and the hook HIS actual current view rather than the profile's dated boilerplate. It is his private thinking: never present it as research about the recipient, never quote it back to them as such, and keep it compressed to the profile's thesis-line length:
-${input.readerView.trim()}
+The sender's own context — his standing notes on how he thinks about these businesses, plus the active thesis that bears on this space, in his workspace's words. Use it to make the thesis line and the hook HIS actual current view rather than the profile's dated boilerplate. It is his private thinking: never present it as research about the recipient, never quote it back to them as such, and keep it compressed to the profile's thesis-line length:
+${readerView}
 `
     : ''
 }

@@ -15,6 +15,7 @@ const TENANT_MODELS = new Set([
   'Todo',
   'TodoUpdate',
   'ReviewItem',
+  'ReaderContextNote',
   'ApolloTask',
   'ApolloLesson',
   'ApolloSkill',

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import ColophonForm from '@/components/ColophonForm'
+import ContextShelf from '@/components/ContextShelf'
 import SkillsEditor from '@/components/SkillsEditor'
 import CirculationList from '@/components/CirculationList'
 
@@ -21,6 +22,10 @@ export default function SettingsPage() {
       <div className="rule-masthead mt-6" />
 
       <ColophonForm />
+
+      <div className="rule mt-12" />
+
+      <ContextShelf />
 
       <div className="rule mt-12" />
 

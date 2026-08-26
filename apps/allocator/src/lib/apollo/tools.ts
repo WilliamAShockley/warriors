@@ -128,7 +128,7 @@ export const APOLLO_TOOL_DEFS = [
   {
     name: 'research_company',
     description:
-      'Run the desk’s research engines on a company — a deep multi-source pass (Parallel first when configured) that verifies who the founder is, what the company does, its site, and a best-guess address, files the findings to the Register itself, and returns a composed brief: the facts with source citations, plus HOW THE READER THINKS — his own active theses that bear on this space. MANDATORY before drafting any COLD founder email: pass the brief into the drafting context and grounding, and the reader-view block into draft_founder_email’s readerView. It does not count against your web-search budget; after it, search the web only for what it missed. Skip it for follow-ups (the thread is the context).',
+      'Run the deskâs research engines on a company â a deep multi-source pass (Parallel first when configured) that verifies who the founder is, what the company does, its site, and a best-guess address, files the findings to the Register itself, and returns a composed brief: the facts with source citations, plus DEZ’S CONTEXT â his standing Settings notes and the active theses that bear on this space. MANDATORY before drafting any COLD founder email: pass the brief into the drafting context and grounding, and the reader-view block into draft_founder_emailâs readerView. It does not count against your web-search budget; after it, search the web only for what it missed. Skip it for follow-ups (the thread is the context).',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -283,7 +283,7 @@ export const APOLLO_TOOL_DEFS = [
         readerView: {
           type: 'string',
           description:
-            'The HOW THE READER THINKS block from research_company, verbatim — his own view of this space. Pass it whenever research_company returned one: the skill uses it to sharpen the thesis line and the hook. Never mix it into context; it is the reader’s private thinking, not recipient fact.',
+            'The DEZ’S CONTEXT block from research_company, verbatim â his own view of this space. Pass it whenever research_company returned one: the skill uses it to sharpen the thesis line and the hook. Never mix it into context; it is the readerâs private thinking, not recipient fact.',
         },
       },
       required: ['mode', 'founder', 'context'],

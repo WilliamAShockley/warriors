@@ -113,8 +113,8 @@ export async function researchCompany(
 }
 
 // The tool-facing rendering: two labeled blocks Apollo passes onward —
-// the brief (with sources) into drafting context and grounding, the
-// reader's view into the drafting skill's readerView field.
+// the brief (with sources) into drafting context and grounding, and
+// Dez's Context into the drafting skill's readerView field.
 export function renderResearch(r: CompanyResearch): string {
   const lines = [
     `RESEARCH BRIEF (engine: ${r.provider})`,
@@ -129,7 +129,7 @@ export function renderResearch(r: CompanyResearch): string {
       ? `\nSources:\n${r.citations.map((c) => `- ${c.title ? `${c.title} — ` : ''}${c.url}`).join('\n')}`
       : null,
     r.readerView
-      ? `\nHOW THE READER THINKS ABOUT THIS SPACE (his own private view — use it to sharpen the thesis line and the hook; never quote it to the recipient as research, never attribute it):\n${r.readerView}`
+      ? `\nDEZ'S CONTEXT (the reader's own private view — his standing notes and the theses that bear on this space; use it to sharpen the thesis line and the hook; never quote it to the recipient as research, never attribute it):\n${r.readerView}`
       : null,
   ]
   return lines.filter((l) => l !== null).join('\n')

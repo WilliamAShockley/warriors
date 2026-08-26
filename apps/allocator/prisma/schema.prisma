@@ -43,6 +43,20 @@ model User {
 
 // Reader preferences, keyed by workspace (the pre-account row was "singleton",
 // adopted to "primary" on boot).
+// Dez's Context: standing notes the reader files by hand — how he thinks
+// about spaces, businesses, and what makes one interesting — referenced
+// before every cold email draft. Manual for now; other feeds may add to
+// it later.
+model ReaderContextNote {
+  workspaceId String   @default("primary")
+  id          String   @id @default(cuid())
+  text        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workspaceId, createdAt])
+}
+
 model ReaderSetting {
   id        String   @id // workspace id
   name      String
