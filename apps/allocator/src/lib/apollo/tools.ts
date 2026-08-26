@@ -126,6 +126,24 @@ export const APOLLO_TOOL_DEFS = [
     },
   },
   {
+    name: 'research_company',
+    description:
+      'Run the desk’s research engines on a company — a deep multi-source pass (Parallel first when configured) that verifies who the founder is, what the company does, its site, and a best-guess address, files the findings to the Register itself, and returns a composed brief: the facts with source citations, plus HOW THE READER THINKS — his own active theses that bear on this space. MANDATORY before drafting any COLD founder email: pass the brief into the drafting context and grounding, and the reader-view block into draft_founder_email’s readerView. It does not count against your web-search budget; after it, search the web only for what it missed. Skip it for follow-ups (the thread is the context).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        company: { type: 'string', description: 'The company name' },
+        founderName: { type: 'string', description: 'The founder, if the task or Register names one' },
+        websiteUrl: { type: 'string', description: 'https://… identity anchor, if known' },
+        taskContext: {
+          type: 'string',
+          description: 'The to-do text plus any identity anchors — pins WHICH company this is',
+        },
+      },
+      required: ['company'],
+    },
+  },
+  {
     name: 'save_company_context',
     description:
       'Write what you learned about a company back to the Register so the NEXT task starts from it. ALWAYS call this after researching a company (web or thread): pass the name, the founder’s first name (and full name if known), a tight 3-8 sentence context (what it does, stage/funding, the hook), and the website/email/LinkedIn when surfaced. Provided fields update the entry; absent fields keep their old values — never pass a guess to overwrite a fact.',
@@ -213,6 +231,11 @@ export const APOLLO_TOOL_DEFS = [
             'Who the email addresses, from the Book segment or your research: founder (founders/companies), investor (LPs), other. ALWAYS pass it for emails — the ledger and exemplar retrieval segment on it.',
         },
         mode: { type: 'string', enum: ['cold', 'follow_up'], description: 'email kind only' },
+        company: {
+          type: 'string',
+          description:
+            'email kind — the recipient’s company, exactly as the Register names it. ALWAYS pass it for founder outreach: the straight-through checks verify the draft against the Register entry.',
+        },
         dossier: {
           type: 'string',
           description:
@@ -255,7 +278,12 @@ export const APOLLO_TOOL_DEFS = [
         context: {
           type: 'string',
           description:
-            'Everything you gathered from the workspace — relationship history, the last meeting, the relevant thesis, the reason for reaching out. Every specific in the email must be grounded here.',
+            'Everything you gathered from the workspace — relationship history, the last meeting, the research brief, the reason for reaching out. Every specific in the email must be grounded here.',
+        },
+        readerView: {
+          type: 'string',
+          description:
+            'The HOW THE READER THINKS block from research_company, verbatim — his own view of this space. Pass it whenever research_company returned one: the skill uses it to sharpen the thesis line and the hook. Never mix it into context; it is the reader’s private thinking, not recipient fact.',
         },
       },
       required: ['mode', 'founder', 'context'],
@@ -535,6 +563,35 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
           : { output: 'Could not send (Gmail not connected, or the send failed).', step: { kind: 'note', name: 'Email not sent', detail: 'unavailable' }, isError: true }
       }
 
+      case 'research_company': {
+        const company = String(input?.company ?? '').trim()
+        if (!company) {
+          return { output: 'research_company needs a company name.', step: { kind: 'note', name: 'Research not run', detail: 'no company' }, isError: true }
+        }
+        const { researchCompany, renderResearch } = await import('./company-research')
+        const result = await researchCompany({
+          company,
+          founderName: input?.founderName ? String(input.founderName) : undefined,
+          websiteUrl: input?.websiteUrl ? String(input.websiteUrl) : undefined,
+          taskContext: input?.taskContext ? String(input.taskContext).slice(0, 2000) : undefined,
+        })
+        if ('error' in result) {
+          return {
+            output: `${result.error}. Fall back to your own web searches for what the task needs.`,
+            step: { kind: 'note', name: 'Research engines unavailable', detail: clip(company, 40) },
+            isError: true,
+          }
+        }
+        return {
+          output: renderResearch(result),
+          step: {
+            kind: 'search',
+            name: 'Researched the company',
+            detail: `${clip(company, 36)} · ${result.provider}${result.readerView ? ' · reader view attached' : ''}`,
+          },
+        }
+      }
+
       case 'stage_proof': {
         const { createProof } = await import('../review')
         const kind = ['email', 'post', 'analysis'].includes(input?.kind) ? input.kind : 'analysis'
@@ -566,6 +623,7 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
           grounding: input?.grounding ? String(input.grounding).slice(0, 20_000) : undefined,
           audience: ['founder', 'investor', 'other'].includes(input?.audience) ? input.audience : undefined,
           mode: ['cold', 'follow_up'].includes(input?.mode) ? input.mode : undefined,
+          company: input?.company ? String(input.company).slice(0, 120) : undefined,
           dossier: input?.dossier ? String(input.dossier).slice(0, 8000) : undefined,
           websiteUrl: /^https?:\/\//.test(String(input?.websiteUrl ?? '').trim())
             ? String(input.websiteUrl).trim().slice(0, 500)
@@ -603,6 +661,7 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
             firm: input?.firm ? String(input.firm) : undefined,
             goal: input?.goal ? String(input.goal) : undefined,
             context: String(input?.context ?? ''),
+            readerView: input?.readerView ? String(input.readerView) : undefined,
           },
           readerName
         )

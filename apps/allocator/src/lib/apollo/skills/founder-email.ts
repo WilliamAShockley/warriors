@@ -15,10 +15,15 @@ export type FounderEmailInput = {
   founder: string
   firm?: string
   // Everything Apollo has already gathered from the workspace: the relationship
-  // history, the last meeting, the relevant thesis, the reason for reaching out,
+  // history, the last meeting, the research brief, the reason for reaching out,
   // and the single concrete ask this email should land.
   context: string
   goal?: string
+  // The reader's own view of the recipient's space — his active theses that
+  // bear on it, matched by research_company. His private thinking: it
+  // sharpens the thesis line and the hook, and is never quoted to the
+  // recipient as if it were research about them.
+  readerView?: string
 }
 
 export type FounderEmailDraft = {
@@ -96,7 +101,14 @@ Founder: ${input.founder}${input.firm ? ` — ${input.firm}` : ''}
 ${input.goal ? `What this email should accomplish: ${input.goal}\n` : ''}
 Context gathered from the reader's workspace (ground every specific in this; invent nothing):
 ${input.context.trim() || '(no context supplied — say plainly in the body that you lacked specifics, and keep the email honest and minimal)'}
-
+${
+  input.readerView?.trim()
+    ? `
+How the sender currently thinks about this space — his own active thesis, in his workspace's words. Use it to make the thesis line and the hook HIS actual current view rather than the profile's dated boilerplate. It is his private thinking: never present it as research about the recipient, never quote it back to them as such, and keep it compressed to the profile's thesis-line length:
+${input.readerView.trim()}
+`
+    : ''
+}
 Draft the email now.`
 
   const response = await anthropic.messages.create({
