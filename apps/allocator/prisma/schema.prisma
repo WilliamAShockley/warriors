@@ -43,6 +43,20 @@ model User {
 
 // Reader preferences, keyed by workspace (the pre-account row was "singleton",
 // adopted to "primary" on boot).
+// Dez's Context: standing notes the reader files by hand — how he thinks
+// about spaces, businesses, and what makes one interesting — referenced
+// before every cold email draft. Manual for now; other feeds may add to
+// it later.
+model ReaderContextNote {
+  workspaceId String   @default("primary")
+  id          String   @id @default(cuid())
+  text        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workspaceId, createdAt])
+}
+
 model ReaderSetting {
   id        String   @id // workspace id
   name      String
@@ -144,6 +158,16 @@ model ReviewItem {
   originalBody    String?
   amended         Boolean   @default(false)
   straightThrough Boolean?
+  // The permanent staging record: the draft and its envelope exactly as
+  // first filed, never rewritten afterward — the Record diffs the signed
+  // version against these, whatever amendments or variant switches came
+  // between. (originalBody above serves the redline-as-feedback loop and
+  // re-baselines on variant selection; these never move.)
+  stagedBody      String?
+  stagedJson      String? // {"to","subject"} as first staged
+  // Straight-through checks, run at staging: [{id,label,pass,detail}].
+  // All-pass is the gate a future auto-send would stand behind.
+  stpJson         String?
   // Audience routing and drafting mode, set at staging: exemplar retrieval
   // and the ledger segment on these so playbooks never cross-contaminate.
   audience        String? // founder | investor | other

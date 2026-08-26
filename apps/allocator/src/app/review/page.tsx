@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import Link from 'next/link'
 import ProofRoom from '@/components/ProofRoom'
 
 export default function ReviewPage() {
@@ -7,7 +8,12 @@ export default function ReviewPage() {
     // breaks out of the 430px shell to a typical email reading width.
     <main className="pt-14">
       <header>
-        <p className="eyebrow">Review</p>
+        <div className="flex items-baseline justify-between gap-4">
+          <p className="eyebrow">Review</p>
+          <Link href="/record" className="eyebrow text-faint underline decoration-hairline underline-offset-4">
+            The Record →
+          </Link>
+        </div>
         <h1 className="mt-2 font-serif text-[32px] font-semibold leading-none tracking-tight">
           The Proofs
         </h1>

@@ -28,69 +28,9 @@ const SOURCE_LABEL: Record<string, string> = {
 type Provenance = { source: string; explanation: string }
 
 // ————— The Redline: tracked changes, computed client-side as the pen moves.
+// The diff itself lives in lib/redline — the Record draws with the same pen.
 
-type Change = { kind: 'struck' | 'added' | 'reworded' | 'envelope'; label?: string; a?: string; b?: string }
-
-const toSentences = (t: string) =>
-  t
-    .split(/\n+|(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-
-const similar = (x: string, y: string) => {
-  const wx = new Set(x.toLowerCase().split(/\W+/).filter(Boolean))
-  const wy = new Set(y.toLowerCase().split(/\W+/).filter(Boolean))
-  if (!wx.size || !wy.size) return false
-  let inter = 0
-  wx.forEach((w) => {
-    if (wy.has(w)) inter++
-  })
-  return inter / Math.max(wx.size, wy.size) > 0.4
-}
-
-// Sentence-level LCS diff; an adjacent strike+add that share enough words
-// reads as a rewording rather than two separate changes.
-function redlineDiff(before: string, after: string): Change[] {
-  const a = toSentences(before)
-  const b = toSentences(after)
-  const n = a.length
-  const m = b.length
-  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
-  for (let i = n - 1; i >= 0; i--)
-    for (let j = m - 1; j >= 0; j--)
-      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
-
-  const raw: Change[] = []
-  let i = 0
-  let j = 0
-  while (i < n && j < m) {
-    if (a[i] === b[j]) {
-      i++
-      j++
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      raw.push({ kind: 'struck', a: a[i++] })
-    } else {
-      raw.push({ kind: 'added', b: b[j++] })
-    }
-  }
-  while (i < n) raw.push({ kind: 'struck', a: a[i++] })
-  while (j < m) raw.push({ kind: 'added', b: b[j++] })
-
-  const out: Change[] = []
-  for (let k = 0; k < raw.length; k++) {
-    const cur = raw[k]
-    const nxt = raw[k + 1]
-    if (cur.kind === 'struck' && nxt?.kind === 'added' && similar(cur.a!, nxt.b!)) {
-      out.push({ kind: 'reworded', a: cur.a, b: nxt.b })
-      k++
-    } else {
-      out.push(cur)
-    }
-  }
-  return out
-}
-
-const changeKey = (c: Change) => `${c.kind}:${c.label ?? ''}:${c.a ?? ''}:${c.b ?? ''}`
+import { redlineDiff, changeKey, type Change } from '@/lib/redline'
 
 // Each entry slides in as it is detected — the point is that the reader
 // SEES the system register the change.
@@ -616,6 +556,32 @@ export default function ProofRoom() {
           {proof.title}
         </h2>
         {proof.summary && <p className="dek mt-2.5">{proof.summary}</p>}
+
+        {/* The straight-through checks, as run at staging. All green is
+            what a future auto-send would stand behind; a red line is a
+            reason to read closely, not a bar to signing. */}
+        {proof.stp && proof.stp.length > 0 && (
+          <div className="mt-4 border border-hairline px-4 py-3">
+            <div className="flex items-baseline justify-between gap-4">
+              <p className="eyebrow text-oxblood">The Checks</p>
+              <p className="eyebrow text-faint">
+                {proof.stp.filter((c) => c.pass).length} of {proof.stp.length} passed
+              </p>
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {proof.stp.map((c) => (
+                <li key={c.id}>
+                  <p className={clsx('eyebrow', c.pass ? 'text-faint' : 'text-oxblood')}>
+                    {c.pass ? '✓' : '✗'} {c.label}
+                  </p>
+                  <p className="mt-0.5 font-serif text-[13px] italic leading-snug text-stone">
+                    {c.detail}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </header>
 
       {/* The Drafts — every staged option; tap one to put it on deck */}

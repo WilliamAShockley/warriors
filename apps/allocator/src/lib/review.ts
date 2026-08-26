@@ -31,6 +31,12 @@ export type ProofRecord = {
   // one is on deck (the one that signs and sends).
   variants: { label: string; subject?: string; body: string }[] | null
   selectedVariant: number
+  // The permanent staging record: the draft and envelope exactly as first
+  // filed — the Record's diff baseline — and the straight-through checks
+  // run at staging.
+  stagedBody: string | null
+  staged: { to?: string; subject?: string } | null
+  stp: import('./stp').StpResult[] | null
 }
 
 export type ProofQueue = { live: boolean; total: number; proof: ProofRecord | null }
@@ -66,12 +72,23 @@ const toRecord = (r: any, todo: { id: string; text: string } | null = null): Pro
   websiteUrl: r.websiteUrl ?? null,
   variants: r.variantsJson ? JSON.parse(r.variantsJson) : null,
   selectedVariant: r.selectedVariant ?? 0,
+  stagedBody: r.stagedBody ?? null,
+  staged: r.stagedJson ? JSON.parse(r.stagedJson) : null,
+  stp: r.stpJson ? JSON.parse(r.stpJson) : null,
+})
+
+// Seed proofs predate the staging record — the mocked edition backfills.
+const withRecordDefaults = (p: any): ProofRecord => ({
+  stagedBody: null,
+  staged: null,
+  stp: null,
+  ...p,
 })
 
 const seedQueue = (): ProofQueue => ({
   live: false,
   total: seedProofs.length,
-  proof: seedProofs[0] ?? null,
+  proof: seedProofs[0] ? withRecordDefaults(seedProofs[0]) : null,
 })
 
 // The head of the queue — the single proof on review. Never a list.
@@ -101,7 +118,7 @@ export async function nextProof(): Promise<ProofQueue> {
 export async function proofForTodo(todoId: string): Promise<ProofQueue> {
   if (!hasDb()) {
     const hit = seedProofs.find((p) => p.todo?.id === todoId)
-    return hit ? { live: false, total: seedProofs.length, proof: hit } : seedQueue()
+    return hit ? { live: false, total: seedProofs.length, proof: withRecordDefaults(hit) } : seedQueue()
   }
   try {
     const db = await getDb()
@@ -148,10 +165,51 @@ export async function createProof(input: {
   dossier?: string
   websiteUrl?: string
   variants?: { label: string; subject?: string; body: string }[]
+  // The company in play, when the caller knows it — the straight-through
+  // checks verify the draft against its Register entry. Not persisted.
+  company?: string
 }): Promise<ProofRecord | null> {
   if (!hasDb()) return null
   try {
     const db = await getDb()
+
+    // The staging record: envelope as first filed, and — for emails — the
+    // straight-through checks, run against the Register before the row
+    // ever exists. Check failures never block staging; they file with it.
+    const action = input.actionJson ? JSON.parse(input.actionJson) : null
+    const stagedJson =
+      input.kind === 'email'
+        ? JSON.stringify({
+            ...(action?.to ? { to: action.to } : {}),
+            ...(action?.subject ? { subject: action.subject } : {}),
+          })
+        : null
+    let stpJson: string | null = null
+    if (input.kind === 'email') {
+      const { runStpChecks } = await import('./stp')
+      let register: { founderFirstName: string | null; founderFullName: string | null } | null = null
+      if (input.company) {
+        const { findCompany } = await import('./context')
+        const hit = await findCompany(input.company).catch(() => null)
+        if (hit) {
+          register = {
+            founderFirstName: hit.founderFirstName ?? null,
+            founderFullName: hit.founderFullName ?? null,
+          }
+        }
+      }
+      const results = await runStpChecks({
+        body: input.body,
+        subject: action?.subject ?? null,
+        to: action?.to ?? null,
+        mode: input.mode ?? null,
+        audience: input.audience ?? null,
+        grounding: input.grounding ?? null,
+        register,
+      })
+      stpJson = results.length ? JSON.stringify(results) : null
+    }
+
     const row = await db.reviewItem.create({
       data: {
         kind: input.kind,
@@ -170,6 +228,9 @@ export async function createProof(input: {
         websiteUrl: input.websiteUrl ?? null,
         variantsJson:
           input.variants && input.variants.length >= 2 ? JSON.stringify(input.variants) : null,
+        stagedBody: input.body,
+        stagedJson,
+        stpJson,
       },
     })
     return toRecord(row)
@@ -458,6 +519,84 @@ Rules: "research"/"thread" only when the context above actually supports the pas
     }
   } catch {
     return null
+  }
+}
+
+// ————————————————————————————————— The Record
+
+// One signed (or spiked) email, staged-vs-sent: everything the reader
+// needs to see what the desk drafted, what he changed, and how it fared.
+export type RecordEntry = {
+  id: string
+  title: string
+  status: string // approved | spiked
+  reviewedOn: string
+  filedOn: string
+  audience: string | null
+  mode: string | null
+  straightThrough: boolean | null
+  amended: boolean
+  // Staged vs signed, body and envelope.
+  stagedBody: string | null
+  finalBody: string
+  stagedTo: string | null
+  finalTo: string | null
+  stagedSubject: string | null
+  finalSubject: string | null
+  // The verdict trail.
+  stp: import('./stp').StpResult[] | null
+  commentary: string | null
+  grounding: string | null
+  replyStatus: string | null
+  deliveryStatus: string | null
+  executionResult: string | null
+}
+
+// The reviewed email proofs, newest verdict first — the Record's ledger
+// and the export's source. Pending proofs stay in the tray, not here.
+export async function listRecord(limit = 200): Promise<{ live: boolean; entries: RecordEntry[] }> {
+  if (!hasDb()) return { live: false, entries: [] }
+  try {
+    const db = await getDb()
+    const rows = await db.reviewItem.findMany({
+      where: { kind: 'email', status: { in: ['approved', 'spiked'] } },
+      orderBy: { reviewedAt: 'desc' },
+      take: limit,
+    })
+    return {
+      live: true,
+      entries: rows.map((r: any) => {
+        const action = r.actionJson ? JSON.parse(r.actionJson) : null
+        const staged = r.stagedJson ? JSON.parse(r.stagedJson) : null
+        return {
+          id: r.id,
+          title: r.title,
+          status: r.status,
+          reviewedOn: r.reviewedAt ? dateLabel(r.reviewedAt) : '',
+          filedOn: dateLabel(r.createdAt),
+          audience: r.audience ?? null,
+          mode: r.mode ?? null,
+          straightThrough: r.straightThrough ?? null,
+          amended: Boolean(r.amended),
+          // Proofs staged before the Record existed fall back to the
+          // amendment snapshot; an untouched pre-Record proof diffs empty.
+          stagedBody: r.stagedBody ?? r.originalBody ?? r.body,
+          finalBody: r.body,
+          stagedTo: staged?.to ?? action?.to ?? null,
+          finalTo: action?.to ?? null,
+          stagedSubject: staged?.subject ?? action?.subject ?? null,
+          finalSubject: action?.subject ?? null,
+          stp: r.stpJson ? JSON.parse(r.stpJson) : null,
+          commentary: r.commentary ?? null,
+          grounding: r.grounding ?? null,
+          replyStatus: r.replyStatus ?? null,
+          deliveryStatus: r.deliveryStatus ?? null,
+          executionResult: r.executionResult ?? null,
+        }
+      }),
+    }
+  } catch {
+    return { live: false, entries: [] }
   }
 }
 
