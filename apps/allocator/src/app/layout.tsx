@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Fraunces, Inter } from 'next/font/google'
 import './globals.css'
 import Chrome from '@/components/Chrome'
+import GuestNotice from '@/components/GuestNotice'
 
 const display = Fraunces({
   subsets: ['latin'],
@@ -36,7 +37,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${display.variable} ${ui.variable}`}>
       <body className="font-sans">
-        <div className="mx-auto min-h-dvh w-full max-w-[430px] px-6 pb-32">
+        <GuestNotice />
+        <div className="mx-auto min-h-dvh w-full max-w-[430px] px-6 pb-32 md:max-w-[680px] lg:max-w-[760px]">
           {children}
         </div>
         <Chrome />

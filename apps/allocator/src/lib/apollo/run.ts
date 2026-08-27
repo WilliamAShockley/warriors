@@ -1,7 +1,8 @@
 import { anthropic } from '../claude'
-import { parseLLMJsonObject } from '../retry'
+import { parseLLMJsonObject, withRetry } from '../retry'
 import { getReaderName } from '../settings'
 import { APOLLO_TOOL_DEFS, executeApolloTool } from './tools'
+import { skillsBriefing, customSkillsBriefing } from './skills'
 import {
   appendStep,
   completeTask,
@@ -20,17 +21,25 @@ const MAX_ELAPSED_MS = 240_000
 const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search', max_uses: 8 }
 
 async function systemPrompt(): Promise<string> {
-  const [lessons, readerName] = await Promise.all([listLessons(10), getReaderName()])
+  const [lessons, readerName, customBriefing] = await Promise.all([
+    listLessons(10),
+    getReaderName(),
+    customSkillsBriefing().catch(() => ''),
+  ])
   return `You are Apollo, the private agent of ${readerName} — an investor running a new alternative-asset manager — inside "The Allocator", his personal editorial workspace. He hands you a task; you complete it using the tools, then file a briefing.
 
 His workspace, which your tools read and write:
-- The Docket: his to-dos. The Book: LPs, founders, co-investors, advisors. Research: his active theses and charters. The Margin: his freeform thinking. The calendar and meeting notes: his real schedule and Granola summaries. The wire: web search.
+- The Docket: his to-dos. The Book: LPs, founders, co-investors, advisors. Research: his active theses and charters. The Margin: his freeform thinking. The calendar and meeting notes: his real schedule and Granola summaries. The mailbox: his connected Gmail (search, read, send). The Proofs: his review tray, where drafted work awaits his signature. The wire: web search.
 
 How you work:
 1. Open with ONE sentence stating your reading of the task — before any tool call. Then work.
 2. Ground everything in what the tools return. Never invent contacts, events, notes, or facts. If the workspace lacks what you need, search the web; if that fails too, say what is missing.
-3. You may write to the workspace (file to-dos, add contacts, file margin notes) when the task's outcome calls for it — write deliberately, never duplicate, and only what he would plausibly want kept.
+3. You may write to the workspace (file to-dos, add contacts, file margin notes) when the task's outcome calls for it — write deliberately, never duplicate, and only what he would plausibly want kept. Anything drafted on his behalf — an email, a post, an analysis — goes to The Proofs via stage_proof, where he signs it personally; approval executes it. Send email directly ONLY when the task explicitly says send, to the recipient it names.
 4. Voice: precise, financially literate, quietly witty. No emoji, no exclamation marks, no hype. Headlines read like the FT.
+
+Skills — specialized drafting playbooks you invoke through tools when a task calls for one:
+${skillsBriefing()}${customBriefing}
+When a skill applies, gather the workspace context it needs FIRST, then invoke it, and reproduce its output verbatim in your briefing (a drafted email goes in its own section, subject line included, unaltered).
 
 When the work is done, end your final message with ONLY this JSON (no prose after it):
 {"title": "<serif headline for the briefing>", "dateline": "Apollo · <one-line source note, e.g. 'from the Book, the calendar, and the wire'>", "sections": [{"label": "<small-caps label>", "body": "<one tight paragraph>"}]}
@@ -41,14 +50,40 @@ Two to five sections. The briefing is the deliverable — it should read like a 
   }`
 }
 
-// The manual agent loop: per-step DB logging is the point.
-export async function runApollo(taskId: string, ask: string): Promise<void> {
-  const system = await systemPrompt()
+// The manual agent loop: per-step DB logging is the point. Callers with a
+// specialty (the docket worker) append their doctrine to the system prompt.
+// The whole run is framed in the task's own workspace, so every tool call
+// and every write lands on the right desk even far from the request.
+export async function runApollo(
+  taskId: string,
+  ask: string,
+  opts?: { systemAppendix?: string }
+): Promise<void> {
+  const { runAsWorkspace, activeWorkspaceId } = await import('../tenant')
+  const { db } = await import('../db')
+  let ws = await activeWorkspaceId()
+  try {
+    const task = await db.apolloTask.findUnique({ where: { id: taskId } })
+    if (task) ws = (task as any).workspaceId ?? ws
+  } catch {}
+  return runAsWorkspace(ws, () => runApolloInWorkspace(taskId, ask, opts))
+}
+
+async function runApolloInWorkspace(
+  taskId: string,
+  ask: string,
+  opts?: { systemAppendix?: string }
+): Promise<void> {
+  const system = (await systemPrompt()) + (opts?.systemAppendix ? `\n\n${opts.systemAppendix}` : '')
   const tools: any[] = [...APOLLO_TOOL_DEFS, WEB_SEARCH_TOOL]
   const messages: any[] = [{ role: 'user', content: ask }]
   const startedAt = Date.now()
   let planCaptured = false
   let finalText = ''
+  // Server-side tools (web search) execute in a container on Anthropic's
+  // end; when a turn ends with that work pending, the follow-up request
+  // must name the container or the API rejects it with a 400.
+  let containerId: string | undefined
 
   try {
     for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -62,14 +97,23 @@ export async function runApollo(taskId: string, ask: string): Promise<void> {
         })
       }
 
-      const response = await anthropic.messages.create({
-        model: APOLLO_MODEL,
-        max_tokens: 16000,
-        thinking: { type: 'adaptive' },
-        system,
-        tools,
-        messages,
-      } as any)
+      // One flaky API response must not kill a whole run; the timeout is
+      // generous because thinking + server-side search make long turns.
+      const response = await withRetry(
+        () =>
+          anthropic.messages.create({
+            model: APOLLO_MODEL,
+            max_tokens: 16000,
+            thinking: { type: 'adaptive' },
+            system,
+            tools,
+            messages,
+            ...(containerId ? { container: containerId } : {}),
+          } as any),
+        { maxAttempts: 3, timeoutMs: 180_000 }
+      )
+      const respContainer = (response as any).container?.id
+      if (respContainer) containerId = respContainer
 
       // Capture Apollo's one-line reading of the task from the first text block.
       if (!planCaptured) {
@@ -91,7 +135,8 @@ export async function runApollo(taskId: string, ask: string): Promise<void> {
         }
       }
 
-      if (response.stop_reason === 'pause_turn') {
+      // 'pause_turn' postdates the installed SDK's stop_reason union.
+      if ((response.stop_reason as string) === 'pause_turn') {
         messages.push({ role: 'assistant', content: response.content })
         continue
       }
@@ -106,7 +151,9 @@ export async function runApollo(taskId: string, ask: string): Promise<void> {
           results.push({
             type: 'tool_result',
             tool_use_id: use.id,
-            content: exec.output,
+            // Clipped defensively: one oversized tool payload (a huge thread,
+            // a long mailbox search) must not blow the context window.
+            content: exec.output.length > 30_000 ? `${exec.output.slice(0, 30_000)}… [clipped]` : exec.output,
             ...(exec.isError ? { is_error: true } : {}),
           })
         }
@@ -143,8 +190,19 @@ export async function runApollo(taskId: string, ask: string): Promise<void> {
     await completeTask(taskId, { status: 'done', result, trace: messages })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    await appendStep(taskId, { kind: 'note', name: 'The run failed', detail: msg.slice(0, 120) })
-    await completeTask(taskId, { status: 'failed', result: null, trace: messages })
+    // The full error must survive: to the step (readably), to the task's
+    // result (so the UI shows the whole thing), and to the platform logs.
+    console.error(`[apollo] run ${taskId} failed:`, msg)
+    await appendStep(taskId, { kind: 'note', name: 'The run failed', detail: msg.slice(0, 300) })
+    await completeTask(taskId, {
+      status: 'failed',
+      result: {
+        title: 'The run failed',
+        dateline: 'Apollo · error report',
+        sections: [{ label: 'What the API said', body: msg.slice(0, 2000) }],
+      },
+      trace: messages,
+    })
   }
 }
 

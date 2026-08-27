@@ -4,6 +4,7 @@ import Greeting from '@/components/Greeting'
 import { deals, theses, newsItems } from '@/lib/data'
 import { countOpenTodos } from '@/lib/todos'
 import { listDbTheses } from '@/lib/theses'
+import { countPendingProofs } from '@/lib/review'
 import { getReaderName } from '@/lib/settings'
 
 export const dynamic = 'force-dynamic'
@@ -18,19 +19,23 @@ function todayLine() {
 }
 
 export default async function HomePage() {
-  const prospects = deals.filter((d) => d.status === 'prospect')
-  const live = deals.filter((d) => d.status === 'live')
-  const [openTodos, dbTheses, readerName] = await Promise.all([
+  // Seed pipeline counts belong to the zero-env demo only.
+  const hasDb = Boolean(process.env.DATABASE_URL)
+  const prospects = hasDb ? [] : deals.filter((d) => d.status === 'prospect')
+  const live = hasDb ? [] : deals.filter((d) => d.status === 'live')
+  const [openTodos, dbTheses, pendingProofs, readerName] = await Promise.all([
     countOpenTodos(),
     listDbTheses(),
+    countPendingProofs(),
     getReaderName(),
   ])
   const thesisCount = dbTheses.live ? dbTheses.theses.length : theses.length
 
   const menu = [
     { label: 'To Do’s', href: '/todos', note: `${openTodos} open` },
-    { label: 'Prospects', href: '/prospects', note: `${prospects.length} names` },
-    { label: 'Live Deals', href: '/deals', note: `${live.length} in motion` },
+    { label: 'Review', href: '/review', note: `${pendingProofs} in the tray` },
+    { label: 'Prospects', href: '/prospects', note: prospects.length ? `${prospects.length} names` : 'none on file' },
+    { label: 'Live Deals', href: '/deals', note: live.length ? `${live.length} in motion` : 'none in motion' },
     { label: 'Research', href: '/research', note: `${thesisCount} thes${thesisCount === 1 ? 'is' : 'es'}` },
     { label: 'News', href: '/news', note: `${newsItems.length} on the wire` },
   ]
@@ -49,8 +54,8 @@ export default async function HomePage() {
           </Link>
         </header>
 
-        {/* The contents — begins three-fifths down, ends at the fourth fifth */}
-        <nav className="absolute inset-x-0 top-[60%] flex h-[20%] min-h-[13rem] flex-col justify-between">
+        {/* The contents — begins just under three-fifths down */}
+        <nav className="absolute inset-x-0 top-[57%] flex h-[25%] min-h-[15.5rem] flex-col justify-between">
           {menu.map((item) => (
             <Link key={item.href} href={item.href} className="group flex items-baseline gap-3">
               <span className="font-serif text-[24px] font-medium leading-none tracking-tight">
@@ -72,7 +77,7 @@ export default async function HomePage() {
 
       <p className="pb-8">
         <Link href="/settings" className="eyebrow text-faint underline decoration-hairline underline-offset-4">
-          The Colophon
+          Settings
         </Link>
       </p>
     </main>

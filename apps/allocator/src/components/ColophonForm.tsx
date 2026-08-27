@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 export default function ColophonForm() {
   const [name, setName] = useState('')
   const [account, setAccount] = useState<string | null>(null)
+  const [inboundAddress, setInboundAddress] = useState<string | null>(null)
   const [live, setLive] = useState(true)
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
 
@@ -15,6 +16,7 @@ export default function ColophonForm() {
         if (!data) return
         setName(data.name ?? '')
         setAccount(data.account ?? null)
+        setInboundAddress(data.inboundAddress ?? null)
         setLive(Boolean(data.live))
       })
       .catch(() => {})
@@ -62,12 +64,44 @@ export default function ColophonForm() {
         className="mt-4 w-full border-b border-ink bg-transparent pb-2 font-serif text-[18px] text-ink placeholder:italic placeholder:text-faint focus:outline-none"
       />
 
-      {account && (
+      {live && (
         <div className="pt-8">
           <p className="eyebrow-ink">The Account</p>
-          <p className="body-copy mt-2">
-            Calendar connected as <span className="italic">{account}</span>.
+          {account ? (
+            <p className="body-copy mt-2">
+              Connected as <span className="italic">{account}</span>. The calendar and the
+              mail desk — reading and sending — both run through this account.
+            </p>
+          ) : (
+            <p className="body-copy mt-2">
+              No Google account connected. Connect one and the Brief gains your calendar;
+              the desk gains your mail.
+            </p>
+          )}
+          <p className="mt-3">
+            <a
+              href="/api/auth/google"
+              className="eyebrow-ink underline decoration-hairline underline-offset-4"
+            >
+              {account ? 'Reconnect · or switch to another account' : 'Connect a Google account'}
+            </a>
           </p>
+
+          <div className="pt-8">
+            <p className="eyebrow-ink">The Mail Door</p>
+            <p className="body-copy mt-2">
+              Email {account ? <span className="italic">{account}</span> : 'your connected account'}{' '}
+              from itself — or forward any thread to it — with{' '}
+              <span className="italic">Allocator:</span> leading the subject, and it files on the
+              Docket as a task. Email-shaped tasks draft themselves into The Proofs.
+            </p>
+            {inboundAddress && (
+              <p className="body-copy mt-2">
+                Or send from anywhere to your own address:{' '}
+                <span className="break-all italic">{inboundAddress}</span>
+              </p>
+            )}
+          </div>
         </div>
       )}
 

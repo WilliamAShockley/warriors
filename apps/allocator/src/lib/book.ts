@@ -71,3 +71,76 @@ export async function createContact(input: {
     return null
   }
 }
+
+// The Book is amendable after the fact — any field of a reader-added
+// contact can be revised. Empty strings clear the optional fields.
+export type ContactAmendment = Partial<{
+  name: string
+  role: string
+  firm: string
+  segment: string
+  context: string
+  relationship: string | null
+  followUp: string | null
+  location: string | null
+}>
+
+export async function updateContact(id: string, input: ContactAmendment): Promise<BookRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.bookContact.update({ where: { id }, data: input })
+    return toRecord(row)
+  } catch {
+    return null
+  }
+}
+
+// ————————————————————————————————— Notes on a person
+
+// A dated running record per contact — filed from the contact's page,
+// read back newest first, and handed to Apollo when a task names them.
+
+export type ContactNoteRecord = {
+  id: string
+  body: string
+  filedOn: string
+}
+
+const TZ = process.env.APP_TIMEZONE ?? 'America/New_York'
+const noteDate = (d: Date) =>
+  new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: 'numeric', month: 'long' }).format(d)
+
+export async function listContactNotes(
+  contactId: string
+): Promise<{ live: boolean; notes: ContactNoteRecord[] }> {
+  if (!hasDb()) return { live: false, notes: [] }
+  try {
+    const db = await getDb()
+    const rows = await db.contactNote.findMany({
+      where: { contactId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    })
+    return {
+      live: true,
+      notes: rows.map((r: any) => ({ id: r.id, body: r.body, filedOn: noteDate(r.createdAt) })),
+    }
+  } catch {
+    return { live: false, notes: [] }
+  }
+}
+
+export async function addContactNote(
+  contactId: string,
+  body: string
+): Promise<ContactNoteRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const row = await db.contactNote.create({ data: { contactId, body } })
+    return { id: row.id, body: row.body, filedOn: noteDate(row.createdAt) }
+  } catch {
+    return null
+  }
+}

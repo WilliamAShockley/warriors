@@ -1,7 +1,10 @@
 import { google } from 'googleapis'
 import { db } from './db'
+import { activeWorkspaceId, ensureAdopted } from './tenant'
 
-// OAuth plumbing copied from apps/web/src/lib/gmail.ts, scoped to calendar reads.
+// OAuth plumbing copied from apps/web/src/lib/gmail.ts. One Google account
+// powers the whole desk: calendar reads for the Brief, Gmail read/send for
+// the mail desk. Adding a scope means reconnecting at /api/auth/google.
 
 function getCallbackUrl() {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:5821'
@@ -24,13 +27,17 @@ export function getAuthUrl(state: string) {
     state,
     scope: [
       'https://www.googleapis.com/auth/calendar.readonly',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.send',
       'https://www.googleapis.com/auth/userinfo.email',
     ],
   })
 }
 
 export async function getAuthedClient() {
-  const token = await db.googleToken.findUnique({ where: { id: 'singleton' } })
+  await ensureAdopted()
+  const ws = await activeWorkspaceId()
+  const token = await db.googleToken.findUnique({ where: { id: ws } })
   if (!token) return null
 
   const client = getOAuthClient()
@@ -44,7 +51,7 @@ export async function getAuthedClient() {
   client.on('tokens', async (tokens) => {
     if (tokens.access_token) {
       await db.googleToken.update({
-        where: { id: 'singleton' },
+        where: { id: ws },
         data: {
           accessToken: tokens.access_token,
           expiryDate: tokens.expiry_date ?? 0,

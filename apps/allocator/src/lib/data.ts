@@ -572,12 +572,17 @@ export const notes: Note[] = [
 
 // ————————————————————————————————————————————— To Do's
 
+// Docket buckets are derived from age: filed today, yesterday, within the
+// week, or older — the parking lot. The seed carries a fixed bucket only
+// because mock data has no timestamps.
+export type TodoBucket = 'Today' | 'Yesterday' | 'Last Week' | 'Parking Lot'
+
 export type Todo = {
   id: string
   text: string
   meta: string
   href?: string
-  group: 'This Week' | 'Waiting On' | 'The Horizon'
+  group: TodoBucket
 }
 
 export const todos: Todo[] = [
@@ -586,11 +591,11 @@ export const todos: Todo[] = [
     text: 'Answer Jonah’s split-lead proposal',
     meta: 'Before Ana’s Friday deadline · Osprey Treasury',
     href: '/book/jonah-price',
-    group: 'This Week',
+    group: 'Today',
   },
 ]
 
-export const todoGroups = ['This Week', 'Waiting On', 'The Horizon'] as const
+export const todoGroups = ['Today', 'Yesterday', 'Last Week', 'Parking Lot'] as const
 
 // ————————————————————————————————————————————— News
 
@@ -742,7 +747,7 @@ export const apolloExample = {
     { t: '07:41', kind: 'tool' as const, name: 'Read the calendar', detail: '4 events in the next 7 days' },
     { t: '07:42', kind: 'tool' as const, name: 'Read the Book', detail: 'Jonah Price · Ana Oliveira · Marguerite Chen' },
     { t: '07:42', kind: 'search' as const, name: 'Searched the wire', detail: 'stablecoin treasury console mid-market' },
-    { t: '07:43', kind: 'write' as const, name: 'Filed a to-do', detail: 'This Week · Draft the split-lead counter before Thursday’s call' },
+    { t: '07:43', kind: 'write' as const, name: 'Filed a to-do', detail: 'Draft the split-lead counter before Thursday’s call' },
   ],
   result: {
     title: 'The week bends around Friday',
@@ -767,6 +772,74 @@ export const apolloExample = {
   createdAt: '2026-07-09T11:41:00.000Z',
   finishedAt: '2026-07-09T11:44:00.000Z',
 }
+
+// ————————————————————————————————————————————— The Proofs (seed)
+
+// Zero-env demo of the review tray. Shape mirrors lib/review.ts ProofRecord.
+export const proofs = [
+  {
+    id: 'p1',
+    kind: 'email',
+    title: 'SPV II fee terms for Marguerite',
+    summary: 'She was promised terms in writing this week. Drafted from your notes.',
+    body: 'Marguerite,\n\nAs promised — SPV II terms in writing: 2 and 20, with fees offset dollar-for-dollar against a Fund I commitment. Your soft-circled $1.5m stands reserved through the 25th.\n\nThe quarterly operational letter you asked about twice is part of the package; the first one accompanies the closing docs.\n\nGene returns the formation documents Wednesday. If the terms read right, I will send the subscription package the same day.\n\nWilliam',
+    actionType: 'send_email',
+    action: { to: 'marguerite@halloran.example', subject: 'SPV II — terms in writing' },
+    sourceUrl: null,
+    filedOn: '9 July',
+    todo: { id: 't-demo-1', text: 'Send Marguerite the SPV II fee terms' },
+    grounding:
+      'From filed notes (30 June): \u201cDraft summary for Halloran: 2/20 with fees offset against Fund I commitment, $1.5m soft-circled, quarterly operational letter (she asked twice \u2014 she reads them). Gene returns formation docs Wednesday; send the summary same day.\u201d',
+    commentary: null,
+    originalBody: null,
+    linkedinUrl: null,
+    dossier:
+      'Marguerite Halloran runs the Halloran family office out of Charlotte — first-generation principal, careful, reads everything you send her.\n\nAnchor prospect for SPV II: $1.5m soft-circled, contingent on seeing the fee terms in writing this week.\n\nShe has asked twice about the quarterly operational letter — treat that as the tell for what she values.',
+    websiteUrl: null,
+    variants: null,
+    selectedVariant: 0,
+  },
+  {
+    id: 'p2',
+    kind: 'post',
+    title: 'The back office is the product',
+    summary: 'A short post arguing the stablecoin trade is the reconciliation layer.',
+    body: 'Every mid-market CFO who moved a working-capital sleeve on-chain now runs a shadow back office of spreadsheets — attestation, yield sweep, multi-issuer redemption. That back office is the product.\n\nThe coins will not matter. The plumbing firms that make treasurers indifferent to which coin they hold will. Pricing power sits with whoever owns the reconciliation layer between issuers, custodians, and the ERP.\n\nCircle just validated the category by giving the top of the market away for free. The mid-market is still unclaimed. That is the trade.',
+    actionType: 'none',
+    action: null,
+    sourceUrl: null,
+    filedOn: '8 July',
+    todo: { id: 't-demo-2', text: 'Write the stablecoin post for the site' },
+    grounding: null,
+    commentary: null,
+    originalBody: null,
+    linkedinUrl: null,
+    dossier: null,
+    websiteUrl: null,
+    variants: null,
+    selectedVariant: 0,
+  },
+  {
+    id: 'p3',
+    kind: 'analysis',
+    title: 'Keyring fraud-loss cohorts — first read',
+    summary: 'The working file is ready for review before Thursday\u2019s pricing call.',
+    body: 'Commerce loss ratios hold under 40bps across the last three cohorts — the number Lily said would decide it. Games-heavy cohorts run hotter but are shrinking as a share of sponsorship volume.\n\nThe full workings, cohort tables, and the sensitivity on take-rate are in the working file.',
+    actionType: 'none',
+    action: null,
+    sourceUrl: 'https://docs.google.com/spreadsheets/d/keyring-cohorts',
+    filedOn: '8 July',
+    todo: { id: 't-demo-3', text: 'Review Keyring fraud-loss cohorts before the pricing call' },
+    grounding: null,
+    commentary: null,
+    originalBody: null,
+    linkedinUrl: null,
+    dossier: null,
+    websiteUrl: null,
+    variants: null,
+    selectedVariant: 0,
+  },
+] as const
 
 // ————————————————————————————————————————————— Lookups
 

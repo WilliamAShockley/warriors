@@ -8,17 +8,68 @@ datasource db {
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
-// Singleton reader preferences — the app is prepared for one reader.
+// A workspace: one person's entire desk. Every table below carries a
+// workspaceId; the pre-account era's data lives on in workspace "primary".
+model Workspace {
+  id           String   @id @default(cuid())
+  name         String   @default("The Desk")
+  // Optional bring-your-own-key: tasks in this workspace bill to this key;
+  // absent, the instance's ANTHROPIC_API_KEY carries them.
+  anthropicKey String?
+  // Capability token for the future inbound-email door.
+  inboundToken String   @unique @default(cuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// An invitation to the instance — instance-level, not per-workspace. The
+// operator manages these from Settings ("The Circulation List"); an email
+// on the list may sign in with Google and receive its own workspace.
+model Invite {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
+
+// A signed-in identity (Google sign-in). One user, one workspace.
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  workspaceId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Reader preferences, keyed by workspace (the pre-account row was "singleton",
+// adopted to "primary" on boot).
+// Dez's Context: standing notes the reader files by hand — how he thinks
+// about spaces, businesses, and what makes one interesting — referenced
+// before every cold email draft. Manual for now; other feeds may add to
+// it later.
+model ReaderContextNote {
+  workspaceId String   @default("primary")
+  id          String   @id @default(cuid())
+  text        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workspaceId, createdAt])
+}
+
 model ReaderSetting {
-  id        String   @id @default("singleton")
+  id        String   @id // workspace id
   name      String
+  // The context experiment: when on, cold founder drafts come as an A/B
+  // pair — with and without Dez's Context — decided in The Experiment.
+  contextExperiment Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-// Singleton Google OAuth token, mirroring apps/web's GmailToken pattern.
+// Google OAuth token for a workspace's connected account (id = workspace id).
 model GoogleToken {
-  id           String   @id @default("singleton")
+  id           String   @id // workspace id
   accessToken  String
   refreshToken String
   expiryDate   Float
@@ -28,7 +79,8 @@ model GoogleToken {
 }
 
 model CalendarEvent {
-  id          String        @id // Google event id; recurring instances are unique with singleEvents=true
+  workspaceId String        @default("primary")
+  id          String // Google event id; recurring instances are unique with singleEvents=true
   title       String
   start       DateTime
   end         DateTime
@@ -41,11 +93,13 @@ model CalendarEvent {
   updatedAt   DateTime      @updatedAt
   notes       MeetingNote[]
 
-  @@index([start])
+  @@id([workspaceId, id])
+  @@index([workspaceId, start])
 }
 
 model MeetingNote {
-  id                 String         @id // Granola note id (not_…)
+  workspaceId        String         @default("primary")
+  id                 String // Granola note id (not_…)
   title              String
   summary            String
   attendees          String? // JSON string [{name,email}]
@@ -55,14 +109,16 @@ model MeetingNote {
   raw                String? // full API payload
   granolaCreatedAt   DateTime?
   linkedEventId      String?
-  linkedEvent        CalendarEvent? @relation(fields: [linkedEventId], references: [id])
+  linkedEvent        CalendarEvent? @relation(fields: [workspaceId, linkedEventId], references: [workspaceId, id])
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
-  @@index([granolaCreatedAt])
+  @@id([workspaceId, id])
+  @@index([workspaceId, granolaCreatedAt])
 }
 
 model Todo {
+  workspaceId String    @default("primary")
   id        String    @id @default(cuid())
   text      String
   meta      String
@@ -70,13 +126,119 @@ model Todo {
   group     String
   status    String    @default("open") // open | cleared (today, undoable) | done (filed at end of day)
   clearedAt DateTime?
+  // Agent-assigned categorization — infrastructure only, never rendered in the UI.
+  tag       String?
+  taggedBy  String?
+  taggedAt  DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  @@index([status])
+  @@index([workspaceId, status])
+}
+
+// The Proofs: work drafted on the reader's behalf, awaiting signature.
+// Reviewed strictly one at a time; approval executes the attached action.
+model ReviewItem {
+  workspaceId String    @default("primary")
+  id              String    @id @default(cuid())
+  kind            String // email | post | analysis
+  title           String
+  summary         String? // one-line dek — who it's for, why it exists
+  body            String // the draft itself, plain text with \n\n paragraphs
+  actionType      String? // send_email | none — what approval executes
+  actionJson      String? // e.g. {"to","subject","threadId"} for send_email
+  sourceUrl       String? // link out when the working file lives elsewhere
+  linkedinUrl     String? // the recipient's LinkedIn — the channel when no email exists
+  todoId          String? // the Docket item that spawned it, if any
+  // Continual learning: the research context the draft was grounded in
+  // (for highlight-to-provenance), and the reader's commentary on the
+  // output (distilled into standing lessons for future drafts).
+  grounding       String?
+  commentary      String?
+  // Straight-through processing: the draft as originally staged (snapshotted
+  // on first amendment; null means never edited), whether it was amended,
+  // and — set at signing — whether it went through untouched.
+  originalBody    String?
+  amended         Boolean   @default(false)
+  straightThrough Boolean?
+  // The permanent staging record: the draft and its envelope exactly as
+  // first filed, never rewritten afterward — the Record diffs the signed
+  // version against these, whatever amendments or variant switches came
+  // between. (originalBody above serves the redline-as-feedback loop and
+  // re-baselines on variant selection; these never move.)
+  stagedBody      String?
+  stagedJson      String? // {"to","subject"} as first staged
+  // Straight-through checks, run at staging: [{id,label,pass,detail}].
+  // All-pass is the gate a future auto-send would stand behind.
+  stpJson         String?
+  // The recipient's company as the Register names it — lets the checks
+  // re-run whenever the draft on deck changes.
+  company         String?
+  // The context experiment: this proof carries two arms of the same email
+  // — drafted with and without Dez's Context — and the reader's verdict.
+  // {arms:[{label,subject,body}], chosen: 0|1|null, chosenAt} — arms are
+  // the drafts as staged, immutable; live edits ride on variantsJson.
+  experimentJson  String?
+  // Audience routing and drafting mode, set at staging: exemplar retrieval
+  // and the ledger segment on these so playbooks never cross-contaminate.
+  audience        String? // founder | investor | other
+  mode            String? // cold | follow_up
+  // The recipient dossier and their company's website, filed by the worker
+  // at staging — rendered at the foot of the review page.
+  dossier         String?
+  websiteUrl      String?
+  // Multi-draft proofs (podcast invitations and kin): 2-4 complete drafts
+  // staged together, recommended first. The reader sees all and puts one
+  // on deck; body/actionJson always mirror the selected draft.
+  variantsJson    String? // [{label, subject, body}]
+  selectedVariant Int       @default(0)
+  // The sent artifact, for reply tracking — only these exact threads are
+  // ever checked, never the mailbox at large.
+  sentMessageId   String?
+  sentThreadId    String?
+  replyStatus     String? // awaiting | replied
+  replyCheckedAt  DateTime?
+  // The delivery watch: after signing, the sent thread is watched for a
+  // bounce; on bounce the desk re-guesses the address and resends, up to
+  // five attempts in all. deliveryJson logs every attempt.
+  deliveryStatus  String? // watching | delivered | undeliverable
+  deliveryJson    String? // [{to, messageId, threadId, at, bounced}]
+  status          String    @default("pending") // pending | approved | spiked
+  queuedAt        DateTime  @default(now()) // queue order; Hold moves it to the back
+  reviewedAt      DateTime?
+  executionResult String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([workspaceId, status, queuedAt])
+}
+
+// A dated status update on a Docket item — "waiting on Breck to respond
+// on dates, then text Alanna" — a running log per to-do, shown under a
+// small disclosure on the Docket and read by the desk before drafting.
+model TodoUpdate {
+  workspaceId String    @default("primary")
+  id        String   @id @default(cuid())
+  todoId    String
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([workspaceId, todoId, createdAt])
+}
+
+// The mail door's ledger: every inbound email already turned into a task,
+// so sweeps and webhook retries never file the same message twice.
+model InboundEmail {
+  workspaceId String   @default("primary")
+  id          String // Gmail message id, or the vendor's message id
+  todoId      String?
+  createdAt   DateTime @default(now())
+
+  @@id([workspaceId, id])
 }
 
 model ApolloTask {
+  workspaceId String    @default("primary")
   id           String    @id @default(cuid())
   ask          String
   status       String    @default("received") // received | working | done | failed
@@ -92,12 +254,29 @@ model ApolloTask {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  @@index([createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+// A reader-editable Apollo skill. Two kinds share the table: overrides of
+// built-in skills (label null — the code default is authoritative until a
+// row exists) and skills the reader authored himself in Settings (label
+// set — whenToUse tells Apollo when to reach for it).
+model ApolloSkill {
+  workspaceId  String   @default("primary")
+  id           String // skill id, e.g. "founder-email" or "podcast-invite"
+  systemPrompt String
+  label        String? // set only on reader-authored skills
+  whenToUse    String? // reader-authored: when Apollo should invoke it
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@id([workspaceId, id])
 }
 
 // Continual learning, prompt-side: distilled from reader feedback,
 // injected into future Apollo system prompts.
 model ApolloLesson {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
   taskId    String
   lesson    String
@@ -106,28 +285,33 @@ model ApolloLesson {
 
 // One row per local date — the daily job upserts, so re-runs are idempotent.
 model BriefEdition {
-  date         String   @id // YYYY-MM-DD in APP_TIMEZONE
+  workspaceId  String   @default("primary")
+  date         String // YYYY-MM-DD in APP_TIMEZONE
   leadJson     String
   itemsJson    String
   scheduleJson String
   recallJson   String? // Worth Reciting cues drawn from yesterday's Margin
   generatedAt  DateTime @default(now())
+
+  @@id([workspaceId, date])
 }
 
 // Freeform thinking filed below the news wire; the desk replies inline.
 model MarginEntry {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
   text      String
   reply     String?
   createdAt DateTime @default(now())
 
-  @@index([createdAt])
+  @@index([workspaceId, createdAt])
 }
 
 // A reader-defined research theme, born from the intake interview.
 model ResearchThesis {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
-  slug      String   @unique
+  slug      String
   name      String
   chip      String
   stance    String
@@ -136,10 +320,13 @@ model ResearchThesis {
   status    String   @default("active") // active | retired
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, slug])
 }
 
 // A thought filed to The File (/notes). First line is the title.
 model FiledNote {
+  workspaceId String    @default("primary")
   id        String   @id @default(cuid())
   title     String
   body      String
@@ -148,7 +335,100 @@ model FiledNote {
   @@index([createdAt])
 }
 
+// Dated notes on a person in the Book — a running record per contact.
+// contactId is a loose reference (no FK): it serves reader-added contacts
+// and the seeded ones alike.
+model ContactNote {
+  workspaceId String    @default("primary")
+  id        String   @id @default(cuid())
+  contactId String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([workspaceId, contactId, createdAt])
+}
+
+// The Register: the context table. One entry per company the desk has
+// touched — who founded it, what it is, why it matters — accumulated from
+// worker research, reader edits, and a nightly enrichment pass. Read
+// before any research; written back after. Context as an asset, not
+// per-task exhaust.
+model CompanyContext {
+  workspaceId      String    @default("primary")
+  id               String    @id @default(cuid())
+  name             String
+  nameKey          String // normalized for lookup (lowercased, squeezed)
+  founderFirstName String?
+  founderFullName  String?
+  context          String? // the running brief: what it does, stage, the hook
+  websiteUrl       String?
+  founderEmail     String?
+  linkedinUrl      String?
+  lastEnrichedAt   DateTime?
+  enrichError      String? // why the last research run failed, shown on the card
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([workspaceId, nameKey])
+  @@index([workspaceId, lastEnrichedAt])
+}
+
+// The Bench: the provider bake-off. One row per company under test; the
+// four research engines each fill their cell, the reader crowns a winner.
+// Rows persist — the sheet is a ledger, so win rates accumulate meaning.
+model BenchRow {
+  workspaceId String   @default("primary")
+  id          String   @id @default(cuid())
+  kind        String   @default("company") // company | person — which sheet the row sits on
+  companyName String // person rows: the company affiliation (may be empty)
+  personName  String? // person rows only: the full name (any 2 of name/company/LinkedIn seats one)
+  linkedinUrl String? // person rows only: the LinkedIn identity anchor
+  founderHint String? // anchors snapshotted at filing, so results stay interpretable
+  websiteHint String?
+  contextHint String?
+  winner      String? // provider id the reader crowned
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workspaceId, createdAt])
+}
+
+// One provider's run against one row. Re-runs stack — the cell shows the
+// latest, the table keeps the history.
+model BenchTrial {
+  workspaceId   String    @default("primary")
+  id            String    @id @default(cuid())
+  rowId         String
+  provider      String // anthropic | openai | exa | parallel
+  status        String    @default("queued") // queued | running | done | failed
+  outputJson    String? // {founderFirstName, founderFullName, context, websiteUrl}
+  citationsJson String? // [{title, url}]
+  latencyMs     Int?
+  error         String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId, rowId, provider, createdAt])
+}
+
+// A reader-amended research charge for one Bench engine. No row = the
+// house default in code. Tokens ({company}, {founderFirst}, {founderFull},
+// {website}, {context}, {date}) fill in from the row at run time.
+model BenchCharge {
+  workspaceId String   @default("primary")
+  id          String // provider id: anthropic | openai | exa | parallel
+  charge      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@id([workspaceId, id])
+}
+
 model BookContact {
+  workspaceId String    @default("primary")
   id           String   @id @default(cuid())
   name         String
   role         String

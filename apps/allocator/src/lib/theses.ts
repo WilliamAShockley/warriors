@@ -53,7 +53,7 @@ export async function getDbThesis(slug: string): Promise<ThesisRecord | null> {
   if (!hasDb()) return null
   try {
     const db = await getDb()
-    const row = await db.researchThesis.findUnique({ where: { slug } })
+    const row = await db.researchThesis.findFirst({ where: { slug } })
     return row && row.status === 'active' ? toRecord(row) : null
   } catch {
     return null
@@ -71,7 +71,7 @@ export async function createThesis(input: {
   try {
     const db = await getDb()
     let slug = slugify(input.name)
-    if (await db.researchThesis.findUnique({ where: { slug } })) {
+    if (await db.researchThesis.findFirst({ where: { slug } })) {
       slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`
     }
     const row = await db.researchThesis.create({ data: { ...input, slug } })
@@ -85,7 +85,7 @@ export async function retireThesis(slug: string): Promise<boolean> {
   if (!hasDb()) return false
   try {
     const db = await getDb()
-    await db.researchThesis.update({ where: { slug }, data: { status: 'retired' } })
+    await db.researchThesis.updateMany({ where: { slug }, data: { status: 'retired' } })
     return true
   } catch {
     return false

@@ -1,8 +1,11 @@
 import Link from 'next/link'
 import { deals, thesisBySlug } from '@/lib/data'
 
+const hasDb = () => Boolean(process.env.DATABASE_URL)
+
 export default function ProspectsPage() {
-  const prospects = deals.filter((d) => d.status === 'prospect')
+  // Seeded pipeline is the zero-env demo's furniture only.
+  const prospects = hasDb() ? [] : deals.filter((d) => d.status === 'prospect')
 
   return (
     <main className="pt-14">
@@ -15,6 +18,10 @@ export default function ProspectsPage() {
       </header>
 
       <div className="rule-masthead mt-6" />
+
+      {prospects.length === 0 && (
+        <p className="dek pt-10 text-center">No names on file yet. Prospects gather here as the work surfaces them.</p>
+      )}
 
       <ul>
         {prospects.map((d) => {

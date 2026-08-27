@@ -1,15 +1,45 @@
-import { todos as seedTodos } from './data'
+import { todos as seedTodos, type TodoBucket } from './data'
+
+export type TodoUpdateRecord = {
+  id: string
+  text: string
+  filedOn: string
+}
 
 export type TodoRecord = {
   id: string
   text: string
   meta: string
   href: string | null
-  group: string
+  group: TodoBucket
   status: 'open' | 'cleared'
+  // The running log on the item — dated status updates, oldest first.
+  updates: TodoUpdateRecord[]
+  // A proof staged for this item sits in the tray — the Docket links to it.
+  onReview: boolean
 }
 
+const TZ = process.env.APP_TIMEZONE ?? 'America/New_York'
 const hasDb = () => Boolean(process.env.DATABASE_URL)
+
+// YYYY-MM-DD of a moment in the reader's timezone (en-CA formats as ISO).
+const localDay = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d)
+
+const updateDate = (d: Date) =>
+  new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: 'numeric', month: 'long' }).format(d)
+
+// The docket files itself: an item's bucket is how long it has sat there.
+// Filed today → Today; yesterday → Yesterday; two to seven days ago →
+// Last Week; anything older has earned the Parking Lot.
+export function bucketFor(createdAt: Date, now: Date = new Date()): TodoBucket {
+  const days = Math.round(
+    (Date.parse(localDay(now)) - Date.parse(localDay(createdAt))) / 86_400_000
+  )
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days <= 7) return 'Last Week'
+  return 'Parking Lot'
+}
 
 const seedRecords = (): TodoRecord[] =>
   seedTodos.map((t) => ({
@@ -19,6 +49,8 @@ const seedRecords = (): TodoRecord[] =>
     href: t.href ?? null,
     group: t.group,
     status: 'open' as const,
+    updates: [],
+    onReview: false,
   }))
 
 // Dynamic imports keep the zero-env mock path from ever touching Prisma.
@@ -41,7 +73,10 @@ export async function listTodos(): Promise<{ live: boolean; todos: TodoRecord[] 
   try {
     const db = await getDb()
 
-    if ((await db.todo.count()) === 0) {
+    // First-boot furniture for the operator's own desk only — a fresh
+    // invited workspace starts genuinely empty.
+    const { activeWorkspaceId, PRIMARY_WORKSPACE } = await import('./tenant')
+    if ((await activeWorkspaceId()) === PRIMARY_WORKSPACE && (await db.todo.count()) === 0) {
       await db.todo.createMany({
         data: seedTodos.map((t) => ({
           id: t.id,
@@ -58,10 +93,32 @@ export async function listTodos(): Promise<{ live: boolean; todos: TodoRecord[] 
       data: { status: 'done' },
     })
 
+    const now = new Date()
     const rows = await db.todo.findMany({
       where: { status: { in: ['open', 'cleared'] } },
       orderBy: { createdAt: 'asc' },
     })
+    // The running logs, one query for the whole docket.
+    const updateRows = rows.length
+      ? await db.todoUpdate.findMany({
+          where: { todoId: { in: rows.map((r) => r.id) } },
+          orderBy: { createdAt: 'asc' },
+        })
+      : []
+    // Which items have a proof waiting in the tray, one query likewise.
+    const pendingProofs = rows.length
+      ? await db.reviewItem.findMany({
+          where: { status: 'pending', todoId: { in: rows.map((r) => r.id) } },
+          select: { todoId: true },
+        })
+      : []
+    const onReviewIds = new Set(pendingProofs.map((p) => p.todoId))
+    const updatesByTodo = new Map<string, TodoUpdateRecord[]>()
+    for (const u of updateRows) {
+      const list = updatesByTodo.get(u.todoId) ?? []
+      list.push({ id: u.id, text: u.text, filedOn: updateDate(u.createdAt) })
+      updatesByTodo.set(u.todoId, list)
+    }
     return {
       live: true,
       todos: rows.map((r) => ({
@@ -69,8 +126,10 @@ export async function listTodos(): Promise<{ live: boolean; todos: TodoRecord[] 
         text: r.text,
         meta: r.meta,
         href: r.href,
-        group: r.group,
+        group: bucketFor(r.createdAt, now),
         status: r.status as 'open' | 'cleared',
+        updates: updatesByTodo.get(r.id) ?? [],
+        onReview: onReviewIds.has(r.id),
       })),
     }
   } catch {
@@ -97,25 +156,185 @@ export async function toggleTodo(id: string): Promise<boolean> {
   }
 }
 
+// File a dated status update on an item — the running log under the
+// disclosure ("waiting on Breck to respond on dates, then text Alanna").
+// Never re-runs the worker; an update is a note to self, not a commission.
+export async function addTodoUpdate(
+  todoId: string,
+  text: string
+): Promise<TodoUpdateRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const todo = await db.todo.findUnique({ where: { id: todoId } })
+    if (!todo || todo.status === 'done') return null
+    const row = await db.todoUpdate.create({ data: { todoId, text } })
+    return { id: row.id, text: row.text, filedOn: updateDate(row.createdAt) }
+  } catch {
+    return null
+  }
+}
+
+// Close an item out and file it to The File as a note. The note takes the
+// item's text as its title and the running log as its body; the item goes
+// straight to 'done' — filed elsewhere, it skips Cleared Today entirely.
+export async function moveTodoToNote(
+  id: string
+): Promise<import('./notes').NoteRecord | null> {
+  if (!hasDb()) return null
+  try {
+    const db = await getDb()
+    const todo = await db.todo.findUnique({ where: { id } })
+    if (!todo || todo.status === 'done') return null
+    const updates = await db.todoUpdate.findMany({
+      where: { todoId: id },
+      orderBy: { createdAt: 'asc' },
+    })
+    const body = updates.length
+      ? updates.map((u) => `${updateDate(u.createdAt)} — ${u.text}`).join('\n')
+      : todo.text
+    const { createNote } = await import('./notes')
+    const note = await createNote({ title: todo.text.slice(0, 200), body })
+    if (!note) return null
+    await db.todo.update({
+      where: { id },
+      data: { status: 'done', clearedAt: new Date() },
+    })
+    return note
+  } catch {
+    return null
+  }
+}
+
+// Amend an item's text in place. Deliberately does NOT re-run the docket
+// worker — an edit is a correction, not a new commission.
+export async function updateTodoText(id: string, text: string): Promise<boolean> {
+  if (!hasDb()) return false
+  try {
+    const db = await getDb()
+    const row = await db.todo.findUnique({ where: { id } })
+    if (!row || row.status === 'done') return false
+    await db.todo.update({ where: { id }, data: { text } })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function createTodo(input: {
   text: string
-  group: string
   meta?: string
 }): Promise<TodoRecord | null> {
   if (!hasDb()) return null
   try {
     const db = await getDb()
     const row = await db.todo.create({
-      data: { text: input.text, meta: input.meta ?? '', group: input.group },
+      // The stored group is vestigial — buckets are derived from createdAt.
+      data: { text: input.text, meta: input.meta ?? '', group: 'Today' },
     })
     return {
       id: row.id,
       text: row.text,
       meta: row.meta,
       href: row.href,
-      group: row.group,
+      group: 'Today',
       status: 'open',
+      updates: [],
+      onReview: false,
     }
+  } catch {
+    return null
+  }
+}
+
+// ————————————————————————————————— Agent tagging (infrastructure only)
+// Each item can be tagged/categorized by an agent. Deliberately absent
+// from the UI: the tags are for the desk's machinery, not the reader.
+// The tag is two-level where an action is called for — "email/outreach",
+// "email/follow_up", "draft/post" — and a plain topic otherwise.
+
+export const todoTopics = ['relationship', 'deal', 'research', 'operations', 'personal'] as const
+export type TodoAction = 'email' | 'post' | 'analysis' | 'none'
+export type TodoClassification = { action: TodoAction; tag: string }
+
+export async function tagTodo(id: string, tag: string, taggedBy = 'agent'): Promise<boolean> {
+  if (!hasDb()) return false
+  try {
+    const db = await getDb()
+    await db.todo.update({
+      where: { id },
+      data: { tag, taggedBy, taggedAt: new Date() },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Keyword fallback for keyless environments — enough to route the obvious.
+function classifyByKeywords(text: string): TodoClassification {
+  const t = text.toLowerCase()
+  if (/\b(e-?mail|reply to|respond to|write (to|back)|reach out|follow up with|ping|intro to|invite)\b/.test(t)) {
+    const flavor = /\b(reply|respond|follow up|write back|circle back)\b/.test(t) ? 'follow_up' : 'outreach'
+    return { action: 'email', tag: `email/${flavor}` }
+  }
+  if (/\b(post|blog|essay|newsletter)\b/.test(t)) return { action: 'post', tag: 'draft/post' }
+  if (/\b(analy[sz]e|analysis|model|deck|memo)\b/.test(t)) return { action: 'analysis', tag: 'analysis' }
+  return { action: 'none', tag: 'operations' }
+}
+
+// Read the item and decide two things: what kind of work it calls for
+// (an email — outreach or follow-up? a post? an analysis?) and its topic.
+export async function classifyTodo(text: string): Promise<TodoClassification> {
+  if (!process.env.ANTHROPIC_API_KEY) return classifyByKeywords(text)
+  try {
+    const { anthropic } = await import('./claude')
+    const { parseLLMJsonObject } = await import('./retry')
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 100,
+      messages: [
+        {
+          role: 'user',
+          content: `Classify this to-do from an alternative-asset investor's docket.
+
+To-do: "${text}"
+
+Respond with JSON only:
+{"action": "email" | "post" | "analysis" | "none", "flavor": "<for email only: outreach if it starts a conversation, follow_up if it continues one>", "topic": "${todoTopics.join('" | "')}"}
+
+"action" is the work product the item calls for: email (writing to someone), post (a blog post or public writing), analysis (a memo, model, or deck), none (anything else — calls, reading, errands).`,
+        },
+      ],
+    })
+    const raw = message.content[0]?.type === 'text' ? message.content[0].text : ''
+    const parsed = parseLLMJsonObject<{ action?: string; flavor?: string; topic?: string }>(raw, {})
+    const action: TodoAction = ['email', 'post', 'analysis'].includes(parsed.action ?? '')
+      ? (parsed.action as TodoAction)
+      : 'none'
+    const topic = (todoTopics as readonly string[]).includes(parsed.topic ?? '') ? parsed.topic! : 'operations'
+    const tag =
+      action === 'email'
+        ? `email/${parsed.flavor === 'follow_up' ? 'follow_up' : 'outreach'}`
+        : action === 'post'
+          ? 'draft/post'
+          : action === 'analysis'
+            ? 'analysis'
+            : topic
+    return { action, tag }
+  } catch {
+    return classifyByKeywords(text)
+  }
+}
+
+// Background categorization on filing. Failures are swallowed: tagging is
+// best-effort plumbing, and an untagged item is just an item.
+export async function autoTagTodo(id: string, text: string): Promise<TodoClassification | null> {
+  if (!hasDb()) return null
+  try {
+    const cls = await classifyTodo(text)
+    await tagTodo(id, cls.tag, 'desk-classifier')
+    return cls
   } catch {
     return null
   }
@@ -126,12 +345,13 @@ export async function openTodosPreview(limit = 6): Promise<{ text: string; group
   if (!hasDb()) return seedTodos.slice(0, limit).map((t) => ({ text: t.text, group: t.group }))
   try {
     const db = await getDb()
+    const now = new Date()
     const rows = await db.todo.findMany({
       where: { status: 'open' },
       orderBy: { createdAt: 'asc' },
       take: limit,
     })
-    return rows.map((r) => ({ text: r.text, group: r.group }))
+    return rows.map((r) => ({ text: r.text, group: bucketFor(r.createdAt, now) }))
   } catch {
     return []
   }

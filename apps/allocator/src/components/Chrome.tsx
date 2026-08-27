@@ -27,7 +27,7 @@ export default function Chrome() {
   return (
     <>
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-paper/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[430px] items-stretch px-6">
+        <div className="mx-auto flex max-w-[430px] items-stretch px-6 md:max-w-[680px] lg:max-w-[760px]">
           {tabs.map((tab) => (
             <Link
               key={tab.href}

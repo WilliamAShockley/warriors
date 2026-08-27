@@ -12,3 +12,9 @@ This is a pnpm monorepo. Workspaces are defined in `pnpm-workspace.yaml` and liv
 - Do not change `pnpm-workspace.yaml` or the root `package.json` workspace config without explicit approval.
 
 Adding a new app under `apps/<name>` is fine when the task calls for it. Extracting shared code into a new workspace (e.g. `packages/*`) requires explicit approval first — propose it, don't just do it.
+
+## apps/allocator
+
+The owner's product vision and system harness for the Allocator lives in
+`apps/allocator/VISION.md` — read it before structural or design work on
+that app, and keep it current as the product evolves.

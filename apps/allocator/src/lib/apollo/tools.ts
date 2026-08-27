@@ -1,8 +1,10 @@
-import { contacts as seedContacts, todoGroups, type Segment } from '../data'
+import { contacts as seedContacts, type Segment } from '../data'
 import { listTodos, createTodo } from '../todos'
 import { listDbContacts, createContact } from '../book'
 import { listDbTheses, getDbThesis } from '../theses'
 import { listMargin, createMargin } from '../margin'
+import { getReaderName } from '../settings'
+import { draftFounderEmail, proposeTimes } from './skills'
 import type { ApolloStep } from './store'
 
 const hasDb = () => Boolean(process.env.DATABASE_URL)
@@ -75,15 +77,14 @@ export const APOLLO_TOOL_DEFS = [
   {
     name: 'add_todo',
     description:
-      'File a to-do on the reader’s Docket. Call this when the task’s outcome includes a commitment the reader should act on. Keep text short and imperative; meta is an optional small-caps context line.',
+      'File a to-do on the reader’s Docket. Call this when the task’s outcome includes a commitment the reader should act on. Keep text short and imperative; meta is an optional small-caps context line. New items file under Today and age into later buckets on their own.',
     input_schema: {
       type: 'object' as const,
       properties: {
         text: { type: 'string' },
-        group: { type: 'string', enum: [...todoGroups] },
         meta: { type: 'string' },
       },
-      required: ['text', 'group'],
+      required: ['text'],
     },
   },
   {
@@ -112,6 +113,232 @@ export const APOLLO_TOOL_DEFS = [
       required: ['text'],
     },
   },
+  {
+    name: 'read_company_context',
+    description:
+      'Look up a company in the Register — the desk’s accumulated context table (founder, what it does, site, email, LinkedIn, when last refreshed). ALWAYS call this BEFORE researching a company on the web: a good entry answers most of what you need in one step and keeps facts consistent across tasks. An entry may be stale — trust it for identity (who the founder is, what the company is) and verify only what looks time-sensitive.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'The company name' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'research_company',
+    description:
+      'Run the deskâs research engines on a company â a deep multi-source pass (Parallel first when configured) that verifies who the founder is, what the company does, its site, and a best-guess address, files the findings to the Register itself, and returns a composed brief: the facts with source citations, plus DEZ’S CONTEXT â his standing Settings notes and the active theses that bear on this space. MANDATORY before drafting any COLD founder email: pass the brief into the drafting context and grounding, and the reader-view block into draft_founder_emailâs readerView. It does not count against your web-search budget; after it, search the web only for what it missed. Skip it for follow-ups (the thread is the context).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        company: { type: 'string', description: 'The company name' },
+        founderName: { type: 'string', description: 'The founder, if the task or Register names one' },
+        websiteUrl: { type: 'string', description: 'https://… identity anchor, if known' },
+        taskContext: {
+          type: 'string',
+          description: 'The to-do text plus any identity anchors — pins WHICH company this is',
+        },
+      },
+      required: ['company'],
+    },
+  },
+  {
+    name: 'save_company_context',
+    description:
+      'Write what you learned about a company back to the Register so the NEXT task starts from it. ALWAYS call this after researching a company (web or thread): pass the name, the founder’s first name (and full name if known), a tight 3-8 sentence context (what it does, stage/funding, the hook), and the website/email/LinkedIn when surfaced. Provided fields update the entry; absent fields keep their old values — never pass a guess to overwrite a fact.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string' },
+        founderFirstName: { type: 'string' },
+        founderFullName: { type: 'string' },
+        context: { type: 'string', description: '3-8 tight factual sentences' },
+        websiteUrl: { type: 'string', description: 'https://… homepage' },
+        founderEmail: { type: 'string' },
+        linkedinUrl: { type: 'string' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'search_email',
+    description:
+      'Search the reader’s connected Gmail account. Accepts Gmail search syntax (from:, to:, subject:, newer_than:7d, quoted phrases). Returns message metadata and snippets — use read_email for a full body.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string' },
+        maxResults: { type: 'number', description: 'Default 15, max 25' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_email',
+    description: 'Read one email in full from the reader’s Gmail, by message id from search_email.',
+    input_schema: {
+      type: 'object' as const,
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'send_email',
+    description:
+      'Send a plain-text email from the reader’s connected Gmail account. Use ONLY when the task explicitly asks for an email to be sent — never send unprompted, and never invent recipients. When the task is to DRAFT, use stage_proof instead. Pass threadId (from search_email) to reply within an existing conversation.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        to: { type: 'string' },
+        subject: { type: 'string' },
+        body: { type: 'string' },
+        threadId: { type: 'string' },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+  },
+  {
+    name: 'stage_proof',
+    description:
+      'Stage drafted work in The Proofs — the reader’s review tray — where it awaits his signature, one proof at a time. Use this for anything drafted on his behalf: an email (kind "email", requires to; approval actually sends it), a blog post ("post"), or an analysis ("analysis", pass sourceUrl if the working file lives elsewhere). When the body came from a drafting skill (draft_founder_email), pass its subject and body through UNTOUCHED — no polishing, no grammar fixes; the quirks are the voice. When the draft serves an item on the Docket, ALWAYS pass its todoId (from read_docket) — the proof is headed by its to-do, and signing it clears that to-do. Body is plain text with \\n\\n between paragraphs. Prefer staging over sending.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        kind: { type: 'string', enum: ['email', 'post', 'analysis'] },
+        title: { type: 'string' },
+        summary: { type: 'string', description: 'One-line dek — who it is for, why it exists' },
+        body: { type: 'string' },
+        todoId: { type: 'string', description: 'The Docket item this draft serves, from read_docket' },
+        to: { type: 'string', description: 'email kind only — the recipient' },
+        subject: { type: 'string', description: 'email kind only — defaults to title' },
+        threadId: { type: 'string', description: 'email kind only — reply within a thread' },
+        linkedinUrl: {
+          type: 'string',
+          description:
+            'email kind — the recipient\u2019s LinkedIn profile URL. ALWAYS pass it when research surfaced one; when NO plausible email address exists, stage with linkedinUrl and omit "to" — the reader sends it over LinkedIn himself.',
+        },
+        sourceUrl: { type: 'string' },
+        grounding: {
+          type: 'string',
+          description:
+            'The research/thread context the draft was based on — the same context handed to the drafting skill. ALWAYS pass it: the reader highlights lines in the proof and asks where they came from, and this is what answers him.',
+        },
+        audience: {
+          type: 'string',
+          enum: ['founder', 'investor', 'other'],
+          description:
+            'Who the email addresses, from the Book segment or your research: founder (founders/companies), investor (LPs), other. ALWAYS pass it for emails — the ledger and exemplar retrieval segment on it.',
+        },
+        mode: { type: 'string', enum: ['cold', 'follow_up'], description: 'email kind only' },
+        company: {
+          type: 'string',
+          description:
+            'email kind — the recipient’s company, exactly as the Register names it. ALWAYS pass it for founder outreach: the straight-through checks verify the draft against the Register entry.',
+        },
+        dossier: {
+          type: 'string',
+          description:
+            'A short dossier on the RECIPIENT, rendered at the foot of the review page: who they are, background, what the company does, stage/funding if known, and the hook for reaching out now. 4–8 tight lines, plain text with \\n\\n between them, every line grounded in your research. ALWAYS pass it for founder outreach.',
+        },
+        websiteUrl: {
+          type: 'string',
+          description:
+            'The recipient company’s homepage URL (https://…), when research surfaced it — the review page shows a screenshot of the site below the dossier.',
+        },
+        variants: {
+          type: 'array',
+          description:
+            'MULTI-DRAFT proofs (podcast invitations, and any task that produced several candidate drafts): 2-4 COMPLETE drafts, the RECOMMENDED one FIRST. The reader sees every option in the review room and puts one on deck. Each label names its angle (e.g. "mechanism-forward", "market timing"). When passing variants, body/subject must still carry the recommended draft — identical to variants[0].',
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string', description: 'The angle, a few words' },
+              subject: { type: 'string' },
+              body: { type: 'string' },
+            },
+            required: ['label', 'body'],
+          },
+        },
+      },
+      required: ['kind', 'title', 'body'],
+    },
+  },
+  {
+    name: 'draft_founder_email',
+    description:
+      'Draft a cold outbound or follow-up email to a founder, using the reader’s founder-email skill (its own drafting voice). Call this whenever a task asks you to write, draft, or send email to a founder. FIRST gather context (read_contact for relationship history and the open follow-up, read_meeting_notes for the last conversation, read_theses for the relevant view) and pass it in the `context` field — the skill invents nothing, so the email is only as grounded as the context you give it. Context is recipient and thread facts ONLY: never include the reader’s own identity, firm, or how this workspace describes him — the skill’s voice profile owns all of that. Reproduce the returned subject and body verbatim in your briefing.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        mode: { type: 'string', enum: ['cold', 'follow_up'], description: "'cold' for first contact, 'follow_up' when a thread or meeting already exists" },
+        founder: { type: 'string', description: 'The founder’s name' },
+        firm: { type: 'string', description: 'Their company' },
+        goal: { type: 'string', description: 'The single concrete thing this email should accomplish' },
+        context: {
+          type: 'string',
+          description:
+            'Everything you gathered from the workspace — relationship history, the last meeting, the research brief, the reason for reaching out. Every specific in the email must be grounded here.',
+        },
+        readerView: {
+          type: 'string',
+          description:
+            'The DEZ’S CONTEXT block from research_company, verbatim â his own view of this space. Pass it whenever research_company returned one: the skill uses it to sharpen the thesis line and the hook. Never mix it into context; it is the readerâs private thinking, not recipient fact.',
+        },
+      },
+      required: ['mode', 'founder', 'context'],
+    },
+  },
+  {
+    name: 'draft_with_skill',
+    description:
+      'Draft with one of the playbooks the reader AUTHORED HIMSELF (listed in your system prompt with their skillIds, when he has any). Call it whenever a task matches an authored playbook’s trigger — an authored playbook takes PRECEDENCE over draft_founder_email and over drafting in your own voice. Pass the skillId exactly as listed, plus everything you gathered: the skill invents nothing. Context carries recipient and thread facts ONLY — never the reader’s own identity or how this workspace describes him. Reproduce the returned subject and body verbatim (stage_proof, no polishing).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        skillId: { type: 'string', description: 'The authored skill’s id, exactly as listed in your system prompt' },
+        recipient: { type: 'string', description: 'Who this is for — name, and company if known' },
+        goal: { type: 'string', description: 'The single concrete thing this draft should accomplish' },
+        context: {
+          type: 'string',
+          description:
+            'Everything gathered from the workspace and research — recipient facts, thread history, the reason for reaching out. Every specific in the draft must be grounded here.',
+        },
+      },
+      required: ['skillId', 'context'],
+    },
+  },
+  {
+    name: 'podcast_context_line',
+    description:
+      'Generate the thesis-oriented context line for a PODCAST INVITATION, using the reader\u2019s line-generator skill. Call it whenever a to-do asks to invite someone onto the podcast, AFTER gathering context (read_company_context first, web research for what the Register lacks). Pass ALL gathered context — the skill strips press-release framing and finds the mechanism, the consensus being bet against, and the timing driver. It returns 2-3 labeled options plus a recommendation: take the recommended option and hand it to the drafting skill with the instruction to include VERBATIM the sentence: I think a ton of people would love to hear more about <the option>, and just in general how you\u2019re thinking about the business.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        company: { type: 'string' },
+        founder: { type: 'string', description: 'Name and profile if known (researcher vs operator calibrates the line)' },
+        context: {
+          type: 'string',
+          description: 'Everything gathered — the Register entry, research findings, announcement coverage. The line is only as sharp as this.',
+        },
+      },
+      required: ['company', 'context'],
+    },
+  },
+  {
+    name: 'propose_times',
+    description:
+      'Propose meeting times from the reader’s REAL calendar, using his scheduling skill (working hours, buffers, exact output format). Call this whenever a task or an email thread calls for offering availability — e.g. a follow-up where the other party agreed to meet or asked for times. Reproduce the returned windows VERBATIM. Never compose availability yourself; if this tool fails, say availability could not be checked rather than inventing times.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        meetingLength: { type: 'string', description: 'e.g. "30 minutes", "1 hour" — if known' },
+        otherPartyTimezone: { type: 'string', description: 'e.g. "Pacific" — if known from the thread' },
+        startDate: { type: 'string', description: 'Look from this date instead of tomorrow, if the task says so' },
+        notes: { type: 'string', description: 'Anything else that bears on scheduling' },
+      },
+    },
+  },
 ]
 
 export type ToolExecution = {
@@ -134,9 +361,11 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
       }
 
       case 'read_book': {
-        const { contacts: dbContacts } = await listDbContacts()
+        // The seeded cast is the zero-env demo's; a live Book is the
+        // reader's own people and no one else.
+        const { live, contacts: dbContacts } = await listDbContacts()
         const all = [
-          ...seedContacts.map((c) => ({ id: c.id, name: c.name, role: c.role, firm: c.firm, segment: c.segment, context: c.context })),
+          ...(live ? [] : seedContacts.map((c) => ({ id: c.id, name: c.name, role: c.role, firm: c.firm, segment: c.segment, context: c.context }))),
           ...dbContacts.map((c) => ({ id: c.id, name: c.name, role: c.role, firm: c.firm, segment: c.segment, context: c.context })),
         ]
         return {
@@ -147,19 +376,29 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
 
       case 'read_contact': {
         const q = String(input?.name_or_id ?? '').toLowerCase()
-        const seed = seedContacts.find(
-          (c) => c.id === q || c.name.toLowerCase().includes(q)
-        )
+        // The reader's dated notes on the person ride along with the card —
+        // they are the freshest read on the relationship.
+        const withNotes = async (record: object, id: string) => {
+          const { listContactNotes } = await import('../book')
+          const { notes } = await listContactNotes(id)
+          return JSON.stringify({
+            ...record,
+            readerNotes: notes.slice(0, 12).map((n) => ({ filedOn: n.filedOn, note: n.body })),
+          })
+        }
+        const seed = hasDb()
+          ? undefined
+          : seedContacts.find((c) => c.id === q || c.name.toLowerCase().includes(q))
         if (seed) {
           return {
-            output: JSON.stringify(seed),
+            output: await withNotes(seed, seed.id),
             step: { kind: 'tool', name: 'Read the Book', detail: seed.name },
           }
         }
         const { contacts: dbContacts } = await listDbContacts()
         const hit = dbContacts.find((c) => c.id === q || c.name.toLowerCase().includes(q))
         return hit
-          ? { output: JSON.stringify(hit), step: { kind: 'tool', name: 'Read the Book', detail: hit.name } }
+          ? { output: await withNotes(hit, hit.id), step: { kind: 'tool', name: 'Read the Book', detail: hit.name } }
           : { output: 'No contact matched.', step: { kind: 'tool', name: 'Read the Book', detail: `no match · ${clip(q, 40)}` } }
       }
 
@@ -231,10 +470,9 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
       }
 
       case 'add_todo': {
-        const group = (todoGroups as readonly string[]).includes(input?.group) ? input.group : 'This Week'
-        const todo = await createTodo({ text: String(input?.text ?? ''), group, meta: input?.meta ? String(input.meta) : `Filed by Apollo` })
+        const todo = await createTodo({ text: String(input?.text ?? ''), meta: input?.meta ? String(input.meta) : `Filed by Apollo` })
         return todo
-          ? { output: `Filed: ${todo.text} (${todo.group})`, step: { kind: 'write', name: 'Filed a to-do', detail: `${group} · ${clip(todo.text, 60)}` } }
+          ? { output: `Filed: ${todo.text} (${todo.group})`, step: { kind: 'write', name: 'Filed a to-do', detail: clip(todo.text, 60) } }
           : { output: 'Could not file the to-do (no database).', step: { kind: 'note', name: 'To-do not filed', detail: 'no database' }, isError: true }
       }
 
@@ -256,6 +494,299 @@ export async function executeApolloTool(name: string, input: any): Promise<ToolE
         return entry
           ? { output: 'Filed to the margin.', step: { kind: 'write', name: 'Filed a margin note', detail: clip(String(input?.text ?? ''), 60) } }
           : { output: 'Could not file the note.', step: { kind: 'note', name: 'Margin note not filed', detail: 'no database' }, isError: true }
+      }
+
+      case 'read_company_context': {
+        const { findCompany } = await import('../context')
+        const name = String(input?.name ?? '').trim()
+        const hit = await findCompany(name)
+        return hit
+          ? {
+              output: JSON.stringify(hit),
+              step: { kind: 'tool', name: 'Read the Register', detail: `${hit.name}${hit.enrichedOn ? ` · refreshed ${hit.enrichedOn}` : ''}` },
+            }
+          : {
+              output: 'No entry in the Register for that company — research it, then save_company_context what you learn.',
+              step: { kind: 'tool', name: 'Read the Register', detail: `no entry · ${clip(name, 40)}` },
+            }
+      }
+
+      case 'save_company_context': {
+        const { upsertCompany } = await import('../context')
+        const saved = await upsertCompany({
+          name: String(input?.name ?? ''),
+          founderFirstName: input?.founderFirstName ? String(input.founderFirstName) : undefined,
+          founderFullName: input?.founderFullName ? String(input.founderFullName) : undefined,
+          context: input?.context ? String(input.context) : undefined,
+          websiteUrl: input?.websiteUrl ? String(input.websiteUrl) : undefined,
+          founderEmail: input?.founderEmail ? String(input.founderEmail) : undefined,
+          linkedinUrl: input?.linkedinUrl ? String(input.linkedinUrl) : undefined,
+        })
+        return saved
+          ? { output: `Filed to the Register: ${saved.name}.`, step: { kind: 'write', name: 'Filed to the Register', detail: clip(saved.name, 50) } }
+          : { output: 'Could not file to the Register (no database, or no name).', step: { kind: 'note', name: 'Register not updated', detail: 'unavailable' }, isError: true }
+      }
+
+      case 'search_email': {
+        const { searchEmails } = await import('../gmail')
+        const q = String(input?.query ?? '')
+        const max = Math.min(Number(input?.maxResults) || 15, 25)
+        const hits = await searchEmails(q, max)
+        return {
+          output: hits.length ? JSON.stringify(hits) : 'No messages found (or Gmail is not connected).',
+          step: { kind: 'tool', name: 'Searched the mailbox', detail: `${hits.length} match · ${clip(q, 40)}` },
+        }
+      }
+
+      case 'read_email': {
+        const { readEmail } = await import('../gmail')
+        const msg = await readEmail(String(input?.id ?? ''))
+        return msg
+          ? {
+              output: JSON.stringify({ ...msg, body: clip(msg.body, 6000) }),
+              step: { kind: 'tool', name: 'Read an email', detail: clip(msg.subject, 60) },
+            }
+          : { output: 'Could not read that message (bad id, or Gmail not connected).', step: { kind: 'note', name: 'Email unread', detail: 'unavailable' }, isError: true }
+      }
+
+      case 'send_email': {
+        const { sendEmail } = await import('../gmail')
+        const to = String(input?.to ?? '').trim()
+        const subject = String(input?.subject ?? '').trim()
+        const body = String(input?.body ?? '').trim()
+        if (!to || !subject || !body) {
+          return { output: 'send_email needs to, subject, and body.', step: { kind: 'note', name: 'Email not sent', detail: 'missing fields' }, isError: true }
+        }
+        const sent = await sendEmail({ to, subject, bodyText: body, threadId: input?.threadId ? String(input.threadId) : null })
+        return sent
+          ? { output: `Sent to ${to} (message ${sent.id}).`, step: { kind: 'write', name: 'Sent an email', detail: `${clip(to, 40)} · ${clip(subject, 40)}` } }
+          : { output: 'Could not send (Gmail not connected, or the send failed).', step: { kind: 'note', name: 'Email not sent', detail: 'unavailable' }, isError: true }
+      }
+
+      case 'research_company': {
+        const company = String(input?.company ?? '').trim()
+        if (!company) {
+          return { output: 'research_company needs a company name.', step: { kind: 'note', name: 'Research not run', detail: 'no company' }, isError: true }
+        }
+        const { researchCompany, renderResearch } = await import('./company-research')
+        const result = await researchCompany({
+          company,
+          founderName: input?.founderName ? String(input.founderName) : undefined,
+          websiteUrl: input?.websiteUrl ? String(input.websiteUrl) : undefined,
+          taskContext: input?.taskContext ? String(input.taskContext).slice(0, 2000) : undefined,
+        })
+        if ('error' in result) {
+          return {
+            output: `${result.error}. Fall back to your own web searches for what the task needs.`,
+            step: { kind: 'note', name: 'Research engines unavailable', detail: clip(company, 40) },
+            isError: true,
+          }
+        }
+        return {
+          output: renderResearch(result),
+          step: {
+            kind: 'search',
+            name: 'Researched the company',
+            detail: `${clip(company, 36)} · ${result.provider}${result.readerView ? ' · reader view attached' : ''}`,
+          },
+        }
+      }
+
+      case 'stage_proof': {
+        const { createProof } = await import('../review')
+        const kind = ['email', 'post', 'analysis'].includes(input?.kind) ? input.kind : 'analysis'
+        const title = String(input?.title ?? '').trim()
+        const body = String(input?.body ?? '').trim()
+        if (!title || !body) {
+          return { output: 'stage_proof needs a title and a body.', step: { kind: 'note', name: 'Proof not staged', detail: 'missing fields' }, isError: true }
+        }
+        if (kind === 'email' && !String(input?.to ?? '').trim() && !String(input?.linkedinUrl ?? '').trim()) {
+          return { output: 'An email proof needs a recipient (to) or a linkedinUrl.', step: { kind: 'note', name: 'Proof not staged', detail: 'no recipient' }, isError: true }
+        }
+        // The context experiment rejoins here: when this exact body was
+        // drafted as an A/B pair, both arms ride the proof — the
+        // with-context draft on deck, the control beside it.
+        let experimentJson: string | undefined
+        let experimentVariants: { label: string; subject?: string; body: string }[] | undefined
+        if (kind === 'email') {
+          const { takeExperimentPair, newExperimentRecord } = await import('./experiment')
+          const arms = takeExperimentPair(body)
+          if (arms) {
+            experimentVariants = arms
+            experimentJson = JSON.stringify(newExperimentRecord(arms))
+          }
+        }
+        const proof = await createProof({
+          kind,
+          title: title.slice(0, 160),
+          summary: input?.summary ? String(input.summary).slice(0, 240) : undefined,
+          body,
+          actionType: kind === 'email' && String(input?.to ?? '').trim() ? 'send_email' : 'none',
+          actionJson:
+            kind === 'email' && String(input?.to ?? '').trim()
+              ? JSON.stringify({
+                  to: String(input.to).trim(),
+                  subject: String(input?.subject ?? title).slice(0, 200),
+                  ...(input?.threadId ? { threadId: String(input.threadId) } : {}),
+                })
+              : undefined,
+          sourceUrl: input?.sourceUrl ? String(input.sourceUrl) : undefined,
+          linkedinUrl: input?.linkedinUrl ? String(input.linkedinUrl).slice(0, 300) : undefined,
+          todoId: input?.todoId ? String(input.todoId) : undefined,
+          grounding: input?.grounding ? String(input.grounding).slice(0, 20_000) : undefined,
+          audience: ['founder', 'investor', 'other'].includes(input?.audience) ? input.audience : undefined,
+          mode: ['cold', 'follow_up'].includes(input?.mode) ? input.mode : undefined,
+          company: input?.company ? String(input.company).slice(0, 120) : undefined,
+          dossier: input?.dossier ? String(input.dossier).slice(0, 8000) : undefined,
+          websiteUrl: /^https?:\/\//.test(String(input?.websiteUrl ?? '').trim())
+            ? String(input.websiteUrl).trim().slice(0, 500)
+            : undefined,
+          variants:
+            experimentVariants ??
+            (Array.isArray(input?.variants)
+              ? input.variants
+                  .filter((v: any) => v && String(v.body ?? '').trim())
+                  .slice(0, 4)
+                  .map((v: any) => ({
+                    label: String(v.label ?? 'option').slice(0, 60),
+                    ...(v.subject ? { subject: String(v.subject).slice(0, 200) } : {}),
+                    body: String(v.body).slice(0, 20_000),
+                  }))
+              : undefined),
+          experimentJson,
+        })
+        return proof
+          ? { output: `Staged for review: ${proof.title} (${kind}). It awaits the reader's signature in The Proofs.`, step: { kind: 'write', name: 'Staged a proof', detail: `${kind} · ${clip(title, 50)}` } }
+          : { output: 'Could not stage the proof (no database).', step: { kind: 'note', name: 'Proof not staged', detail: 'no database' }, isError: true }
+      }
+
+      case 'draft_founder_email': {
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { output: 'Cannot draft: no ANTHROPIC_API_KEY configured.', step: { kind: 'note', name: 'Email not drafted', detail: 'no API key' }, isError: true }
+        }
+        const mode = input?.mode === 'cold' ? 'cold' : 'follow_up'
+        const founder = String(input?.founder ?? '').trim()
+        if (!founder) {
+          return { output: 'Cannot draft: no founder named.', step: { kind: 'note', name: 'Email not drafted', detail: 'no founder' }, isError: true }
+        }
+        const readerName = await getReaderName()
+        // Resolve Dez's Context here (the handed block, else the Settings
+        // shelf) so the experiment knows whether there is anything to test.
+        let readerView = input?.readerView ? String(input.readerView).trim() : ''
+        if (mode === 'cold' && !readerView) {
+          readerView = await import('../reader-context')
+            .then((m) => m.contextNotesBlock())
+            .catch(() => '')
+        }
+        const base = {
+          mode: mode as 'cold' | 'follow_up',
+          founder,
+          firm: input?.firm ? String(input.firm) : undefined,
+          goal: input?.goal ? String(input.goal) : undefined,
+          context: String(input?.context ?? ''),
+        }
+        const draft = await draftFounderEmail(
+          { ...base, readerView: readerView || undefined },
+          readerName
+        )
+
+        // The context experiment: a cold draft with context to test also
+        // drafts its control arm — same context, Dez's Context withheld —
+        // and the pair rejoins at staging. Apollo only ever sees arm A.
+        let experimented = false
+        if (mode === 'cold' && readerView) {
+          const { getContextExperiment } = await import('../settings')
+          if (await getContextExperiment()) {
+            try {
+              const control = await draftFounderEmail({ ...base, suppressReaderView: true }, readerName)
+              const { rememberExperimentPair, ARM_WITH, ARM_WITHOUT } = await import('./experiment')
+              rememberExperimentPair(
+                { label: ARM_WITH, subject: draft.subject, body: draft.body },
+                { label: ARM_WITHOUT, subject: control.subject, body: control.body }
+              )
+              experimented = true
+            } catch {
+              // The control arm is an experiment, not a dependency — the
+              // with-context draft stages alone if it fails.
+            }
+          }
+        }
+
+        return {
+          output: JSON.stringify(draft),
+          step: {
+            kind: 'write',
+            name: mode === 'cold' ? 'Drafted a cold email' : 'Drafted a follow-up',
+            detail: `${founder}${input?.firm ? ` · ${clip(String(input.firm), 30)}` : ''}${experimented ? ' · A/B pair' : ''}`,
+          },
+        }
+      }
+
+      case 'draft_with_skill': {
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { output: 'Cannot draft: no ANTHROPIC_API_KEY configured.', step: { kind: 'note', name: 'Draft not made', detail: 'no API key' }, isError: true }
+        }
+        const skillId = String(input?.skillId ?? '').trim()
+        if (!skillId) {
+          return { output: 'draft_with_skill needs a skillId.', step: { kind: 'note', name: 'Draft not made', detail: 'no skillId' }, isError: true }
+        }
+        const { draftWithSkill } = await import('./skills')
+        const readerName = await getReaderName()
+        const result = await draftWithSkill(
+          {
+            skillId,
+            recipient: input?.recipient ? String(input.recipient) : undefined,
+            goal: input?.goal ? String(input.goal) : undefined,
+            context: String(input?.context ?? ''),
+          },
+          readerName
+        )
+        if ('error' in result) {
+          return { output: result.error, step: { kind: 'note', name: 'Draft not made', detail: clip(skillId, 40) }, isError: true }
+        }
+        return {
+          output: JSON.stringify(result),
+          step: { kind: 'write', name: 'Drafted with an authored playbook', detail: clip(skillId, 50) },
+        }
+      }
+
+      case 'podcast_context_line': {
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { output: 'Cannot generate: no ANTHROPIC_API_KEY configured.', step: { kind: 'note', name: 'Line not generated', detail: 'no API key' }, isError: true }
+        }
+        const { generatePodcastLine } = await import('./skills')
+        const company = String(input?.company ?? '').trim()
+        if (!company) {
+          return { output: 'podcast_context_line needs a company.', step: { kind: 'note', name: 'Line not generated', detail: 'no company' }, isError: true }
+        }
+        const lines = await generatePodcastLine({
+          company,
+          founder: input?.founder ? String(input.founder) : undefined,
+          context: String(input?.context ?? ''),
+        })
+        return {
+          output: lines,
+          step: { kind: 'write', name: 'Generated the context line', detail: clip(company, 50) },
+        }
+      }
+
+      case 'propose_times': {
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { output: 'Cannot propose times: no ANTHROPIC_API_KEY configured.', step: { kind: 'note', name: 'Times not proposed', detail: 'no API key' }, isError: true }
+        }
+        const readerName = await getReaderName()
+        const result = await proposeTimes(
+          {
+            meetingLength: input?.meetingLength ? String(input.meetingLength) : undefined,
+            otherPartyTimezone: input?.otherPartyTimezone ? String(input.otherPartyTimezone) : undefined,
+            startDate: input?.startDate ? String(input.startDate) : undefined,
+            notes: input?.notes ? String(input.notes) : undefined,
+          },
+          readerName
+        )
+        return result.ok
+          ? { output: result.text, step: { kind: 'tool', name: 'Proposed times', detail: 'from the live calendar' } }
+          : { output: result.text, step: { kind: 'note', name: 'Times not proposed', detail: 'calendar unavailable' }, isError: true }
       }
 
       default:

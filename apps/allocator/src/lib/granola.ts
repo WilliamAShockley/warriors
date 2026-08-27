@@ -84,8 +84,9 @@ export async function syncGranola(): Promise<GranolaSyncResult> {
         raw: JSON.stringify(note),
         granolaCreatedAt: note.created_at ? new Date(note.created_at) : null,
       }
+      const { activeWorkspaceId } = await import('./tenant')
       await db.meetingNote.upsert({
-        where: { id: note.id },
+        where: { workspaceId_id: { workspaceId: await activeWorkspaceId(), id: note.id } },
         create: { id: note.id, ...data },
         update: data,
       })
@@ -120,7 +121,10 @@ export async function linkNotesToEvents(): Promise<number> {
       ) ?? events.find((ev) => attendeeOverlap(note.attendees, ev.attendees))
 
     if (match) {
-      await db.meetingNote.update({ where: { id: note.id }, data: { linkedEventId: match.id } })
+      await db.meetingNote.updateMany({
+        where: { id: note.id },
+        data: { linkedEventId: match.id },
+      })
       linked++
     }
   }

@@ -65,7 +65,9 @@ The "Warriors Local" OAuth client already has the calendar scope in use. Add the
 - `http://localhost:5821/api/auth/google/callback`
 - `https://<your-prod-domain>/api/auth/google/callback`
 
-Then visit `/api/auth/google` (once, from a logged-in session) and grant read-only calendar access. The token lives in the `GoogleToken` singleton row and refreshes itself.
+Also enable the **Gmail API** on the same project (APIs & Services → Library → Gmail API), and if the OAuth consent screen is in Testing mode, add the account you intend to connect as a test user.
+
+Then visit `/api/auth/google` (once, from a logged-in session — or from **The Colophon → The Account**) and grant access: read-only calendar, Gmail read, and Gmail send. The token lives in the `GoogleToken` singleton row and refreshes itself. One account powers both the Brief's schedule and the mail desk; reconnecting with a different account swaps everything over. Adding scopes (as the mail desk did) requires a reconnect.
 
 ### 4. The daily edition
 
