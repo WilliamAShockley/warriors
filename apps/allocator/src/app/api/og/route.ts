@@ -1,16 +1,23 @@
 import { NextResponse, after } from 'next/server'
 
-// OG's API. GET deals a sheet (?tab=url for the URL sheet, else the
-// name sheet). POST carries the verbs: seat-and-run a row, save the
-// column picks, strike a row. Trials execute post-response — a research
-// pass plus a skill draft never fits an HTTP wait — and the sheet's
-// polling watches the row land.
+// OG's API. GET deals a sheet (?tab=url for the URL sheet, else the name
+// sheet) plus the column workflows and the provider roster. POST carries
+// the verbs: seat-and-run a row, save the workflows, strike a row.
+// Trials execute post-response — routed research plus drafting never fits
+// an HTTP wait — and the sheet's polling watches the cells land.
 export const maxDuration = 300
 
 export async function GET(req: Request) {
-  const { listOg } = await import('@/lib/og')
+  const { listOg, getOgWorkflows, OG_COLUMNS, OG_PROVIDERS, OG_STAGE1_VARS, OG_STAGE2_VARS } = await import('@/lib/og')
   const tab = new URL(req.url).searchParams.get('tab') === 'url' ? 'url' : 'name'
-  return NextResponse.json(await listOg(tab))
+  const [sheet, workflows] = await Promise.all([listOg(tab), getOgWorkflows()])
+  return NextResponse.json({
+    ...sheet,
+    workflows,
+    columns: OG_COLUMNS,
+    providers: OG_PROVIDERS,
+    vars: { stage1: OG_STAGE1_VARS, stage2: OG_STAGE2_VARS },
+  })
 }
 
 export async function POST(req: Request) {
@@ -27,6 +34,11 @@ export async function POST(req: Request) {
     const ws = await activeWorkspaceId()
     after(() => runAsWorkspace(ws, () => og.runOgRow(id)))
     return NextResponse.json({ ok: true, id })
+  }
+
+  if (body?.workflows && typeof body.workflows === 'object') {
+    const ok = await og.setOgWorkflows(body.workflows)
+    return NextResponse.json(ok ? { ok } : { error: 'Could not save the workflows.' }, ok ? undefined : { status: 500 })
   }
 
   if (body?.strike) {
