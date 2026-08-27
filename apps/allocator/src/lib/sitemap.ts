@@ -92,7 +92,7 @@ function scanDir(dir: string, urlPath: string, name: string): RouteNode | null {
 /** Scan the app router directory and return the live route tree. */
 export function scanAppRoutes(): RouteNode | null {
   const appDir = path.join(process.cwd(), 'src', 'app')
-  return scanDir(appDir, '', 'Warriors')
+  return scanDir(appDir, '', 'The Allocator')
 }
 
 export function countRoutes(node: RouteNode): { pages: number; apis: number } {
