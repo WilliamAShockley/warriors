@@ -461,7 +461,8 @@ model OgRun {
   founderName  String?
   provider     String? // which research engine answered
   researchJson String? // CompanyResearch — the brief, sources, Dez's Context
-  draftJson    String? // {subject, body} as the skill returned it
+  contextJson  String? // OgContext — description, ceo, product, category
+  draftJson    String? // OgDraftParts — the CED components + assembly
   stpJson      String? // StpResult[] from the straight-through registry
   error        String?
   createdAt    DateTime @default(now())
