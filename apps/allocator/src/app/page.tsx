@@ -75,7 +75,10 @@ export default async function HomePage() {
         <ApolloDesk />
       </section>
 
-      <p className="pb-8">
+      <p className="flex gap-6 pb-8">
+        <Link href="/og" className="eyebrow text-faint underline decoration-hairline underline-offset-4">
+          OG — the cold-draft test bench
+        </Link>
         <Link href="/settings" className="eyebrow text-faint underline decoration-hairline underline-offset-4">
           Settings
         </Link>

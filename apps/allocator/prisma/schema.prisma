@@ -63,6 +63,9 @@ model ReaderSetting {
   // The context experiment: when on, cold founder drafts come as an A/B
   // pair — with and without Dez's Context — decided in The Experiment.
   contextExperiment Boolean @default(true)
+  // OG's column picks: JSON array of STP check ids shown as columns on
+  // the OG sheet. No row / null = the registry's first twelve.
+  ogColumnsJson String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -440,4 +443,29 @@ model BookContact {
   location     String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// ── OG — the cold-draft test bench ─────────────────────────────
+// One row per trial: a company (seated by name or by URL — separate
+// sheets, same machinery) researched by the bench's engines, drafted by
+// the founder-email skill, and held to the straight-through checks. The
+// full evidence (research, draft, checks) files on the row for
+// row-level diagnosis.
+model OgRun {
+  workspaceId  String   @default("primary")
+  id           String   @id @default(cuid())
+  tab          String   @default("name") // name | url — which sheet seated the row
+  input        String
+  status       String   @default("running") // running | done | failed
+  company      String?
+  founderName  String?
+  provider     String? // which research engine answered
+  researchJson String? // CompanyResearch — the brief, sources, Dez's Context
+  draftJson    String? // {subject, body} as the skill returned it
+  stpJson      String? // StpResult[] from the straight-through registry
+  error        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([workspaceId, tab, createdAt])
 }
