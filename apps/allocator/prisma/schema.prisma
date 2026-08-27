@@ -66,6 +66,10 @@ model ReaderSetting {
   // OG's column picks: JSON array of STP check ids shown as columns on
   // the OG sheet. No row / null = the registry's first twelve.
   ogColumnsJson String?
+  // OG's column workflows: JSON map of column key → {prompt, provider} —
+  // the reader-amended prompt and routing per column. No row / null = the
+  // house defaults in src/lib/og.ts.
+  ogWorkflowsJson String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -463,6 +467,7 @@ model OgRun {
   researchJson String? // CompanyResearch — the brief, sources, Dez's Context
   contextJson  String? // OgContext — description, ceo, product, category
   draftJson    String? // OgDraftParts — the CED components + assembly
+  cellsJson    String? // per-column outputs: {key: {output, error, provider, ms}}
   stpJson      String? // StpResult[] from the straight-through registry
   error        String?
   createdAt    DateTime @default(now())

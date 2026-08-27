@@ -2,60 +2,39 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-// OG — the cold-draft observation bench. Cells are the actual outputs of
-// each pipeline step for that row, in order: the research context first
-// (Company Description · CEO · Product · Category), then the cold email
-// draft in its component parts (CED-Greeting · CED-Fixed-Intro ·
-// CED-Var-1/2/3 · CED-Closing · CED-Ask). Read across a row to watch the
-// email get built; read down a column to judge one component variable.
+// OG — the cold-draft observation bench. Every column is its own small
+// workflow: a prompt (row variables fill in at run time) routed to a
+// provider. The cells show each workflow's actual output for that row;
+// the section beneath the sheet is where the reader edits the prompts
+// and the routing, column by column.
 
 type OgTab = 'name' | 'url'
 type StpResult = { id: string; label: string; pass: boolean; detail: string }
-type Context = { description: string; ceo: string | null; product: string; category: string }
-type DraftParts = {
-  greeting: string
-  fixedIntro: string
-  var1: string
-  var2: string
-  var3: string
-  closing: string
-  ask: string
-  subject: string
-  body: string
-}
+type Cell = { output?: string; error?: string; provider: string; ms?: number }
 type Row = {
   id: string
   input: string
   status: string
   company: string | null
-  context: Context | null
-  draft: DraftParts | null
-  research: { provider: string; brief: string; readerView: string; citations: { title?: string; url: string }[] } | null
+  cells: Record<string, Cell>
+  subject: string | null
+  body: string | null
   stp: StpResult[]
   error: string | null
 }
-type Sheet = { live: boolean; rows: Row[] }
+type ColumnDef = { key: string; label: string; stage: 1 | 2 }
+type Provider = { id: string; label: string }
+type Workflow = { prompt: string; provider: string }
+type Sheet = {
+  live: boolean
+  rows: Row[]
+  workflows: Record<string, Workflow>
+  columns: ColumnDef[]
+  providers: Provider[]
+  vars: { stage1: string[]; stage2: string[] }
+}
 
-const RUNNING_PHRASES = ['researching…', 'extracting the context…', 'drafting the variables…', 'assembling…']
-
-// The sheet's columns: each pulls one field off the row. Research context
-// first, then the CED components, in assembly order.
-type Col = { key: string; head: string; group: 'research' | 'ced'; pick: (r: Row) => string | null }
-const COLS: Col[] = [
-  { key: 'description', head: 'Company Description', group: 'research', pick: (r) => r.context?.description ?? null },
-  { key: 'ceo', head: 'CEO', group: 'research', pick: (r) => r.context?.ceo ?? null },
-  { key: 'product', head: 'Product', group: 'research', pick: (r) => r.context?.product ?? null },
-  { key: 'category', head: 'Category', group: 'research', pick: (r) => r.context?.category ?? null },
-  { key: 'greeting', head: 'CED-Greeting', group: 'ced', pick: (r) => r.draft?.greeting ?? null },
-  { key: 'fixedIntro', head: 'CED-Fixed-Intro', group: 'ced', pick: (r) => r.draft?.fixedIntro ?? null },
-  { key: 'var1', head: 'CED-Var-1', group: 'ced', pick: (r) => r.draft?.var1 ?? null },
-  { key: 'var2', head: 'CED-Var-2', group: 'ced', pick: (r) => r.draft?.var2 ?? null },
-  { key: 'var3', head: 'CED-Var-3', group: 'ced', pick: (r) => r.draft?.var3 ?? null },
-  { key: 'closing', head: 'CED-Closing', group: 'ced', pick: (r) => r.draft?.closing ?? null },
-  { key: 'ask', head: 'CED-Ask', group: 'ced', pick: (r) => r.draft?.ask ?? null },
-]
-const RESEARCH_SPAN = COLS.filter((c) => c.group === 'research').length
-const CED_SPAN = COLS.filter((c) => c.group === 'ced').length
+const RUNNING_PHRASES = ['running the research columns…', 'drafting the components…', 'assembling…']
 
 export default function Og() {
   const [tab, setTab] = useState<OgTab>('name')
@@ -99,9 +78,15 @@ function OgSheet({ tab }: { tab: OgTab }) {
   const [open, setOpen] = useState<string | null>(null)
   const [phrase, setPhrase] = useState(0)
 
+  // The workflow drafts: local edits, re-seeded from the server on save.
+  const [drafts, setDrafts] = useState<Record<string, Workflow> | null>(null)
+
   const load = useCallback(async () => {
     const res = await fetch(`/api/og?tab=${tab}`).then((r) => r.json()).catch(() => null)
-    if (res) setSheet(res)
+    if (res) {
+      setSheet(res)
+      setDrafts((prev) => prev ?? res.workflows)
+    }
   }, [tab])
 
   useEffect(() => {
@@ -142,6 +127,17 @@ function OgSheet({ tab }: { tab: OgTab }) {
     load()
   }
 
+  const saveWorkflows = async () => {
+    if (!drafts) return
+    const res = await fetch('/api/og', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ workflows: drafts }),
+    }).then((r) => r.json())
+    flash(res.ok ? 'Workflows saved — the next seated row runs them.' : res.error ?? 'Could not save.')
+    load()
+  }
+
   if (!sheet) return <p className="dek mt-6">Dealing the sheet…</p>
 
   return (
@@ -160,7 +156,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && seat()}
-          placeholder={tab === 'name' ? 'Company name — e.g. Bluerails' : 'Company URL — e.g. bluerails.com'}
+          placeholder={tab === 'name' ? 'Company name — e.g. Bluerails' : 'Company URL — e.g. castle.tech'}
           className="w-72 border border-hairline bg-transparent px-3 py-1.5 font-sans text-[13px] outline-none placeholder:text-faint focus:border-ink"
         />
         <button
@@ -175,17 +171,16 @@ function OgSheet({ tab }: { tab: OgTab }) {
       <div className="mt-4 overflow-x-auto md:w-[calc(100vw-96px)] md:ml-[calc(50%-50vw+48px)]">
         <table className="w-full min-w-[1480px] table-fixed">
           <thead>
-            {/* The two territories: research first, then the draft. */}
             <tr className="border-b border-hairline text-left">
               <th className="w-40 py-1.5 pr-4" />
               <th
-                colSpan={RESEARCH_SPAN}
+                colSpan={sheet.columns.filter((c) => c.stage === 1).length}
                 className="py-1.5 pr-4 font-sans text-[9px] font-medium uppercase tracking-[0.2em] text-faint"
               >
                 Research Context
               </th>
               <th
-                colSpan={CED_SPAN}
+                colSpan={sheet.columns.filter((c) => c.stage === 2).length}
                 className="border-l border-hairline py-1.5 pl-3 font-sans text-[9px] font-medium uppercase tracking-[0.2em] text-faint"
               >
                 Cold Email Draft
@@ -196,15 +191,15 @@ function OgSheet({ tab }: { tab: OgTab }) {
               <th className="py-2.5 pr-4 font-sans text-[10px] font-medium uppercase tracking-[0.14em]">
                 {tab === 'name' ? 'Company' : 'URL'}
               </th>
-              {COLS.map((c) => (
+              {sheet.columns.map((c, i) => (
                 <th
                   key={c.key}
                   className={
                     'py-2.5 pr-3 font-sans text-[10px] font-medium uppercase tracking-[0.1em] text-stone' +
-                    (c.key === 'greeting' ? ' border-l border-hairline pl-3' : '')
+                    (c.stage === 2 && sheet.columns[i - 1]?.stage === 1 ? ' border-l border-hairline pl-3' : '')
                   }
                 >
-                  {c.head}
+                  {c.label}
                 </th>
               ))}
               <th className="py-2.5" />
@@ -213,7 +208,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
           <tbody>
             {sheet.rows.length === 0 && (
               <tr>
-                <td colSpan={COLS.length + 2} className="dek py-6">
+                <td colSpan={sheet.columns.length + 2} className="dek py-6">
                   No trials yet — seat a {tab === 'name' ? 'company' : 'URL'} above.
                 </td>
               </tr>
@@ -222,6 +217,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
               <RowLine
                 key={row.id}
                 row={row}
+                columns={sheet.columns}
                 open={open === row.id}
                 phrase={RUNNING_PHRASES[phrase % RUNNING_PHRASES.length]}
                 onToggle={() => setOpen(open === row.id ? null : row.id)}
@@ -231,18 +227,84 @@ function OgSheet({ tab }: { tab: OgTab }) {
           </tbody>
         </table>
       </div>
+
+      {/* ── The Column Workflows — edit the prompt and the routing ── */}
+      <div className="rule mt-10 mb-6" />
+      <p className="eyebrow">The Column Workflows</p>
+      <p className="dek mt-1">
+        Each column is a prompt routed to a provider. Variables fill in from the row at run time —
+        research columns get {sheet.vars.stage1.join(' ')}; draft columns also get{' '}
+        {sheet.vars.stage2.filter((v) => !sheet.vars.stage1.includes(v)).join(' ')}. &ldquo;Fixed
+        text&rdquo; makes no call — the prompt itself, variables filled, is the cell.
+      </p>
+      {drafts && (
+        <>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {sheet.columns.map((c) => (
+              <div key={c.key} className="border border-hairline p-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="font-sans text-[11px] font-medium uppercase tracking-[0.12em]">{c.label}</p>
+                  <select
+                    value={drafts[c.key]?.provider ?? 'fixed'}
+                    onChange={(e) =>
+                      setDrafts((prev) => ({
+                        ...prev!,
+                        [c.key]: { ...prev![c.key], provider: e.target.value },
+                      }))
+                    }
+                    className="border border-hairline bg-transparent px-2 py-1 font-sans text-[11px] outline-none focus:border-ink"
+                  >
+                    {sheet.providers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <textarea
+                  value={drafts[c.key]?.prompt ?? ''}
+                  onChange={(e) =>
+                    setDrafts((prev) => ({
+                      ...prev!,
+                      [c.key]: { ...prev![c.key], prompt: e.target.value },
+                    }))
+                  }
+                  rows={c.stage === 2 ? 5 : 4}
+                  className="mt-2 w-full border border-hairline bg-transparent p-2 font-mono text-[11px] leading-relaxed outline-none focus:border-ink"
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              onClick={saveWorkflows}
+              className="border border-ink bg-ink px-4 py-1.5 font-sans text-[10px] font-medium uppercase tracking-[0.14em] text-paper"
+            >
+              Save the Workflows
+            </button>
+            <button
+              onClick={() => setDrafts(sheet.workflows)}
+              className="font-sans text-[11px] text-faint underline decoration-hairline underline-offset-4 hover:text-ink"
+            >
+              discard edits
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
 
 function RowLine({
   row,
+  columns,
   open,
   phrase,
   onToggle,
   onStrike,
 }: {
   row: Row
+  columns: ColumnDef[]
   open: boolean
   phrase: string
   onToggle: () => void
@@ -257,23 +319,33 @@ function RowLine({
         <td className="truncate py-3 pr-4 font-serif text-[15px]" title={row.input}>
           {row.input}
         </td>
-        {row.status !== 'done' ? (
-          <td colSpan={COLS.length} className="py-3 pr-3 font-sans text-[12px] text-faint">
-            {row.status === 'running' ? phrase : `failed — ${row.error ?? 'unknown'}`}
+        {row.status === 'running' && !Object.keys(row.cells).length ? (
+          <td colSpan={columns.length} className="py-3 pr-3 font-sans text-[12px] text-faint">
+            {phrase}
+          </td>
+        ) : row.status === 'failed' ? (
+          <td colSpan={columns.length} className="py-3 pr-3 font-sans text-[12px] text-faint">
+            failed — {row.error ?? 'unknown'}
           </td>
         ) : (
-          COLS.map((c) => {
-            const value = c.pick(row)
+          columns.map((c, i) => {
+            const cell = row.cells[c.key]
+            const border = c.stage === 2 && columns[i - 1]?.stage === 1 ? ' border-l border-hairline pl-3' : ''
             return (
               <td
                 key={c.key}
-                title={value ?? ''}
-                className={
-                  'py-3 pr-3 font-sans text-[11px] leading-snug text-stone' +
-                  (c.key === 'greeting' ? ' border-l border-hairline pl-3' : '')
-                }
+                title={cell?.error ?? cell?.output ?? ''}
+                className={'py-3 pr-3 font-sans text-[11px] leading-snug' + border}
               >
-                {value ? <span className="line-clamp-3">{value}</span> : <span className="text-faint">—</span>}
+                {cell?.error ? (
+                  <span className="line-clamp-3 text-faint">✗ {cell.error}</span>
+                ) : cell?.output ? (
+                  <span className="line-clamp-3 text-stone">{cell.output}</span>
+                ) : row.status === 'running' ? (
+                  <span className="text-faint">·</span>
+                ) : (
+                  <span className="text-faint">—</span>
+                )}
               </td>
             )
           })
@@ -292,7 +364,7 @@ function RowLine({
       </tr>
       {open && (
         <tr className="border-b border-hairline">
-          <td colSpan={COLS.length + 2} className="py-4">
+          <td colSpan={columns.length + 2} className="py-4">
             <Evidence row={row} />
           </td>
         </tr>
@@ -302,19 +374,17 @@ function RowLine({
 }
 
 // The evidence: the assembled email, the straight-through verdicts, and
-// the raw JSON of every step — research → context → parts → checks.
+// every cell's raw output, error, provider, and latency.
 function Evidence({ row }: { row: Row }) {
-  if (row.error) return <p className="dek">The trial failed: {row.error}</p>
+  if (row.status === 'failed') return <p className="dek">The trial failed: {row.error}</p>
   if (row.status !== 'done') return <p className="dek">Still running…</p>
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <div>
-        <p className="eyebrow mb-1">
-          The assembled email{row.research?.provider ? ` · researched by ${row.research.provider}` : ''}
-        </p>
-        {row.draft?.subject && <p className="font-sans text-[12px] font-medium">Subject: {row.draft.subject}</p>}
+        <p className="eyebrow mb-1">The assembled email</p>
+        {row.subject && <p className="font-sans text-[12px] font-medium">Subject: {row.subject}</p>}
         <pre className="mt-1 whitespace-pre-wrap border border-hairline p-3 font-sans text-[12px] leading-relaxed">
-          {row.draft?.body ?? '(no draft)'}
+          {row.body ?? '(no draft)'}
         </pre>
         <p className="eyebrow mb-1 mt-4">The straight-through checks</p>
         <ul className="space-y-1">
@@ -328,9 +398,9 @@ function Evidence({ row }: { row: Row }) {
         </ul>
       </div>
       <div>
-        <p className="eyebrow mb-1">The raw evidence (research → context → parts → checks)</p>
+        <p className="eyebrow mb-1">The cells, raw (output · provider · latency · error)</p>
         <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap border border-hairline p-3 font-mono text-[11px] leading-relaxed">
-          {JSON.stringify({ research: row.research, context: row.context, draft: row.draft, stp: row.stp }, null, 2)}
+          {JSON.stringify(row.cells, null, 2)}
         </pre>
       </div>
     </div>
