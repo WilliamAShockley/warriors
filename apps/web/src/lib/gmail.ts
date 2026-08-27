@@ -14,11 +14,12 @@ export function getOAuthClient() {
   )
 }
 
-export function getAuthUrl() {
+export function getAuthUrl(state: string) {
   const client = getOAuthClient()
   return client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
+    state,
     scope: [
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.send',

@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot, FileText, Lightbulb, Footprints, Map as MapIcon } from 'lucide-react'
+import { Target, BookOpen, Newspaper, Settings, Wand2, Star, LinkIcon, CheckSquare, Bot, FileText, Lightbulb, Footprints, Map as MapIcon, Table2 } from 'lucide-react'
 
 const sections = [
   {
@@ -186,6 +186,26 @@ export default function Home() {
             </div>
             <p className="text-sm text-[#888884] leading-snug">
               A living tree of every page in the app — updates itself as new sections get built
+            </p>
+          </button>
+        </div>
+
+        {/* OG — drafting diagnostic bench */}
+        <div className="max-w-3xl">
+          <button
+            onClick={() => router.push('/og')}
+            className="w-full text-left p-6 rounded-2xl border bg-white border-[#E8E7E3] hover:border-amber-300 hover:shadow-sm transition-all duration-150 group cursor-pointer relative overflow-hidden"
+          >
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                <Table2 size={16} className="text-amber-700" />
+              </div>
+              <span className="font-medium text-[#1A1A1A]">OG</span>
+              <span className="text-[10px] uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium">Bench</span>
+            </div>
+            <p className="text-sm text-[#888884] leading-snug">
+              Cold-draft test bench — drop in a company name or URL, every verifiable check becomes a column, expand any row for its JSON
             </p>
           </button>
         </div>

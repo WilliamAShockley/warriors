@@ -389,28 +389,26 @@ export async function runEntityResolution(
           await db.target.update({ where: { id: keepId }, data: updateData })
         }
 
-        // Reassign related records from merged to keeper
-        await Promise.all([
-          db.activity.updateMany({
+        // Atomic merge: reassign all child records and delete duplicate
+        await db.$transaction(async (tx) => {
+          await tx.activity.updateMany({
             where: { targetId: mergeId },
             data: { targetId: keepId },
-          }),
-          db.newsItem.updateMany({
+          })
+          await tx.newsItem.updateMany({
             where: { targetId: mergeId },
             data: { targetId: keepId },
-          }),
-          db.fundingRound.updateMany({
+          })
+          await tx.fundingRound.updateMany({
             where: { targetId: mergeId },
             data: { targetId: keepId },
-          }),
-          db.person.updateMany({
+          })
+          await tx.person.updateMany({
             where: { targetId: mergeId },
             data: { targetId: keepId },
-          }),
-        ])
-
-        // Delete the merged record
-        await db.target.delete({ where: { id: mergeId } })
+          })
+          await tx.target.delete({ where: { id: mergeId } })
+        })
         merged++
       } catch (err) {
         console.error(`Failed to merge ${match.sourceId} + ${match.matchId}:`, err)

@@ -12,6 +12,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    // Strip CR/LF so user-supplied values can't inject extra RFC 2822 headers.
+    const sanitizeHeader = (value: unknown) =>
+      String(value).replace(/[\r\n]+/g, ' ').trim()
+    const toAddress = sanitizeHeader(to)
+    const subjectLine = sanitizeHeader(subject)
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toAddress)) {
+      return NextResponse.json({ error: 'Invalid recipient email address' }, { status: 400 })
+    }
+
     // Get Gmail token
     const token = await db.gmailToken.findUnique({ where: { id: 'singleton' } })
     if (!token) {
@@ -50,8 +60,8 @@ export async function POST(req: Request) {
     const fromEmail = token.email
     const messageParts = [
       `From: ${fromEmail}`,
-      `To: ${to}`,
-      `Subject: ${subject}`,
+      `To: ${toAddress}`,
+      `Subject: ${subjectLine}`,
       `Content-Type: text/plain; charset=utf-8`,
       '',
       bodyText,
