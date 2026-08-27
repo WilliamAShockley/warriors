@@ -228,69 +228,171 @@ function OgSheet({ tab }: { tab: OgTab }) {
         </table>
       </div>
 
-      {/* ── The Column Workflows — edit the prompt and the routing ── */}
+      {/* ── The Column Workflows — one playful row per column: the name,
+             the prompt, the color-coded route. Airtable energy, contained
+             deliberately to this section alone. ── */}
       <div className="rule mt-10 mb-6" />
       <p className="eyebrow">The Column Workflows</p>
       <p className="dek mt-1">
-        Each column is a prompt routed to a provider. Variables fill in from the row at run time —
-        research columns get {sheet.vars.stage1.join(' ')}; draft columns also get{' '}
-        {sheet.vars.stage2.filter((v) => !sheet.vars.stage1.includes(v)).join(' ')}. &ldquo;Fixed
-        text&rdquo; makes no call — the prompt itself, variables filled, is the cell.
+        Every column is a prompt routed to a provider. Variables fill in from the row at run time;
+        &ldquo;Fixed text&rdquo; makes no call — the prompt itself, variables filled, is the cell.
       </p>
       {drafts && (
-        <>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="mt-5 md:w-[calc(100vw-96px)] md:ml-[calc(50%-50vw+48px)]">
+          <div className="space-y-3 font-sans">
             {sheet.columns.map((c) => (
-              <div key={c.key} className="border border-hairline p-3">
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="font-sans text-[11px] font-medium uppercase tracking-[0.12em]">{c.label}</p>
-                  <select
-                    value={drafts[c.key]?.provider ?? 'fixed'}
-                    onChange={(e) =>
-                      setDrafts((prev) => ({
-                        ...prev!,
-                        [c.key]: { ...prev![c.key], provider: e.target.value },
-                      }))
-                    }
-                    className="border border-hairline bg-transparent px-2 py-1 font-sans text-[11px] outline-none focus:border-ink"
-                  >
-                    {sheet.providers.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <textarea
-                  value={drafts[c.key]?.prompt ?? ''}
-                  onChange={(e) =>
-                    setDrafts((prev) => ({
-                      ...prev!,
-                      [c.key]: { ...prev![c.key], prompt: e.target.value },
-                    }))
-                  }
-                  rows={c.stage === 2 ? 5 : 4}
-                  className="mt-2 w-full border border-hairline bg-transparent p-2 font-mono text-[11px] leading-relaxed outline-none focus:border-ink"
-                />
-              </div>
+              <WorkflowRow
+                key={c.key}
+                col={c}
+                workflow={drafts[c.key] ?? { prompt: '', provider: 'fixed' }}
+                providers={sheet.providers}
+                vars={c.stage === 1 ? sheet.vars.stage1 : sheet.vars.stage2}
+                onChange={(w) => setDrafts((prev) => ({ ...prev!, [c.key]: w }))}
+              />
             ))}
           </div>
-          <div className="mt-4 flex items-center gap-3">
+          <div className="mt-5 flex items-center gap-4">
             <button
               onClick={saveWorkflows}
-              className="border border-ink bg-ink px-4 py-1.5 font-sans text-[10px] font-medium uppercase tracking-[0.14em] text-paper"
+              className="rounded-full bg-ink px-6 py-2.5 font-sans text-[12px] font-semibold text-paper shadow-sm transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-md"
             >
               Save the Workflows
             </button>
             <button
               onClick={() => setDrafts(sheet.workflows)}
-              className="font-sans text-[11px] text-faint underline decoration-hairline underline-offset-4 hover:text-ink"
+              className="font-sans text-[12px] text-faint underline decoration-hairline underline-offset-4 hover:text-ink"
             >
               discard edits
             </button>
           </div>
-        </>
+        </div>
       )}
+    </div>
+  )
+}
+
+// ── The workflow rows: the one corner of the app allowed to be playful ──
+
+const PROVIDER_STYLE: Record<string, { dot: string; bg: string; text: string }> = {
+  parallel: { dot: '#7C5CFC', bg: '#EFEAFE', text: '#4C34C4' },
+  exa: { dot: '#0EA5E9', bg: '#E0F2FE', text: '#075985' },
+  openai: { dot: '#10B981', bg: '#D1FAE5', text: '#065F46' },
+  anthropic: { dot: '#D99000', bg: '#FCF1D5', text: '#8A5B00' },
+  claude: { dot: '#D97757', bg: '#FBE9E2', text: '#A8442A' },
+  fixed: { dot: '#64748B', bg: '#EEF1F5', text: '#3F4A5A' },
+}
+const styleFor = (id: string) => PROVIDER_STYLE[id] ?? PROVIDER_STYLE.fixed
+
+const STAGE_CHIP: Record<1 | 2, { label: string; bg: string; text: string }> = {
+  1: { label: 'Research', bg: '#CCFBF1', text: '#0F766E' },
+  2: { label: 'Draft', bg: '#FCE7F3', text: '#BE185D' },
+}
+
+function WorkflowRow({
+  col,
+  workflow,
+  providers,
+  vars,
+  onChange,
+}: {
+  col: ColumnDef
+  workflow: Workflow
+  providers: Provider[]
+  vars: string[]
+  onChange: (w: Workflow) => void
+}) {
+  const stage = STAGE_CHIP[col.stage]
+  return (
+    <div className="grid items-start gap-4 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md md:grid-cols-[200px_minmax(0,1fr)_230px]">
+      {/* Left — the column this workflow feeds. */}
+      <div>
+        <p className="text-[14px] font-semibold text-ink">{col.label}</p>
+        <span
+          className="mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold"
+          style={{ backgroundColor: stage.bg, color: stage.text }}
+        >
+          {stage.label}
+        </span>
+        <div className="mt-2.5 flex flex-wrap gap-1">
+          {vars.map((v) => (
+            <span key={v} className="rounded-md bg-black/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-stone">
+              {v}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Middle — the prompt. */}
+      <textarea
+        value={workflow.prompt}
+        onChange={(e) => onChange({ ...workflow, prompt: e.target.value })}
+        rows={4}
+        className="w-full rounded-xl border border-black/10 bg-[#FCFBF9] p-3 font-mono text-[11.5px] leading-relaxed outline-none transition-colors focus:border-black/30 focus:bg-white"
+      />
+
+      {/* Right — the route. */}
+      <ProviderSelect
+        value={workflow.provider}
+        providers={providers}
+        onPick={(provider) => onChange({ ...workflow, provider })}
+      />
+    </div>
+  )
+}
+
+function ProviderSelect({
+  value,
+  providers,
+  onPick,
+}: {
+  value: string
+  providers: Provider[]
+  onPick: (id: string) => void
+}) {
+  const current = providers.find((p) => p.id === value)
+  const s = styleFor(value)
+  return (
+    <div>
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">Route to</p>
+      {/* The colored pill IS the control: a native select rides invisibly
+          on top, so picking works everywhere while the pill wears the
+          chosen provider's color. */}
+      <div
+        className="relative flex w-full items-center gap-2 rounded-full px-3.5 py-2 text-[12px] font-semibold shadow-sm transition-transform duration-150 hover:-translate-y-0.5"
+        style={{ backgroundColor: s.bg, color: s.text }}
+      >
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.dot }} />
+        <span className="truncate">{current?.label ?? value}</span>
+        <span className="ml-auto text-[10px] opacity-60">▾</span>
+        <select
+          value={value}
+          onChange={(e) => onPick(e.target.value)}
+          className="absolute inset-0 w-full cursor-pointer opacity-0"
+          aria-label="Route to"
+        >
+          {providers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {/* The palette, at a glance — every route's color. */}
+      <div className="mt-2 flex flex-wrap gap-1">
+        {providers.map((p) => {
+          const ps = styleFor(p.id)
+          const active = p.id === value
+          return (
+            <button
+              key={p.id}
+              onClick={() => onPick(p.id)}
+              title={p.label}
+              className="h-3.5 w-3.5 rounded-full transition-transform duration-150 hover:scale-125"
+              style={{ backgroundColor: ps.dot, opacity: active ? 1 : 0.35, outline: active ? `2px solid ${ps.dot}` : 'none', outlineOffset: 1 }}
+            />
+          )
+        })}
+      </div>
     </div>
   )
 }
