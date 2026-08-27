@@ -29,11 +29,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, id })
   }
 
-  if (Array.isArray(body?.columns)) {
-    const ok = await og.setOgColumns(body.columns.map(String))
-    return NextResponse.json(ok ? { ok } : { error: 'Could not save the columns.' }, ok ? undefined : { status: 500 })
-  }
-
   if (body?.strike) {
     await og.strikeOgRun(String(body.strike))
     return NextResponse.json({ ok: true })

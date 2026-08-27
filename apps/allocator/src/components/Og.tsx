@@ -2,53 +2,60 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-// OG — the cold-draft test bench. Two sheets on one machine: seat a
-// company by NAME or by URL, and the row runs the desk's real cold
-// pipeline (research → founder-email skill → straight-through checks).
-// Columns are the checks themselves; tap a row for the full evidence.
+// OG — the cold-draft observation bench. Cells are the actual outputs of
+// each pipeline step for that row, in order: the research context first
+// (Company Description · CEO · Product · Category), then the cold email
+// draft in its component parts (CED-Greeting · CED-Fixed-Intro ·
+// CED-Var-1/2/3 · CED-Closing · CED-Ask). Read across a row to watch the
+// email get built; read down a column to judge one component variable.
 
 type OgTab = 'name' | 'url'
 type StpResult = { id: string; label: string; pass: boolean; detail: string }
-type Column = { id: string; label: string }
+type Context = { description: string; ceo: string | null; product: string; category: string }
+type DraftParts = {
+  greeting: string
+  fixedIntro: string
+  var1: string
+  var2: string
+  var3: string
+  closing: string
+  ask: string
+  subject: string
+  body: string
+}
 type Row = {
   id: string
   input: string
   status: string
   company: string | null
-  founderName: string | null
-  provider: string | null
-  research: {
-    provider: string
-    brief: string
-    readerView: string
-    citations: { title?: string; url: string }[]
-    guessedEmail: string | null
-    websiteUrl: string | null
-  } | null
-  draft: { subject: string; body: string } | null
+  context: Context | null
+  draft: DraftParts | null
+  research: { provider: string; brief: string; readerView: string; citations: { title?: string; url: string }[] } | null
   stp: StpResult[]
   error: string | null
 }
-type Sheet = { live: boolean; columns: Column[]; available: Column[]; rows: Row[] }
+type Sheet = { live: boolean; rows: Row[] }
 
-const RUNNING_PHRASES = ['researching…', 'drafting…', 'running the checks…']
+const RUNNING_PHRASES = ['researching…', 'extracting the context…', 'drafting the variables…', 'assembling…']
 
-// Column-width headers for the sheet; the full label rides on the tooltip.
-const SHORT_LABELS: Record<string, string> = {
-  'founder-name': 'founder',
-  'subject-format': 'subject',
-  'greeting-format': 'greeting',
-  signoff: 'signoff',
-  'cold-structure': 'structure',
-  'intro-length': 'intro',
-  'ask-question': 'ask',
-  'banned-phrases': 'phrases',
-  punctuation: 'punct',
-  'no-minutes': 'minutes',
-  'no-placeholders': 'blanks',
-  'no-explicit-out': 'no out',
-}
-const shortLabel = (c: Column) => SHORT_LABELS[c.id] ?? c.label.split(' ')[0]
+// The sheet's columns: each pulls one field off the row. Research context
+// first, then the CED components, in assembly order.
+type Col = { key: string; head: string; group: 'research' | 'ced'; pick: (r: Row) => string | null }
+const COLS: Col[] = [
+  { key: 'description', head: 'Company Description', group: 'research', pick: (r) => r.context?.description ?? null },
+  { key: 'ceo', head: 'CEO', group: 'research', pick: (r) => r.context?.ceo ?? null },
+  { key: 'product', head: 'Product', group: 'research', pick: (r) => r.context?.product ?? null },
+  { key: 'category', head: 'Category', group: 'research', pick: (r) => r.context?.category ?? null },
+  { key: 'greeting', head: 'CED-Greeting', group: 'ced', pick: (r) => r.draft?.greeting ?? null },
+  { key: 'fixedIntro', head: 'CED-Fixed-Intro', group: 'ced', pick: (r) => r.draft?.fixedIntro ?? null },
+  { key: 'var1', head: 'CED-Var-1', group: 'ced', pick: (r) => r.draft?.var1 ?? null },
+  { key: 'var2', head: 'CED-Var-2', group: 'ced', pick: (r) => r.draft?.var2 ?? null },
+  { key: 'var3', head: 'CED-Var-3', group: 'ced', pick: (r) => r.draft?.var3 ?? null },
+  { key: 'closing', head: 'CED-Closing', group: 'ced', pick: (r) => r.draft?.closing ?? null },
+  { key: 'ask', head: 'CED-Ask', group: 'ced', pick: (r) => r.draft?.ask ?? null },
+]
+const RESEARCH_SPAN = COLS.filter((c) => c.group === 'research').length
+const CED_SPAN = COLS.filter((c) => c.group === 'ced').length
 
 export default function Og() {
   const [tab, setTab] = useState<OgTab>('name')
@@ -90,7 +97,6 @@ function OgSheet({ tab }: { tab: OgTab }) {
   const [input, setInput] = useState('')
   const [note, setNote] = useState('')
   const [open, setOpen] = useState<string | null>(null)
-  const [editing, setEditing] = useState(false)
   const [phrase, setPhrase] = useState(0)
 
   const load = useCallback(async () => {
@@ -136,18 +142,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
     load()
   }
 
-  const saveColumns = async (ids: string[]) => {
-    await fetch('/api/og', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ columns: ids }),
-    })
-    load()
-  }
-
   if (!sheet) return <p className="dek mt-6">Dealing the sheet…</p>
-
-  const check = (row: Row, id: string): StpResult | undefined => row.stp.find((s) => s.id === id)
 
   return (
     <div className="mt-6">
@@ -174,64 +169,42 @@ function OgSheet({ tab }: { tab: OgTab }) {
         >
           Seat &amp; Run
         </button>
-        <button
-          onClick={() => setEditing((v) => !v)}
-          className="ml-auto border border-hairline px-3 py-1.5 font-sans text-[10px] font-medium uppercase tracking-[0.14em] text-faint hover:border-ink hover:text-ink"
-        >
-          {editing ? 'Done' : 'Columns'}
-        </button>
       </div>
 
-      {/* The column editor: every column is one straight-through check. */}
-      {editing && (
-        <div className="mt-4 border border-hairline p-3">
-          <p className="eyebrow mb-2">Columns — each one is a check from the straight-through registry</p>
-          <div className="flex flex-wrap gap-1.5">
-            {sheet.columns.map((c) => (
-              <span key={c.id} className="inline-flex items-center gap-1.5 border border-hairline px-2 py-0.5 font-sans text-[11px]">
-                {c.label}
-                <button
-                  onClick={() => saveColumns(sheet.columns.filter((x) => x.id !== c.id).map((x) => x.id))}
-                  className="text-faint hover:text-ink"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-          {sheet.available.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {sheet.available.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => saveColumns([...sheet.columns.map((x) => x.id), c.id])}
-                  className="border border-dashed border-hairline px-2 py-0.5 font-sans text-[11px] text-faint hover:border-ink hover:text-ink"
-                >
-                  + {c.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* The sheet — full-bleed like the Bench: the trials deserve the
-          whole broadsheet, not the reading column. */}
+      {/* The sheet — full-bleed: the trials deserve the whole broadsheet. */}
       <div className="mt-4 overflow-x-auto md:w-[calc(100vw-96px)] md:ml-[calc(50%-50vw+48px)]">
-        <table className="w-full min-w-[880px]">
+        <table className="w-full min-w-[1480px] table-fixed">
           <thead>
+            {/* The two territories: research first, then the draft. */}
+            <tr className="border-b border-hairline text-left">
+              <th className="w-40 py-1.5 pr-4" />
+              <th
+                colSpan={RESEARCH_SPAN}
+                className="py-1.5 pr-4 font-sans text-[9px] font-medium uppercase tracking-[0.2em] text-faint"
+              >
+                Research Context
+              </th>
+              <th
+                colSpan={CED_SPAN}
+                className="border-l border-hairline py-1.5 pl-3 font-sans text-[9px] font-medium uppercase tracking-[0.2em] text-faint"
+              >
+                Cold Email Draft
+              </th>
+              <th className="w-12 py-1.5" />
+            </tr>
             <tr className="border-b border-ink text-left">
               <th className="py-2.5 pr-4 font-sans text-[10px] font-medium uppercase tracking-[0.14em]">
                 {tab === 'name' ? 'Company' : 'URL'}
               </th>
-              <th className="py-2.5 pr-4 font-sans text-[10px] font-medium uppercase tracking-[0.14em]">Founder</th>
-              {sheet.columns.map((c) => (
+              {COLS.map((c) => (
                 <th
-                  key={c.id}
-                  title={c.label}
-                  className="px-2 py-2.5 text-center font-sans text-[10px] font-medium uppercase tracking-[0.1em] text-faint"
+                  key={c.key}
+                  className={
+                    'py-2.5 pr-3 font-sans text-[10px] font-medium uppercase tracking-[0.1em] text-stone' +
+                    (c.key === 'greeting' ? ' border-l border-hairline pl-3' : '')
+                  }
                 >
-                  {shortLabel(c)}
+                  {c.head}
                 </th>
               ))}
               <th className="py-2.5" />
@@ -240,7 +213,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
           <tbody>
             {sheet.rows.length === 0 && (
               <tr>
-                <td colSpan={sheet.columns.length + 3} className="dek py-6">
+                <td colSpan={COLS.length + 2} className="dek py-6">
                   No trials yet — seat a {tab === 'name' ? 'company' : 'URL'} above.
                 </td>
               </tr>
@@ -249,12 +222,10 @@ function OgSheet({ tab }: { tab: OgTab }) {
               <RowLine
                 key={row.id}
                 row={row}
-                columns={sheet.columns}
                 open={open === row.id}
                 phrase={RUNNING_PHRASES[phrase % RUNNING_PHRASES.length]}
                 onToggle={() => setOpen(open === row.id ? null : row.id)}
                 onStrike={() => strike(row.id)}
-                check={check}
               />
             ))}
           </tbody>
@@ -266,55 +237,47 @@ function OgSheet({ tab }: { tab: OgTab }) {
 
 function RowLine({
   row,
-  columns,
   open,
   phrase,
   onToggle,
   onStrike,
-  check,
 }: {
   row: Row
-  columns: Column[]
   open: boolean
   phrase: string
   onToggle: () => void
   onStrike: () => void
-  check: (row: Row, id: string) => StpResult | undefined
 }) {
   return (
     <>
       <tr
         onClick={onToggle}
-        className="cursor-pointer border-b border-hairline transition-colors duration-300 ease-editorial hover:bg-black/[0.02]"
+        className="cursor-pointer border-b border-hairline align-top transition-colors duration-300 ease-editorial hover:bg-black/[0.02]"
       >
-        <td className="max-w-64 truncate py-3 pr-4 font-serif text-[16px]" title={row.input}>
+        <td className="truncate py-3 pr-4 font-serif text-[15px]" title={row.input}>
           {row.input}
         </td>
-        <td className="py-3 pr-4 font-sans text-[13px] text-stone">
-          {row.status === 'running' ? (
-            <span className="text-faint">{phrase}</span>
-          ) : row.status === 'failed' ? (
-            <span className="text-faint">failed</span>
-          ) : (
-            row.founderName ?? '—'
-          )}
-        </td>
-        {columns.map((c) => {
-          const r = check(row, c.id)
-          return (
-            <td key={c.id} className="px-2 py-3 text-center font-sans text-[14px]" title={r?.detail ?? c.label}>
-              {row.status !== 'done' ? (
-                <span className="text-faint">·</span>
-              ) : !r ? (
-                <span className="text-faint">—</span>
-              ) : r.pass ? (
-                <span>✓</span>
-              ) : (
-                <span className="font-semibold">✗</span>
-              )}
-            </td>
-          )
-        })}
+        {row.status !== 'done' ? (
+          <td colSpan={COLS.length} className="py-3 pr-3 font-sans text-[12px] text-faint">
+            {row.status === 'running' ? phrase : `failed — ${row.error ?? 'unknown'}`}
+          </td>
+        ) : (
+          COLS.map((c) => {
+            const value = c.pick(row)
+            return (
+              <td
+                key={c.key}
+                title={value ?? ''}
+                className={
+                  'py-3 pr-3 font-sans text-[11px] leading-snug text-stone' +
+                  (c.key === 'greeting' ? ' border-l border-hairline pl-3' : '')
+                }
+              >
+                {value ? <span className="line-clamp-3">{value}</span> : <span className="text-faint">—</span>}
+              </td>
+            )
+          })
+        )}
         <td className="py-3 text-right">
           <button
             onClick={(e) => {
@@ -329,7 +292,7 @@ function RowLine({
       </tr>
       {open && (
         <tr className="border-b border-hairline">
-          <td colSpan={columns.length + 3} className="py-4">
+          <td colSpan={COLS.length + 2} className="py-4">
             <Evidence row={row} />
           </td>
         </tr>
@@ -338,27 +301,22 @@ function RowLine({
   )
 }
 
-// The evidence: everything the row produced, laid bare for diagnosis —
-// the draft as returned, every check's verdict in plain English, and the
-// raw research JSON the draft was grounded in.
+// The evidence: the assembled email, the straight-through verdicts, and
+// the raw JSON of every step — research → context → parts → checks.
 function Evidence({ row }: { row: Row }) {
-  if (row.error) {
-    return <p className="dek">The trial failed: {row.error}</p>
-  }
-  if (row.status !== 'done') {
-    return <p className="dek">Still running…</p>
-  }
+  if (row.error) return <p className="dek">The trial failed: {row.error}</p>
+  if (row.status !== 'done') return <p className="dek">Still running…</p>
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <div>
-        <p className="eyebrow mb-1">The draft{row.provider ? ` · researched by ${row.provider}` : ''}</p>
-        {row.draft?.subject && (
-          <p className="font-sans text-[12px] font-medium">Subject: {row.draft.subject}</p>
-        )}
+        <p className="eyebrow mb-1">
+          The assembled email{row.research?.provider ? ` · researched by ${row.research.provider}` : ''}
+        </p>
+        {row.draft?.subject && <p className="font-sans text-[12px] font-medium">Subject: {row.draft.subject}</p>}
         <pre className="mt-1 whitespace-pre-wrap border border-hairline p-3 font-sans text-[12px] leading-relaxed">
           {row.draft?.body ?? '(no draft)'}
         </pre>
-        <p className="eyebrow mb-1 mt-4">The checks</p>
+        <p className="eyebrow mb-1 mt-4">The straight-through checks</p>
         <ul className="space-y-1">
           {row.stp.map((s) => (
             <li key={s.id} className="font-sans text-[12px]">
@@ -370,9 +328,9 @@ function Evidence({ row }: { row: Row }) {
         </ul>
       </div>
       <div>
-        <p className="eyebrow mb-1">The raw evidence (research → draft → checks)</p>
+        <p className="eyebrow mb-1">The raw evidence (research → context → parts → checks)</p>
         <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap border border-hairline p-3 font-mono text-[11px] leading-relaxed">
-          {JSON.stringify({ research: row.research, draft: row.draft, stp: row.stp }, null, 2)}
+          {JSON.stringify({ research: row.research, context: row.context, draft: row.draft, stp: row.stp }, null, 2)}
         </pre>
       </div>
     </div>
