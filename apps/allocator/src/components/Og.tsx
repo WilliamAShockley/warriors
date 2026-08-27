@@ -215,25 +215,26 @@ function OgSheet({ tab }: { tab: OgTab }) {
         </div>
       )}
 
-      {/* The sheet. */}
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[720px]">
+      {/* The sheet — full-bleed like the Bench: the trials deserve the
+          whole broadsheet, not the reading column. */}
+      <div className="mt-4 overflow-x-auto md:w-[calc(100vw-96px)] md:ml-[calc(50%-50vw+48px)]">
+        <table className="w-full min-w-[880px]">
           <thead>
             <tr className="border-b border-ink text-left">
-              <th className="py-2 pr-3 font-sans text-[10px] font-medium uppercase tracking-[0.14em]">
+              <th className="py-2.5 pr-4 font-sans text-[10px] font-medium uppercase tracking-[0.14em]">
                 {tab === 'name' ? 'Company' : 'URL'}
               </th>
-              <th className="py-2 pr-3 font-sans text-[10px] font-medium uppercase tracking-[0.14em]">Founder</th>
+              <th className="py-2.5 pr-4 font-sans text-[10px] font-medium uppercase tracking-[0.14em]">Founder</th>
               {sheet.columns.map((c) => (
                 <th
                   key={c.id}
                   title={c.label}
-                  className="px-1 py-2 text-center font-sans text-[9px] font-medium uppercase tracking-[0.08em] text-faint"
+                  className="px-2 py-2.5 text-center font-sans text-[10px] font-medium uppercase tracking-[0.1em] text-faint"
                 >
                   {shortLabel(c)}
                 </th>
               ))}
-              <th className="py-2" />
+              <th className="py-2.5" />
             </tr>
           </thead>
           <tbody>
@@ -286,10 +287,10 @@ function RowLine({
         onClick={onToggle}
         className="cursor-pointer border-b border-hairline transition-colors duration-300 ease-editorial hover:bg-black/[0.02]"
       >
-        <td className="max-w-48 truncate py-2.5 pr-3 font-serif text-[15px]" title={row.input}>
+        <td className="max-w-64 truncate py-3 pr-4 font-serif text-[16px]" title={row.input}>
           {row.input}
         </td>
-        <td className="py-2.5 pr-3 font-sans text-[12px] text-stone">
+        <td className="py-3 pr-4 font-sans text-[13px] text-stone">
           {row.status === 'running' ? (
             <span className="text-faint">{phrase}</span>
           ) : row.status === 'failed' ? (
@@ -301,7 +302,7 @@ function RowLine({
         {columns.map((c) => {
           const r = check(row, c.id)
           return (
-            <td key={c.id} className="px-1 py-2.5 text-center font-sans text-[13px]" title={r?.detail ?? c.label}>
+            <td key={c.id} className="px-2 py-3 text-center font-sans text-[14px]" title={r?.detail ?? c.label}>
               {row.status !== 'done' ? (
                 <span className="text-faint">·</span>
               ) : !r ? (
@@ -314,7 +315,7 @@ function RowLine({
             </td>
           )
         })}
-        <td className="py-2.5 text-right">
+        <td className="py-3 text-right">
           <button
             onClick={(e) => {
               e.stopPropagation()
