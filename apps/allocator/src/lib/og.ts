@@ -79,22 +79,34 @@ export const OG_STAGE2_VARS = [
 
 const DEZ_VOICE_LINE = `Write ONE sentence in Dez's exact cold-email voice: warm, direct, opinionated, contractions, comma splices welcome, spaced hyphens " - " never em dashes, "+" as a connector, nothing corporate. Reply with ONLY the sentence.`
 
+// Company names collide — the research charge learned this the hard way.
+// Every default research prompt carries the anchor rule.
+const ANCHOR_LINE = `IMPORTANT: several unrelated companies may share this name. The seat is "{input}" (website anchor, when given: {website}) — every result you use must be about THAT company; discard anything about a same-name company at a different domain, however prominent. If you cannot tell which company this is, say "AMBIGUOUS" and name the candidates.`
+
 export const DEFAULT_OG_WORKFLOWS: OgWorkflows = {
   description: {
     provider: 'parallel',
-    prompt: `You are a VC analyst sourcing for your boss. Research this company: {input}. In at most 2 sentences, describe succinctly what the company does. Reply with ONLY those sentences — no preamble.`,
+    prompt: `You are a VC analyst sourcing for your boss. Research this company: {input}. In at most 2 sentences, describe succinctly what the company does. Reply with ONLY those sentences — no preamble.
+
+${ANCHOR_LINE}`,
   },
   ceo: {
     provider: 'parallel',
-    prompt: `You are a VC analyst sourcing for your boss. Who is the CEO of this company: {input}? Reply with ONLY the CEO's full name. If no CEO is publicly established, reply with the founder most likely to be CEO. If you cannot establish anyone, reply exactly: Unknown`,
+    prompt: `You are a VC analyst sourcing for your boss. Who is the CEO of this company: {input}? Reply with ONLY the CEO's full name — no title, no sentence, no explanation. If no CEO is publicly established, reply with ONLY the name of the founder most likely to be CEO. If you cannot establish anyone, reply exactly: Unknown
+
+${ANCHOR_LINE}`,
   },
   product: {
     provider: 'parallel',
-    prompt: `You are a VC analyst sourcing for your boss. What is the product of this company: {input}? Describe their product in ONE sentence, maximum. Reply with ONLY that sentence.`,
+    prompt: `You are a VC analyst sourcing for your boss. What is the product of this company: {input}? Describe their product in ONE sentence, maximum. Reply with ONLY that sentence.
+
+${ANCHOR_LINE}`,
   },
   category: {
     provider: 'parallel',
-    prompt: `You are a VC analyst sourcing for your boss. Research this company: {input}. File it into exactly one category: "Digital Assets" (crypto, stablecoins, tokenization, on-chain infrastructure), "Vertical AI" (AI applied to a specific industry workflow), or "Other". Reply with ONLY the category name.`,
+    prompt: `You are a VC analyst sourcing for your boss. Research this company: {input}. File it into exactly one category: "Digital Assets" (crypto, stablecoins, tokenization, on-chain infrastructure), "Vertical AI" (AI applied to a specific industry workflow), or "Other". Reply with ONLY the category name.
+
+${ANCHOR_LINE}`,
   },
   greeting: {
     provider: 'fixed',
@@ -274,7 +286,8 @@ async function askOpenAI(prompt: string): Promise<string> {
 }
 
 async function askAnthropicSearch(prompt: string): Promise<string> {
-  const stream = anthropic.messages.stream({
+  // The workspace-aware client resolves lazily; its stream() is async.
+  const stream = await (anthropic.messages.stream as unknown as (a: unknown) => Promise<any>)({
     model: SEARCH_MODEL,
     max_tokens: 4000,
     tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 } as any],
@@ -303,7 +316,7 @@ async function askClaude(prompt: string): Promise<string> {
   return text.trim()
 }
 
-async function askProvider(provider: OgProviderId, prompt: string): Promise<string> {
+export async function askProvider(provider: OgProviderId, prompt: string): Promise<string> {
   switch (provider) {
     case 'parallel':
       return deadline(askParallel(prompt), 'the Parallel run')
@@ -456,8 +469,10 @@ export async function runOgRow(id: string): Promise<void> {
     })
 
     // Stage 2 — the CED components, with stage 1's outputs as variables.
+    // A usable CEO answer is a bare name. A paragraph-shaped answer stays
+    // visible in its cell for triage, but never corrupts the greeting.
     const ceo = cells.ceo?.output?.trim() ?? ''
-    const ceoKnown = ceo && !/^unknown\b/i.test(ceo)
+    const ceoKnown = Boolean(ceo) && !/^unknown\b/i.test(ceo) && ceo.length <= 60 && !ceo.includes('\n')
     const dezContext = await import('./reader-context')
       .then((m) => m.contextNotesBlock())
       .catch(() => '')
