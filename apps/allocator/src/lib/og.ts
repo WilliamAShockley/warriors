@@ -13,8 +13,10 @@
 //     Closing · Ask. Variables: stage 1's plus {description} {ceo}
 //     {ceoFirst} {product} {category} {dezContext}.
 // The email then assembles in code (subject too), the straight-through
-// checks run over it, and every cell's output, error, provider, and
-// latency file on the row for triage.
+// checks run over it, and every cell files the full exchange on the row
+// for triage: the request sent to the provider, the response that came
+// back (Parallel's confidence and run id included), plus the output,
+// error, provider, and latency.
 
 import { anthropic } from './claude'
 import { runStpChecks, type StpResult } from './stp'
@@ -197,7 +199,32 @@ export async function setOgWorkflows(workflows: OgWorkflows): Promise<boolean> {
   }
 }
 
-// ── The provider router: one prompt in, one text answer out ───────
+// ── The provider router: one prompt in, one answer + exchange out ─
+
+// Every call comes back with its full exchange for the log: the exact
+// request that went out, the response body that came back, and — from
+// Parallel — the run id and the confidence its basis files on the
+// answer. It all lands on the cell, so a wrong answer is auditable.
+export type ProviderAnswer = {
+  text: string
+  request?: Record<string, unknown> // what was sent (absent for fixed text)
+  response?: unknown // the provider's response body, as received
+  confidence?: string // Parallel's confidence on the answer: low | medium | high
+  runId?: string // Parallel's run id — the run is auditable in their dashboard
+}
+
+// The response bodies can run long (search results, citations); cap what
+// files on the cell so a row stays a readable record, not a dump.
+const RESPONSE_LOG_CAP = 20_000
+const forLog = (v: unknown): unknown => {
+  try {
+    const s = JSON.stringify(v)
+    if (!s || s.length <= RESPONSE_LOG_CAP) return v
+    return { truncated: `the response ran ${s.length} chars; the head is kept`, head: s.slice(0, RESPONSE_LOG_CAP) }
+  } catch {
+    return String(v).slice(0, RESPONSE_LOG_CAP)
+  }
+}
 
 const deadline = <T>(p: Promise<T>, label: string): Promise<T> =>
   Promise.race([
@@ -207,70 +234,82 @@ const deadline = <T>(p: Promise<T>, label: string): Promise<T> =>
     ),
   ])
 
-async function askParallel(prompt: string): Promise<string> {
+// Errors mid-run still carry the run id when one was dealt, so even a
+// failed cell points back at the Parallel run that failed it.
+const withRunId = (message: string, runId?: string): Error =>
+  Object.assign(new Error(message), runId ? { runId } : {})
+
+async function askParallel(prompt: string): Promise<ProviderAnswer> {
   const key = process.env.PARALLEL_API_KEY
   if (!key) throw new Error('no PARALLEL_API_KEY filed')
   const headers = { 'Content-Type': 'application/json', 'x-api-key': key }
   const BASE = 'https://api.parallel.ai/v1/tasks/runs'
-  const created = await fetch(BASE, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      input: prompt,
-      processor: process.env.OG_PARALLEL_PROCESSOR || 'core-fast',
-      task_spec: {
-        output_schema: { type: 'text', description: 'Answer the request plainly and directly.' },
-      },
-    }),
-  })
+  const processor = process.env.OG_PARALLEL_PROCESSOR || 'core-fast'
+  const requestBody = {
+    input: prompt,
+    processor,
+    task_spec: {
+      output_schema: { type: 'text', description: 'Answer the request plainly and directly.' },
+    },
+  }
+  const created = await fetch(BASE, { method: 'POST', headers, body: JSON.stringify(requestBody) })
   if (!created.ok) throw new Error(`Parallel answered ${created.status}: ${(await created.text()).slice(0, 200)}`)
   const runId = ((await created.json()) as any)?.run_id
   if (!runId) throw new Error('Parallel accepted the task but returned no run id')
   const started = Date.now()
   while (true) {
-    if (Date.now() - started > COLUMN_TIMEOUT_MS) throw new Error('the Parallel run timed out')
+    if (Date.now() - started > COLUMN_TIMEOUT_MS) throw withRunId('the Parallel run timed out', runId)
     const res = await fetch(`${BASE}/${runId}`, { headers })
-    if (!res.ok) throw new Error(`Parallel answered ${res.status}`)
+    if (!res.ok) throw withRunId(`Parallel answered ${res.status}`, runId)
     const status = String(((await res.json()) as any)?.status ?? '')
     if (status === 'completed') break
-    if (status === 'failed' || status === 'cancelled') throw new Error(`the Parallel run ${status}`)
+    if (status === 'failed' || status === 'cancelled') throw withRunId(`the Parallel run ${status}`, runId)
     await new Promise((r) => setTimeout(r, 4000))
   }
   const resultRes = await fetch(`${BASE}/${runId}/result`, { headers })
-  if (!resultRes.ok) throw new Error(`Parallel answered ${resultRes.status}`)
+  if (!resultRes.ok) throw withRunId(`Parallel answered ${resultRes.status}`, runId)
   const result: any = await resultRes.json()
   const content = result?.output?.content ?? result?.output ?? result
   const text = typeof content === 'string' ? content : String(content?.content ?? JSON.stringify(content))
-  if (!text.trim()) throw new Error('Parallel returned no text')
-  return text.trim()
+  if (!text.trim()) throw withRunId('Parallel returned no text', runId)
+  // The basis is Parallel's own audit trail: per-field citations,
+  // reasoning, and a confidence rating. File the confidence on the cell.
+  const basis = result?.output?.basis
+  const confidence = Array.isArray(basis)
+    ? basis.map((b: any) => b?.confidence).find((c: unknown) => typeof c === 'string' && c)
+    : undefined
+  return { text: text.trim(), request: requestBody, response: result, confidence, runId }
 }
 
-async function askExa(prompt: string): Promise<string> {
+async function askExa(prompt: string): Promise<ProviderAnswer> {
   const key = process.env.EXA_API_KEY
   if (!key) throw new Error('no EXA_API_KEY filed')
+  const requestBody = { query: prompt, text: true }
   const res = await fetch('https://api.exa.ai/answer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-    body: JSON.stringify({ query: prompt, text: true }),
+    body: JSON.stringify(requestBody),
   })
   if (!res.ok) throw new Error(`Exa answered ${res.status}: ${(await res.text()).slice(0, 200)}`)
-  const text = String(((await res.json()) as any)?.answer ?? '')
+  const data: any = await res.json()
+  const text = String(data?.answer ?? '')
   if (!text.trim()) throw new Error('Exa returned no answer text')
-  return text.trim()
+  return { text: text.trim(), request: requestBody, response: data }
 }
 
-async function askOpenAI(prompt: string): Promise<string> {
+async function askOpenAI(prompt: string): Promise<ProviderAnswer> {
   const key = process.env.OPENAI_API_KEY
   if (!key) throw new Error('no OPENAI_API_KEY filed')
+  const requestBody = {
+    model: process.env.BENCH_OPENAI_MODEL || 'gpt-5.5',
+    input: prompt,
+    tools: [{ type: 'web_search' }],
+    max_output_tokens: 16000,
+  }
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: process.env.BENCH_OPENAI_MODEL || 'gpt-5.5',
-      input: prompt,
-      tools: [{ type: 'web_search' }],
-      max_output_tokens: 16000,
-    }),
+    body: JSON.stringify(requestBody),
   })
   if (!res.ok) throw new Error(`OpenAI answered ${res.status}: ${(await res.text()).slice(0, 200)}`)
   const data: any = await res.json()
@@ -282,41 +321,43 @@ async function askOpenAI(prompt: string): Promise<string> {
     }
   }
   if (!text.trim()) throw new Error(`OpenAI returned no text (status: ${data?.status ?? 'unknown'})`)
-  return text.trim()
+  return { text: text.trim(), request: requestBody, response: data }
 }
 
-async function askAnthropicSearch(prompt: string): Promise<string> {
-  // The workspace-aware client resolves lazily; its stream() is async.
-  const stream = await (anthropic.messages.stream as unknown as (a: unknown) => Promise<any>)({
+async function askAnthropicSearch(prompt: string): Promise<ProviderAnswer> {
+  const requestBody = {
     model: SEARCH_MODEL,
     max_tokens: 4000,
     tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 } as any],
     messages: [{ role: 'user', content: prompt }],
-  } as any)
+  }
+  // The workspace-aware client resolves lazily; its stream() is async.
+  const stream = await (anthropic.messages.stream as unknown as (a: unknown) => Promise<any>)(requestBody as any)
   const msg: any = await stream.finalMessage()
   const text = (msg.content as any[])
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
     .join('\n')
   if (!text.trim()) throw new Error('the Anthropic search returned no text')
-  return text.trim()
+  return { text: text.trim(), request: requestBody, response: msg.content }
 }
 
-async function askClaude(prompt: string): Promise<string> {
-  const msg: any = await anthropic.messages.create({
+async function askClaude(prompt: string): Promise<ProviderAnswer> {
+  const requestBody = {
     model: OG_MODEL,
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
-  } as any)
+  }
+  const msg: any = await anthropic.messages.create(requestBody as any)
   const text = (msg.content as any[])
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
     .join('\n')
   if (!text.trim()) throw new Error('Claude returned no text')
-  return text.trim()
+  return { text: text.trim(), request: requestBody, response: msg.content }
 }
 
-export async function askProvider(provider: OgProviderId, prompt: string): Promise<string> {
+export async function askProvider(provider: OgProviderId, prompt: string): Promise<ProviderAnswer> {
   switch (provider) {
     case 'parallel':
       return deadline(askParallel(prompt), 'the Parallel run')
@@ -329,13 +370,22 @@ export async function askProvider(provider: OgProviderId, prompt: string): Promi
     case 'claude':
       return deadline(askClaude(prompt), 'the Claude draft')
     case 'fixed':
-      return prompt // the rendered template IS the output
+      return { text: prompt } // the rendered template IS the output — no call, no exchange
   }
 }
 
 // ── Rows and the sheet ────────────────────────────────────────────
 
-export type OgCell = { output?: string; error?: string; provider: OgProviderId; ms?: number }
+export type OgCell = {
+  output?: string
+  error?: string
+  provider: OgProviderId
+  ms?: number
+  request?: Record<string, unknown> // the exact body sent to the provider
+  response?: unknown // the provider's response body, capped for the log
+  confidence?: string // Parallel's confidence on the answer: low | medium | high
+  runId?: string // Parallel's run id
+}
 export type OgCells = Record<string, OgCell>
 
 export type OgRowRecord = {
@@ -416,14 +466,28 @@ const render = (template: string, vars: Record<string, string>): string =>
 
 async function runColumn(key: string, w: OgWorkflow, vars: Record<string, string>): Promise<OgCell> {
   const started = Date.now()
+  const prompt = render(w.prompt, vars)
   try {
-    const output = await askProvider(w.provider, render(w.prompt, vars))
-    return { output, provider: w.provider, ms: Date.now() - started }
+    const a = await askProvider(w.provider, prompt)
+    return {
+      output: a.text,
+      provider: w.provider,
+      ms: Date.now() - started,
+      ...(a.request ? { request: a.request } : {}),
+      ...(a.response !== undefined ? { response: forLog(a.response) } : {}),
+      ...(a.confidence ? { confidence: a.confidence } : {}),
+      ...(a.runId ? { runId: a.runId } : {}),
+    }
   } catch (err) {
+    const runId = typeof (err as any)?.runId === 'string' ? ((err as any).runId as string) : undefined
     return {
       error: err instanceof Error ? err.message : `the ${key} column failed`,
       provider: w.provider,
       ms: Date.now() - started,
+      // A failed call still files what was asked, and the run id when
+      // Parallel dealt one before failing.
+      ...(w.provider !== 'fixed' ? { request: { prompt } } : {}),
+      ...(runId ? { runId } : {}),
     }
   }
 }

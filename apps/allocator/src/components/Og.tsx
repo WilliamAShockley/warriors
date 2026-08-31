@@ -10,7 +10,16 @@ import { useCallback, useEffect, useState } from 'react'
 
 type OgTab = 'name' | 'url'
 type StpResult = { id: string; label: string; pass: boolean; detail: string }
-type Cell = { output?: string; error?: string; provider: string; ms?: number }
+type Cell = {
+  output?: string
+  error?: string
+  provider: string
+  ms?: number
+  confidence?: string // Parallel files low | medium | high on its answer
+  runId?: string
+  request?: unknown
+  response?: unknown
+}
 type Row = {
   id: string
   input: string
@@ -442,7 +451,10 @@ function RowLine({
                 {cell?.error ? (
                   <span className="line-clamp-3 text-faint">✗ {cell.error}</span>
                 ) : cell?.output ? (
-                  <span className="line-clamp-3 text-stone">{cell.output}</span>
+                  <>
+                    <span className="line-clamp-3 text-stone">{cell.output}</span>
+                    {cell.confidence && <ConfidenceChip level={cell.confidence} />}
+                  </>
                 ) : row.status === 'running' ? (
                   <span className="text-faint">·</span>
                 ) : (
@@ -475,8 +487,29 @@ function RowLine({
   )
 }
 
+// Parallel rates its own answers; wear the rating on the cell so a
+// low-confidence research context is visible before the email is.
+const CONFIDENCE_STYLE: Record<string, { bg: string; text: string }> = {
+  high: { bg: '#CCFBF1', text: '#0F766E' },
+  medium: { bg: '#FEF3C7', text: '#92400E' },
+  low: { bg: '#FEE2E2', text: '#991B1B' },
+}
+
+function ConfidenceChip({ level }: { level: string }) {
+  const s = CONFIDENCE_STYLE[level.toLowerCase()] ?? { bg: '#EEF1F5', text: '#3F4A5A' }
+  return (
+    <span
+      className="mt-1 inline-block rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]"
+      style={{ backgroundColor: s.bg, color: s.text }}
+    >
+      {level} confidence
+    </span>
+  )
+}
+
 // The evidence: the assembled email, the straight-through verdicts, and
-// every cell's raw output, error, provider, and latency.
+// every cell's full exchange — the request sent, the response returned,
+// the confidence, the provider, the latency, the error.
 function Evidence({ row }: { row: Row }) {
   if (row.status === 'failed') return <p className="dek">The trial failed: {row.error}</p>
   if (row.status !== 'done') return <p className="dek">Still running…</p>
@@ -500,7 +533,7 @@ function Evidence({ row }: { row: Row }) {
         </ul>
       </div>
       <div>
-        <p className="eyebrow mb-1">The cells, raw (output · provider · latency · error)</p>
+        <p className="eyebrow mb-1">The cells, raw (request · response · confidence · provider · latency)</p>
         <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap border border-hairline p-3 font-mono text-[11px] leading-relaxed">
           {JSON.stringify(row.cells, null, 2)}
         </pre>
