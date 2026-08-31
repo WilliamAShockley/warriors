@@ -36,6 +36,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, id })
   }
 
+  if (body?.redraft) {
+    const tab = body.redraft.tab === 'url' ? 'url' : 'name'
+    const { activeWorkspaceId, runAsWorkspace } = await import('@/lib/tenant')
+    const ws = await activeWorkspaceId()
+    // Post-response, like the trials: the sheet's polling watches the
+    // redrafted rows land one by one.
+    after(() => runAsWorkspace(ws, () => og.redraftOgTab(tab)))
+    return NextResponse.json({ ok: true })
+  }
+
   if (body?.workflows && typeof body.workflows === 'object') {
     const ok = await og.setOgWorkflows(body.workflows)
     return NextResponse.json(ok ? { ok } : { error: 'Could not save the workflows.' }, ok ? undefined : { status: 500 })

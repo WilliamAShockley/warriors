@@ -147,6 +147,23 @@ function OgSheet({ tab }: { tab: OgTab }) {
     load()
   }
 
+  // The redraft: every row on this sheet re-runs stage 2 only — the
+  // research cells stay as filed; the CEDs rebuild under the saved
+  // workflows and the emails reassemble.
+  const redraft = async () => {
+    const res = await fetch('/api/og', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redraft: { tab } }),
+    }).then((r) => r.json())
+    flash(
+      res.ok
+        ? 'Redrafting the CEDs under the SAVED workflows — research stays; the rows land one by one.'
+        : res.error ?? 'Could not redraft.'
+    )
+    load()
+  }
+
   if (!sheet) return <p className="dek mt-6">Dealing the sheet…</p>
 
   return (
@@ -266,6 +283,12 @@ function OgSheet({ tab }: { tab: OgTab }) {
               className="rounded-full bg-ink px-6 py-2.5 font-sans text-[12px] font-semibold text-paper shadow-sm transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-md"
             >
               Save the Workflows
+            </button>
+            <button
+              onClick={redraft}
+              className="rounded-full border border-ink px-6 py-2.5 font-sans text-[12px] font-semibold text-ink transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-md"
+            >
+              Redraft the CEDs (this sheet)
             </button>
             <button
               onClick={() => setDrafts(sheet.workflows)}

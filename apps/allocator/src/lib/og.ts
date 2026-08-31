@@ -532,72 +532,143 @@ export async function runOgRow(id: string): Promise<void> {
       data: { company: seat.company, cellsJson: JSON.stringify(cells), founderName: cells.ceo?.output ?? null },
     })
 
-    // Stage 2 — the CED components, with stage 1's outputs as variables.
-    // A usable CEO answer is a bare name. A paragraph-shaped answer stays
-    // visible in its cell for triage, but never corrupts the greeting.
-    const ceo = cells.ceo?.output?.trim() ?? ''
-    const ceoKnown = Boolean(ceo) && !/^unknown\b/i.test(ceo) && ceo.length <= 60 && !ceo.includes('\n')
-    const dezContext = await import('./reader-context')
-      .then((m) => m.contextNotesBlock())
-      .catch(() => '')
-    const stage2Vars: Record<string, string> = {
-      ...stage1Vars,
-      description: cells.description?.output ?? '',
-      ceo: ceoKnown ? ceo : '',
-      ceoFirst: ceoKnown ? ceo.split(/\s+/)[0].replace(/[^A-Za-z'’.-]/g, '') : 'there',
-      product: cells.product?.output ?? '',
-      category: cells.category?.output ?? '',
-      dezContext: dezContext || '(none on file)',
-    }
-
-    const stage2 = OG_COLUMNS.filter((c) => c.stage === 2)
-    const stage2Results = await Promise.all(
-      stage2.map((c) => runColumn(c.key, workflows[c.key], stage2Vars))
-    )
-    stage2.forEach((c, i) => (cells[c.key] = stage2Results[i]))
-
-    // Assembly, in code: paragraph one is greeting + fixed intro + the
-    // three vars; then the ask, the closing, the bare sign-off.
-    const part = (k: string) => cells[k]?.output?.trim() ?? ''
-    const paragraphOne = [part('greeting'), part('fixedIntro'), part('var1'), part('var2'), part('var3')]
-      .filter(Boolean)
-      .join(' ')
-    const subject = `Reaching Out - ${seat.company} <> FirstMark`
-    const body = [paragraphOne, part('ask'), part('closing'), 'Dez'].filter(Boolean).join('\n\n')
-
-    // The straight-through checks, over the assembled email. Grounding is
-    // what stage 1 actually established.
-    const grounding = stage1
-      .map((c) => `${c.label}: ${cells[c.key]?.output ?? '(failed)'}`)
-      .join('\n')
-    const { findCompany } = await import('./context')
-    const register = await findCompany(seat.company).catch(() => null)
-    const stp = await runStpChecks({
-      body,
-      subject,
-      to: null,
-      mode: 'cold',
-      audience: 'founder',
-      grounding,
-      register: register
-        ? { founderFirstName: register.founderFirstName ?? null, founderFullName: register.founderFullName ?? null }
-        : null,
-    })
-
-    await db.ogRun.update({
-      where: { id },
-      data: {
-        status: 'done',
-        cellsJson: JSON.stringify(cells),
-        draftJson: JSON.stringify({ subject, body }),
-        stpJson: JSON.stringify(stp),
-        error: null,
-      },
-    })
+    await draftAndFile(db, id, seat, workflows, cells, stage1Vars)
   } catch (err) {
     await db.ogRun.update({
       where: { id },
       data: { status: 'failed', error: err instanceof Error ? err.message : 'The trial failed.' },
     })
   }
+}
+
+/**
+ * Stage 2 and everything after it: the CED components run through their
+ * routed workflows with stage 1's cells as variables, the email
+ * assembles in code, the straight-through checks run, and the row files
+ * as done. Shared by the full trial and the redraft.
+ */
+async function draftAndFile(
+  db: Awaited<ReturnType<typeof getDb>>,
+  id: string,
+  seat: { company: string; websiteUrl: string },
+  workflows: OgWorkflows,
+  cells: OgCells,
+  stage1Vars: Record<string, string>
+): Promise<void> {
+  // A usable CEO answer is a bare name. A paragraph-shaped answer stays
+  // visible in its cell for triage, but never corrupts the greeting.
+  const ceo = cells.ceo?.output?.trim() ?? ''
+  const ceoKnown = Boolean(ceo) && !/^unknown\b/i.test(ceo) && ceo.length <= 60 && !ceo.includes('\n')
+  const dezContext = await import('./reader-context')
+    .then((m) => m.contextNotesBlock())
+    .catch(() => '')
+  const stage2Vars: Record<string, string> = {
+    ...stage1Vars,
+    description: cells.description?.output ?? '',
+    ceo: ceoKnown ? ceo : '',
+    ceoFirst: ceoKnown ? ceo.split(/\s+/)[0].replace(/[^A-Za-z'’.-]/g, '') : 'there',
+    product: cells.product?.output ?? '',
+    category: cells.category?.output ?? '',
+    dezContext: dezContext || '(none on file)',
+  }
+
+  const stage2 = OG_COLUMNS.filter((c) => c.stage === 2)
+  const stage2Results = await Promise.all(
+    stage2.map((c) => runColumn(c.key, workflows[c.key], stage2Vars))
+  )
+  stage2.forEach((c, i) => (cells[c.key] = stage2Results[i]))
+
+  // Assembly, in code: paragraph one is greeting + fixed intro + the
+  // three vars; then the ask, the closing, the bare sign-off.
+  const part = (k: string) => cells[k]?.output?.trim() ?? ''
+  const paragraphOne = [part('greeting'), part('fixedIntro'), part('var1'), part('var2'), part('var3')]
+    .filter(Boolean)
+    .join(' ')
+  const subject = `Reaching Out - ${seat.company} <> FirstMark`
+  const body = [paragraphOne, part('ask'), part('closing'), 'Dez'].filter(Boolean).join('\n\n')
+
+  // The straight-through checks, over the assembled email. Grounding is
+  // what stage 1 actually established.
+  const grounding = OG_COLUMNS.filter((c) => c.stage === 1)
+    .map((c) => `${c.label}: ${cells[c.key]?.output ?? '(failed)'}`)
+    .join('\n')
+  const { findCompany } = await import('./context')
+  const register = await findCompany(seat.company).catch(() => null)
+  const stp = await runStpChecks({
+    body,
+    subject,
+    to: null,
+    mode: 'cold',
+    audience: 'founder',
+    grounding,
+    register: register
+      ? { founderFirstName: register.founderFirstName ?? null, founderFullName: register.founderFullName ?? null }
+      : null,
+  })
+
+  await db.ogRun.update({
+    where: { id },
+    data: {
+      status: 'done',
+      cellsJson: JSON.stringify(cells),
+      draftJson: JSON.stringify({ subject, body }),
+      stpJson: JSON.stringify(stp),
+      error: null,
+    },
+  })
+}
+
+/**
+ * The redraft: stage 2 only. The research cells stay exactly as they
+ * were filed; the CED components re-run through the workflows as saved
+ * NOW, and the email reassembles. A row that never landed its research
+ * (still running, or seated before the cells filed) is left alone.
+ */
+export async function redraftOgRow(id: string): Promise<boolean> {
+  if (!hasDb()) return false
+  const db = await getDb()
+  const row = await db.ogRun.findFirst({ where: { id } })
+  if (!row || row.status === 'running') return false
+  const cells = parseJson<OgCells>(row.cellsJson)
+  if (!cells || !OG_COLUMNS.some((c) => c.stage === 1 && cells[c.key]?.output)) return false
+
+  await db.ogRun.update({ where: { id }, data: { status: 'running' } })
+  try {
+    const seat =
+      row.tab === 'url'
+        ? companyFromUrl(row.input)
+        : { company: row.input.trim(), websiteUrl: '' }
+    const workflows = await getOgWorkflows()
+    const stage1Vars: Record<string, string> = {
+      input: row.input.trim(),
+      company: seat.company,
+      website: seat.websiteUrl,
+      date: new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()),
+    }
+    await draftAndFile(db, id, seat, workflows, cells, stage1Vars)
+    return true
+  } catch (err) {
+    await db.ogRun.update({
+      where: { id },
+      data: { status: 'failed', error: err instanceof Error ? err.message : 'The redraft failed.' },
+    })
+    return false
+  }
+}
+
+/** Redraft every eligible row on a sheet, newest first, one at a time. */
+export async function redraftOgTab(tab: OgTab): Promise<number> {
+  if (!hasDb()) return 0
+  const db = await getDb()
+  const rows = await db.ogRun.findMany({
+    where: { tab },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    select: { id: true },
+  })
+  let redrafted = 0
+  for (const r of rows) {
+    if (await redraftOgRow(r.id)) redrafted += 1
+  }
+  return redrafted
 }
