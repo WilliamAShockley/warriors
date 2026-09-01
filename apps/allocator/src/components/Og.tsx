@@ -289,6 +289,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
       <p className="dek mt-1">
         Every column is a prompt routed to a provider. Variables fill in from the row at run time;
         &ldquo;Fixed text&rdquo; makes no call — the prompt itself, variables filled, is the cell.
+        An <em>empty</em> Fixed text turns its column off: nothing runs, nothing lands in the email.
       </p>
       {drafts && (
         <div className="mt-5 md:w-[calc(100vw-96px)] md:ml-[calc(50%-50vw+48px)]">
@@ -378,8 +379,16 @@ function WorkflowRow({
   onChange: (w: Workflow) => void
 }) {
   const stage = STAGE_CHIP[col.stage]
+  // The off switch: an empty Fixed Text runs to an empty cell and
+  // contributes nothing to the email. Wear it plainly on the row.
+  const off = workflow.provider === 'fixed' && !workflow.prompt.trim()
   return (
-    <div className="grid items-start gap-4 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md md:grid-cols-[200px_minmax(0,1fr)_230px]">
+    <div
+      className={
+        'grid items-start gap-4 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition-all duration-200 hover:shadow-md md:grid-cols-[200px_minmax(0,1fr)_230px]' +
+        (off ? ' opacity-60' : '')
+      }
+    >
       {/* Left — the column this workflow feeds. */}
       <div>
         <p className="text-[14px] font-semibold text-ink">{col.label}</p>
@@ -389,6 +398,11 @@ function WorkflowRow({
         >
           {stage.label}
         </span>
+        {off && (
+          <span className="ml-1.5 mt-1.5 inline-block rounded-full bg-black/[0.07] px-2 py-0.5 text-[10px] font-semibold text-stone">
+            Off — contributes nothing
+          </span>
+        )}
         <div className="mt-2.5 flex flex-wrap gap-1">
           {vars.map((v) => (
             <span key={v} className="rounded-md bg-black/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-stone">
@@ -403,7 +417,12 @@ function WorkflowRow({
         value={workflow.prompt}
         onChange={(e) => onChange({ ...workflow, prompt: e.target.value })}
         rows={4}
-        className="w-full rounded-xl border border-black/10 bg-[#FCFBF9] p-3 font-mono text-[11.5px] leading-relaxed outline-none transition-colors focus:border-black/30 focus:bg-white"
+        placeholder={
+          workflow.provider === 'fixed'
+            ? 'Empty = this column is OFF — no call, nothing in the email.'
+            : 'Empty falls back to the default prompt on save.'
+        }
+        className="w-full rounded-xl border border-black/10 bg-[#FCFBF9] p-3 font-mono text-[11.5px] leading-relaxed outline-none transition-colors placeholder:text-faint focus:border-black/30 focus:bg-white"
       />
 
       {/* Right — the route. */}
