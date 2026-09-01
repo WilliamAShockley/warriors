@@ -90,6 +90,12 @@ function OgSheet({ tab }: { tab: OgTab }) {
   // The workflow drafts: local edits, re-seeded from the server on save.
   const [drafts, setDrafts] = useState<Record<string, Workflow> | null>(null)
 
+  // The buttons wear their own state — the top-of-sheet note is off-screen
+  // from down here, so confirmation lives on and beside the buttons.
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [redraftState, setRedraftState] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [workflowNote, setWorkflowNote] = useState('')
+
   const load = useCallback(async () => {
     const res = await fetch(`/api/og?tab=${tab}`).then((r) => r.json()).catch(() => null)
     if (res) {
@@ -137,13 +143,24 @@ function OgSheet({ tab }: { tab: OgTab }) {
   }
 
   const saveWorkflows = async () => {
-    if (!drafts) return
+    if (!drafts || saveState === 'saving') return
+    setSaveState('saving')
+    setWorkflowNote('')
     const res = await fetch('/api/og', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ workflows: drafts }),
-    }).then((r) => r.json())
-    flash(res.ok ? 'Workflows saved — the next seated row runs them.' : res.error ?? 'Could not save.')
+    })
+      .then((r) => r.json())
+      .catch(() => ({ error: 'Could not save.' }))
+    if (res.ok) {
+      setSaveState('saved')
+      setWorkflowNote('Saved — the next seated row runs them.')
+      setTimeout(() => setSaveState('idle'), 2500)
+    } else {
+      setSaveState('idle')
+      setWorkflowNote(res.error ?? 'Could not save.')
+    }
     load()
   }
 
@@ -151,16 +168,26 @@ function OgSheet({ tab }: { tab: OgTab }) {
   // (description, CEO, product) as filed; Category re-classifies from it,
   // the CEDs rebuild under the saved workflows, the emails reassemble.
   const redraft = async () => {
+    if (redraftState === 'sending') return
+    setRedraftState('sending')
+    setWorkflowNote('')
     const res = await fetch('/api/og', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ redraft: { tab } }),
-    }).then((r) => r.json())
-    flash(
-      res.ok
-        ? 'Redrafting under the SAVED workflows — web research stays, Category reclassifies; the rows land one by one.'
-        : res.error ?? 'Could not redraft.'
-    )
+    })
+      .then((r) => r.json())
+      .catch(() => ({ error: 'Could not redraft.' }))
+    if (res.ok) {
+      setRedraftState('sent')
+      setWorkflowNote(
+        'Redrafting under the SAVED workflows — web research stays, Category reclassifies; the rows land one by one.'
+      )
+      setTimeout(() => setRedraftState('idle'), 2500)
+    } else {
+      setRedraftState('idle')
+      setWorkflowNote(res.error ?? 'Could not redraft.')
+    }
     load()
   }
 
@@ -285,18 +312,26 @@ function OgSheet({ tab }: { tab: OgTab }) {
               />
             ))}
           </div>
-          <div className="mt-5 flex items-center gap-4">
+          <div className="mt-5 flex flex-wrap items-center gap-4">
             <button
               onClick={saveWorkflows}
-              className="rounded-full bg-ink px-6 py-2.5 font-sans text-[12px] font-semibold text-paper shadow-sm transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-md"
+              disabled={saveState !== 'idle'}
+              className="rounded-full bg-ink px-6 py-2.5 font-sans text-[12px] font-semibold text-paper shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md disabled:translate-y-0 disabled:opacity-80 disabled:shadow-sm"
+              style={saveState === 'saved' ? { backgroundColor: '#0F766E', opacity: 1 } : undefined}
             >
-              Save the Workflows
+              {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved ✓' : 'Save the Workflows'}
             </button>
             <button
               onClick={redraft}
-              className="rounded-full border border-ink px-6 py-2.5 font-sans text-[12px] font-semibold text-ink transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-md"
+              disabled={redraftState !== 'idle'}
+              className="rounded-full border border-ink px-6 py-2.5 font-sans text-[12px] font-semibold text-ink transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md disabled:translate-y-0 disabled:opacity-80 disabled:shadow-none"
+              style={redraftState === 'sent' ? { borderColor: '#0F766E', color: '#0F766E', opacity: 1 } : undefined}
             >
-              Redraft the CEDs (this sheet)
+              {redraftState === 'sending'
+                ? 'Sending the redraft…'
+                : redraftState === 'sent'
+                  ? 'Redraft sent ✓'
+                  : 'Redraft the CEDs (this sheet)'}
             </button>
             <button
               onClick={() => setDrafts(sheet.workflows)}
@@ -304,6 +339,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
             >
               discard edits
             </button>
+            {workflowNote && <span className="font-sans text-[12px] text-stone">{workflowNote}</span>}
           </div>
         </div>
       )}
