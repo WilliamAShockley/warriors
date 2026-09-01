@@ -40,7 +40,7 @@ type Sheet = {
   workflows: Record<string, Workflow>
   columns: ColumnDef[]
   providers: Provider[]
-  vars: { stage1: string[]; stage2: string[] }
+  vars: { stage1: string[]; category: string[]; stage2: string[] }
 }
 
 const RUNNING_PHRASES = ['running the research columns…', 'drafting the components…', 'assembling…']
@@ -147,9 +147,9 @@ function OgSheet({ tab }: { tab: OgTab }) {
     load()
   }
 
-  // The redraft: every row on this sheet re-runs stage 2 only — the
-  // research cells stay as filed; the CEDs rebuild under the saved
-  // workflows and the emails reassemble.
+  // The redraft: every row on this sheet keeps its web research
+  // (description, CEO, product) as filed; Category re-classifies from it,
+  // the CEDs rebuild under the saved workflows, the emails reassemble.
   const redraft = async () => {
     const res = await fetch('/api/og', {
       method: 'POST',
@@ -158,7 +158,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
     }).then((r) => r.json())
     flash(
       res.ok
-        ? 'Redrafting the CEDs under the SAVED workflows — research stays; the rows land one by one.'
+        ? 'Redrafting under the SAVED workflows — web research stays, Category reclassifies; the rows land one by one.'
         : res.error ?? 'Could not redraft.'
     )
     load()
@@ -272,7 +272,15 @@ function OgSheet({ tab }: { tab: OgTab }) {
                 col={c}
                 workflow={drafts[c.key] ?? { prompt: '', provider: 'fixed' }}
                 providers={sheet.providers}
-                vars={c.stage === 1 ? sheet.vars.stage1 : sheet.vars.stage2}
+                vars={
+                  // Category runs after the other research columns, so
+                  // their outputs are variables its prompt can use.
+                  c.key === 'category'
+                    ? sheet.vars.category
+                    : c.stage === 1
+                      ? sheet.vars.stage1
+                      : sheet.vars.stage2
+                }
                 onChange={(w) => setDrafts((prev) => ({ ...prev!, [c.key]: w }))}
               />
             ))}

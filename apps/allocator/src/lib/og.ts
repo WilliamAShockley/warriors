@@ -7,8 +7,11 @@
 // from the section beneath the sheet.
 //
 // A row runs in two stages:
-//   Stage 1 — research context: Company Description · CEO · Product ·
-//     Category. Variables: {input} {company} {website} {date}.
+//   Stage 1 — research context: Company Description · CEO · Product run
+//     in parallel. Variables: {input} {company} {website} {date}.
+//     Category runs after them — it classifies from the description the
+//     research just filed rather than searching the web, so it also gets
+//     {description} and {product}.
 //   Stage 2 — the CED components: Greeting · Fixed-Intro · Var-1/2/3 ·
 //     Closing · Ask. Variables: stage 1's plus {description} {ceo}
 //     {ceoFirst} {product} {category} {dezContext}.
@@ -69,6 +72,9 @@ export const OG_COLUMNS: OgColumnDef[] = [
 ]
 
 export const OG_STAGE1_VARS = ['{input}', '{company}', '{website}', '{date}']
+// Category runs after the other research columns, so their outputs are
+// on the table as variables when its prompt renders.
+export const OG_CATEGORY_VARS = [...OG_STAGE1_VARS, '{description}', '{product}']
 export const OG_STAGE2_VARS = [
   ...OG_STAGE1_VARS,
   '{description}',
@@ -104,11 +110,63 @@ ${ANCHOR_LINE}`,
 
 ${ANCHOR_LINE}`,
   },
+  // Category makes no web call of its own: it classifies from the
+  // description the research columns just filed.
   category: {
-    provider: 'parallel',
-    prompt: `You are a VC analyst sourcing for your boss. Research this company: {input}. File it into exactly one category: "Digital Assets" (crypto, stablecoins, tokenization, on-chain infrastructure), "Vertical AI" (AI applied to a specific industry workflow), or "Other". Reply with ONLY the category name.
+    provider: 'claude',
+    prompt: `You classify companies into practice-area categories for a venture capital firm.
+You will be given a company product description. Assign it to exactly one category.
 
-${ANCHOR_LINE}`,
+CATEGORIES
+
+Vertical AI — AI is the core product, applied deeply to one industry's workflow.
+Example industries: trucking/logistics, accounting, finance, legal, insurance,
+construction operations, healthcare RCM. Include companies whose value proposition
+collapses without the AI. Exclude horizontal AI infrastructure or developer
+tooling, and industry SaaS with bolt-on AI features.
+
+Digital Assets — Crypto, blockchain, tokenization, onchain infrastructure,
+stablecoins, digital-asset custody or trading, prediction markets,
+perps/perpetual futures.
+
+Built Environment/Compute — Real estate, construction, property tech, physical
+infrastructure, GPUs, data centers, energy/climate for buildings.
+
+Other — Anything that does not clearly fit the above.
+
+DECISION RULES
+
+1. Pick exactly one category.
+2. Torn between Vertical AI and something else? Ask: is the AI the product, or a
+   feature? AI-as-product applied to one industry → Vertical AI.
+3. Companies selling compute itself (GPU clouds, data centers, inference
+   infrastructure) → Built Environment/Compute, even when described in heavy AI
+   language. They sell compute, not an industry workflow.
+4. Crypto exchanges, wallets, or trading venues → Digital Assets, even if they
+   use AI internally.
+5. If the description is too vague or generic to decide → Other.
+
+EXAMPLES
+
+"AI-powered dispatch and fleet planning platform that uses LLMs to optimize
+truck fleet operations" → Vertical AI
+
+"GPU cloud providing on-demand compute for AI training and inference" →
+Built Environment/Compute
+
+"Decentralized perpetual futures exchange with onchain order books" →
+Digital Assets
+
+"Collaboration software for marketing teams with AI-assisted summaries" → Other
+
+OUTPUT
+
+Respond with exactly one of: Vertical AI | Digital Assets | Built Environment/Compute | Other
+Output the category name only. No punctuation, explanation, or preamble.
+
+COMPANY DESCRIPTION
+
+{description}`,
   },
   greeting: {
     provider: 'fixed',
@@ -153,6 +211,14 @@ Product: {product}`,
 
 const VALID_PROVIDERS = new Set(OG_PROVIDERS.map((p) => p.id))
 
+// The migration: Category used to research the web through Parallel with
+// this exact prompt. A saved sheet still carrying it takes the new
+// classify-from-description default instead of shadowing it; a prompt the
+// reader edited himself is left alone.
+const LEGACY_CATEGORY_PROMPT = `You are a VC analyst sourcing for your boss. Research this company: {input}. File it into exactly one category: "Digital Assets" (crypto, stablecoins, tokenization, on-chain infrastructure), "Vertical AI" (AI applied to a specific industry workflow), or "Other". Reply with ONLY the category name.
+
+${ANCHOR_LINE}`
+
 export async function getOgWorkflows(): Promise<OgWorkflows> {
   const merged: OgWorkflows = { ...DEFAULT_OG_WORKFLOWS }
   if (!hasDb()) return merged
@@ -164,9 +230,9 @@ export async function getOgWorkflows(): Promise<OgWorkflows> {
       const saved = JSON.parse(row.ogWorkflowsJson) as OgWorkflows
       for (const col of OG_COLUMNS) {
         const w = saved[col.key]
-        if (w?.prompt?.trim() && VALID_PROVIDERS.has(w.provider)) {
-          merged[col.key] = { prompt: w.prompt, provider: w.provider }
-        }
+        if (!w?.prompt?.trim() || !VALID_PROVIDERS.has(w.provider)) continue
+        if (col.key === 'category' && w.prompt.trim() === LEGACY_CATEGORY_PROMPT.trim()) continue
+        merged[col.key] = { prompt: w.prompt, provider: w.provider }
       }
     }
   } catch {}
@@ -494,7 +560,8 @@ async function runColumn(key: string, w: OgWorkflow, vars: Record<string, string
 
 /**
  * The trial, run post-response. Stage 1 fans the research columns out in
- * parallel through their routed providers; stage 2 builds the CED
+ * parallel through their routed providers, then classifies the Category
+ * from the description they filed; stage 2 builds the CED
  * components with stage 1's outputs as variables; then the email
  * assembles in code and the straight-through checks run over it. A
  * failed column files its error on its own cell — the rest of the row
@@ -521,12 +588,15 @@ export async function runOgRow(id: string): Promise<void> {
       date: new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()),
     }
 
-    // Stage 1 — the research columns, in parallel.
-    const stage1 = OG_COLUMNS.filter((c) => c.stage === 1)
+    // Stage 1 — the research columns, in parallel. Category sits out the
+    // fan-out: it classifies from the description rather than searching
+    // the web, so it runs once the research has landed.
+    const stage1 = OG_COLUMNS.filter((c) => c.stage === 1 && c.key !== 'category')
     const stage1Results = await Promise.all(
       stage1.map((c) => runColumn(c.key, workflows[c.key], stage1Vars))
     )
     stage1.forEach((c, i) => (cells[c.key] = stage1Results[i]))
+    cells.category = await runCategory(workflows, cells, stage1Vars)
     await db.ogRun.update({
       where: { id },
       data: { company: seat.company, cellsJson: JSON.stringify(cells), founderName: cells.ceo?.output ?? null },
@@ -540,6 +610,16 @@ export async function runOgRow(id: string): Promise<void> {
     })
   }
 }
+
+// Category, off the fan-out: it classifies from the research cells
+// already filed rather than searching the web. Both the full trial and
+// the redraft run it this way.
+const runCategory = (workflows: OgWorkflows, cells: OgCells, stage1Vars: Record<string, string>) =>
+  runColumn('category', workflows.category, {
+    ...stage1Vars,
+    description: cells.description?.output ?? '',
+    product: cells.product?.output ?? '',
+  })
 
 /**
  * Stage 2 and everything after it: the CED components run through their
@@ -619,8 +699,10 @@ async function draftAndFile(
 }
 
 /**
- * The redraft: stage 2 only. The research cells stay exactly as they
- * were filed; the CED components re-run through the workflows as saved
+ * The redraft. The web-researched cells (Description · CEO · Product)
+ * stay exactly as they were filed; Category re-classifies from them —
+ * it's a no-web call, and the taxonomy may have changed since the row
+ * ran — then the CED components re-run through the workflows as saved
  * NOW, and the email reassembles. A row that never landed its research
  * (still running, or seated before the cells filed) is left alone.
  */
@@ -645,6 +727,7 @@ export async function redraftOgRow(id: string): Promise<boolean> {
       website: seat.websiteUrl,
       date: new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()),
     }
+    cells.category = await runCategory(workflows, cells, stage1Vars)
     await draftAndFile(db, id, seat, workflows, cells, stage1Vars)
     return true
   } catch (err) {

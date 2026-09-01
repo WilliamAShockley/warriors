@@ -8,7 +8,7 @@ import { NextResponse, after } from 'next/server'
 export const maxDuration = 300
 
 export async function GET(req: Request) {
-  const { listOg, getOgWorkflows, OG_COLUMNS, OG_PROVIDERS, OG_STAGE1_VARS, OG_STAGE2_VARS } = await import('@/lib/og')
+  const { listOg, getOgWorkflows, OG_COLUMNS, OG_PROVIDERS, OG_STAGE1_VARS, OG_CATEGORY_VARS, OG_STAGE2_VARS } = await import('@/lib/og')
   const tab = new URL(req.url).searchParams.get('tab') === 'url' ? 'url' : 'name'
   const [sheet, workflows] = await Promise.all([listOg(tab), getOgWorkflows()])
   return NextResponse.json({
@@ -16,7 +16,7 @@ export async function GET(req: Request) {
     workflows,
     columns: OG_COLUMNS,
     providers: OG_PROVIDERS,
-    vars: { stage1: OG_STAGE1_VARS, stage2: OG_STAGE2_VARS },
+    vars: { stage1: OG_STAGE1_VARS, category: OG_CATEGORY_VARS, stage2: OG_STAGE2_VARS },
   })
 }
 
