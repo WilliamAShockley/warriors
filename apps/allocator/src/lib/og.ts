@@ -176,13 +176,28 @@ COMPANY DESCRIPTION
     provider: 'fixed',
     prompt: `Hope this note finds you well! I'm Dez, I'm a Principal here at FirstMark, we're an early stage, Series A focused VC firm based here in NYC, and we were early investors in Pinterest, Shopify, DraftKings and a whole host of other great companies.`,
   },
+  // Var-1 branches on the Category cell: a named practice area leads with
+  // the practice claim; Other (or a failed, blank category) drops it. The
+  // sentence is a fixed skeleton — the model's one job is the space phrase.
   var1: {
     provider: 'claude',
-    prompt: `${DEZ_VOICE_LINE}
+    prompt: `You are drafting ONE sentence of Dez's cold email. Reply with ONLY the sentence - no preamble, no quotes.
 
-The sentence is the HOOK of a cold email to {ceo} at {company} - why Dez is reaching out to THIS company now ("I came across what you're doing at {company}..." energy), grounded ONLY in this research:
+The company's category: {category}
+
+Build the sentence from the matching template. Follow exactly one. The words outside [the space] are fixed - copy them exactly, spacing and "+" included:
+
+IF the category is "Other" or blank:
+I've been spending a bunch of my time thinking through [the space] + where they go next
+
+OTHERWISE (any named category):
+I help lead our {category} practice here at the firm, and I've been spending a bunch of my time thinking through [the space] + where they go next
+
+[the space] is the one adaptive slot: a short, casual, lowercase name for the space this company plays in - the way you'd say it out loud, readable and succinct above all ("prediction markets" is the gold standard). Derive it ONLY from this research, never invent:
 What they do: {description}
-Product: {product}`,
+Product: {product}
+
+Prefer a plural space name ("prediction markets", "freight AI agents") so "where they go next" reads naturally; bend to "where it goes next" only when the space is unavoidably singular, and keep the "+" construction either way. If the category name reads awkwardly inside "our ... practice", smooth it minimally - "Built Environment/Compute" becomes "Built Environment + Compute" - never change the practice claim itself.`,
   },
   var2: {
     provider: 'claude',
@@ -211,18 +226,30 @@ Product: {product}`,
 
 const VALID_PROVIDERS = new Set(OG_PROVIDERS.map((p) => p.id))
 
-// The migration: Category used to research the web through Parallel.
-// A saved sheet still carrying either default that ever shipped — the
-// original, or the anchor-hardened one — takes the new
-// classify-from-description default instead of shadowing it; a prompt
-// the reader edited himself is left alone.
+// The migrations: a saved sheet still carrying a default that ever
+// shipped for a column takes that column's new default instead of
+// shadowing it; a prompt the reader edited himself is left alone.
+//
+// Category used to research the web through Parallel — both defaults
+// that shipped (the original and the anchor-hardened one) yield to the
+// classify-from-description default.
 const LEGACY_CATEGORY_BASE = `You are a VC analyst sourcing for your boss. Research this company: {input}. File it into exactly one category: "Digital Assets" (crypto, stablecoins, tokenization, on-chain infrastructure), "Vertical AI" (AI applied to a specific industry workflow), or "Other". Reply with ONLY the category name.`
-const LEGACY_CATEGORY_PROMPTS = new Set([
-  LEGACY_CATEGORY_BASE,
-  `${LEGACY_CATEGORY_BASE}
+// Var-1 used to draft a free-form hook — the only default that shipped
+// yields to the category-branched practice line.
+const LEGACY_VAR1_PROMPT = `${DEZ_VOICE_LINE}
+
+The sentence is the HOOK of a cold email to {ceo} at {company} - why Dez is reaching out to THIS company now ("I came across what you're doing at {company}..." energy), grounded ONLY in this research:
+What they do: {description}
+Product: {product}`
+const LEGACY_PROMPTS: Record<string, Set<string>> = {
+  category: new Set([
+    LEGACY_CATEGORY_BASE,
+    `${LEGACY_CATEGORY_BASE}
 
 ${ANCHOR_LINE}`,
-])
+  ]),
+  var1: new Set([LEGACY_VAR1_PROMPT]),
+}
 
 export async function getOgWorkflows(): Promise<OgWorkflows> {
   const merged: OgWorkflows = { ...DEFAULT_OG_WORKFLOWS }
@@ -236,7 +263,7 @@ export async function getOgWorkflows(): Promise<OgWorkflows> {
       for (const col of OG_COLUMNS) {
         const w = saved[col.key]
         if (!w?.prompt?.trim() || !VALID_PROVIDERS.has(w.provider)) continue
-        if (col.key === 'category' && LEGACY_CATEGORY_PROMPTS.has(w.prompt.trim())) continue
+        if (LEGACY_PROMPTS[col.key]?.has(w.prompt.trim())) continue
         merged[col.key] = { prompt: w.prompt, provider: w.provider }
       }
     }
