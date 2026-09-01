@@ -3,8 +3,9 @@
 // (row variables fill in at run time) routed to a provider the reader
 // picks — Parallel, Exa, OpenAI (each web research), Anthropic web
 // search, plain Claude (drafting, no web), or Fixed Text (no call at
-// all; the template IS the output). The reader edits both, per column,
-// from the section beneath the sheet.
+// all; the template IS the output — and an EMPTY Fixed Text is the off
+// switch: the column runs to an empty cell and contributes nothing).
+// The reader edits both, per column, from the section beneath the sheet.
 //
 // A row runs in two stages:
 //   Stage 1 — research context: Company Description · CEO · Product run
@@ -262,9 +263,13 @@ export async function getOgWorkflows(): Promise<OgWorkflows> {
       const saved = JSON.parse(row.ogWorkflowsJson) as OgWorkflows
       for (const col of OG_COLUMNS) {
         const w = saved[col.key]
-        if (!w?.prompt?.trim() || !VALID_PROVIDERS.has(w.provider)) continue
-        if (LEGACY_PROMPTS[col.key]?.has(w.prompt.trim())) continue
-        merged[col.key] = { prompt: w.prompt, provider: w.provider }
+        if (!w || !VALID_PROVIDERS.has(w.provider)) continue
+        // An empty prompt only counts on Fixed Text — that's the off
+        // switch: no call, an empty cell, nothing in the email. On any
+        // routed provider an empty prompt yields to the default.
+        if (!w.prompt?.trim() && w.provider !== 'fixed') continue
+        if (LEGACY_PROMPTS[col.key]?.has((w.prompt ?? '').trim())) continue
+        merged[col.key] = { prompt: w.prompt ?? '', provider: w.provider }
       }
     }
   } catch {}
@@ -277,9 +282,11 @@ export async function setOgWorkflows(workflows: OgWorkflows): Promise<boolean> {
     const cleaned: OgWorkflows = {}
     for (const col of OG_COLUMNS) {
       const w = workflows[col.key]
-      if (w?.prompt?.trim() && VALID_PROVIDERS.has(w.provider)) {
-        cleaned[col.key] = { prompt: String(w.prompt), provider: w.provider }
-      }
+      if (!w || !VALID_PROVIDERS.has(w.provider)) continue
+      // An empty Fixed Text saves — it's the off switch. An empty prompt
+      // on a routed provider is dropped, so the column keeps its default.
+      if (!w.prompt?.trim() && w.provider !== 'fixed') continue
+      cleaned[col.key] = { prompt: String(w.prompt ?? ''), provider: w.provider }
     }
     const db = await getDb()
     const { activeWorkspaceId, ensureAdopted } = await import('./tenant')
