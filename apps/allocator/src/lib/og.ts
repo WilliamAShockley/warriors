@@ -211,13 +211,18 @@ Product: {product}`,
 
 const VALID_PROVIDERS = new Set(OG_PROVIDERS.map((p) => p.id))
 
-// The migration: Category used to research the web through Parallel with
-// this exact prompt. A saved sheet still carrying it takes the new
-// classify-from-description default instead of shadowing it; a prompt the
-// reader edited himself is left alone.
-const LEGACY_CATEGORY_PROMPT = `You are a VC analyst sourcing for your boss. Research this company: {input}. File it into exactly one category: "Digital Assets" (crypto, stablecoins, tokenization, on-chain infrastructure), "Vertical AI" (AI applied to a specific industry workflow), or "Other". Reply with ONLY the category name.
+// The migration: Category used to research the web through Parallel.
+// A saved sheet still carrying either default that ever shipped — the
+// original, or the anchor-hardened one — takes the new
+// classify-from-description default instead of shadowing it; a prompt
+// the reader edited himself is left alone.
+const LEGACY_CATEGORY_BASE = `You are a VC analyst sourcing for your boss. Research this company: {input}. File it into exactly one category: "Digital Assets" (crypto, stablecoins, tokenization, on-chain infrastructure), "Vertical AI" (AI applied to a specific industry workflow), or "Other". Reply with ONLY the category name.`
+const LEGACY_CATEGORY_PROMPTS = new Set([
+  LEGACY_CATEGORY_BASE,
+  `${LEGACY_CATEGORY_BASE}
 
-${ANCHOR_LINE}`
+${ANCHOR_LINE}`,
+])
 
 export async function getOgWorkflows(): Promise<OgWorkflows> {
   const merged: OgWorkflows = { ...DEFAULT_OG_WORKFLOWS }
@@ -231,7 +236,7 @@ export async function getOgWorkflows(): Promise<OgWorkflows> {
       for (const col of OG_COLUMNS) {
         const w = saved[col.key]
         if (!w?.prompt?.trim() || !VALID_PROVIDERS.has(w.provider)) continue
-        if (col.key === 'category' && w.prompt.trim() === LEGACY_CATEGORY_PROMPT.trim()) continue
+        if (col.key === 'category' && LEGACY_CATEGORY_PROMPTS.has(w.prompt.trim())) continue
         merged[col.key] = { prompt: w.prompt, provider: w.provider }
       }
     }
