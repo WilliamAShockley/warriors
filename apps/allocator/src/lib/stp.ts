@@ -34,12 +34,13 @@ export type StpCheck = {
   run: (input: StpInput) => Promise<{ pass: boolean; detail: string }>
 }
 
-// The greeting name: the first word of the draft, shorn of punctuation.
-// Dez's cold structure always opens "<FirstName>," so this is reliable
-// for the emails these checks govern.
+// The greeting name, shorn of punctuation. Dez's cold structure opens
+// "Hey <FirstName> -" (OG) or bare "<FirstName>," — the same shapes the
+// greeting-format check accepts — so this is reliable for the emails
+// these checks govern.
 export function greetingName(body: string): string | null {
   const first = body.trim().split('\n')[0] ?? ''
-  const m = first.match(/^([A-Za-z][A-Za-z'’.-]*)\s*[,—–-]/)
+  const m = first.match(/^(?:(?:Hey|Hi)\s+)?([A-Za-z][A-Za-z'’.-]*)\s*[,—–-]/)
   return m ? m[1].replace(/[.]$/, '') : null
 }
 
