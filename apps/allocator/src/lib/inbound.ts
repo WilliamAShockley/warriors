@@ -73,7 +73,7 @@ export async function fileEmailTask(input: {
     // email-shaped items go to the drafting worker.
     if (coldUrl) {
       const runId = await seatColdDraftForTodo(todo.id, coldUrl)
-      if (runId) await runOgRow(runId)
+      if (runId) await runOgRow(runId, { todoId: todo.id })
     } else {
       const cls = await autoTagTodo(todo.id, todo.text)
       if (cls?.action === 'email') {

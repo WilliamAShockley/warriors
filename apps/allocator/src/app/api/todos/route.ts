@@ -98,7 +98,7 @@ export async function POST(req: Request) {
       const ws = await activeWorkspaceId()
       after(async () => {
         const { runOgRow } = await import('@/lib/og')
-        await runAsWorkspace(ws, () => runOgRow(runId))
+        await runAsWorkspace(ws, () => runOgRow(runId, { todoId: todo.id }))
       })
     }
   } else if (todo) {

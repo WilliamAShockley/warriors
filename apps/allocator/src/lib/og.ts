@@ -705,8 +705,13 @@ async function runColumn(key: string, w: OgWorkflow, vars: Record<string, string
  * assembles in code and the straight-through checks run over it. A
  * failed column files its error on its own cell — the rest of the row
  * still lands.
+ *
+ * A row commissioned from the Docket (todoId) also surfaces in the Proof
+ * Room once it lands: the assembled email is staged as a pending proof
+ * tied to the to-do, so the item shows On Review and signing it there
+ * sends the email and clears the item.
  */
-export async function runOgRow(id: string): Promise<void> {
+export async function runOgRow(id: string, opts: { todoId?: string } = {}): Promise<void> {
   if (!hasDb()) return
   const db = await getDb()
   const row = await db.ogRun.findFirst({ where: { id } })
@@ -747,7 +752,32 @@ export async function runOgRow(id: string): Promise<void> {
       where: { id },
       data: { status: 'failed', error: err instanceof Error ? err.message : 'The trial failed.' },
     })
+    return
   }
+
+  if (opts.todoId) await stageDocketProof(id, opts.todoId)
+}
+
+// The Docket's copy of a finished row: staged to the tray, never sent,
+// and noted on the to-do's log. Best-effort — the row on the sheet stands
+// either way, and the arrow there can always stage it again by hand.
+async function stageDocketProof(id: string, todoId: string): Promise<void> {
+  try {
+    const db = await getDb()
+    const row = await db.ogRun.findFirst({ where: { id } })
+    if (!row || row.status !== 'done') return
+    // One proof per to-do — a redirect or re-run never doubles the tray.
+    if ((await db.reviewItem.count({ where: { todoId, status: 'pending' } })) > 0) return
+    const staged = await stageOgProof(row, { todoId })
+    if (!staged) return
+    const { addTodoUpdate } = await import('./todos')
+    await addTodoUpdate(
+      todoId,
+      staged.to
+        ? `The draft is in the Proof Room, addressed to ${staged.to} — signing it sends.`
+        : 'The draft is in the Proof Room — no founder email on the Register, so it goes out over LinkedIn from there.'
+    )
+  } catch {}
 }
 
 // Category, off the fan-out: it classifies from the research cells
@@ -909,6 +939,51 @@ export async function editOgRow(
 }
 
 /**
+ * A finished row, staged as an email proof: the assembled email, the
+ * research as grounding, the Register's founder address as the recipient
+ * when one is on file. Shared by the arrow (which then approves it) and
+ * the Docket's bare-URL commissions (which leave it pending in the tray,
+ * tied to the to-do that asked for it — signing it there sends the email
+ * and clears the item).
+ */
+async function stageOgProof(
+  row: { tab: string; input: string; draftJson: string | null; cellsJson: string | null },
+  opts: { todoId?: string } = {}
+): Promise<{ proof: { id: string }; to: string | null } | null> {
+  const draft = parseJson<{ subject?: string; body?: string }>(row.draftJson)
+  if (!draft?.body) return null
+  const seat =
+    row.tab === 'url' ? companyFromUrl(row.input) : { company: row.input.trim(), websiteUrl: '' }
+  const cells = parseJson<OgCells>(row.cellsJson) ?? {}
+  const grounding = OG_COLUMNS.filter((c) => c.stage === 1)
+    .map((c) => `${c.label}: ${cells[c.key]?.output ?? '(failed)'}`)
+    .join('\n')
+  const { findCompany } = await import('./context')
+  const register = await findCompany(seat.company).catch(() => null)
+  const to = register?.founderEmail?.trim() || null
+
+  const { createProof } = await import('./review')
+  const proof = await createProof({
+    kind: 'email',
+    title: draft.subject || `Reaching Out - ${seat.company} <> FirstMark`,
+    summary: opts.todoId
+      ? `Cold draft off the OG sheet — ${seat.company}, commissioned from the Docket`
+      : `Cold draft off the OG sheet — ${seat.company}`,
+    body: draft.body,
+    actionType: 'send_email',
+    actionJson: JSON.stringify({ to, subject: draft.subject ?? '' }),
+    grounding,
+    audience: 'founder',
+    mode: 'cold',
+    company: seat.company,
+    websiteUrl: seat.websiteUrl || register?.websiteUrl || undefined,
+    linkedinUrl: register?.linkedinUrl || undefined,
+    ...(opts.todoId ? { todoId: opts.todoId } : {}),
+  })
+  return proof ? { proof, to } : null
+}
+
+/**
  * The arrow, from the sheet. The row's assembled email goes through the
  * proof pipeline: staged as an email proof (straight-through checks and
  * all, so the Record keeps the full trail), then approved on the spot —
@@ -924,32 +999,10 @@ export async function sendOgRow(id: string): Promise<{ ok: boolean; note: string
   const draft = parseJson<{ subject?: string; body?: string }>(row.draftJson)
   if (!draft?.body) return { ok: false, note: 'The row has no assembled email.' }
 
-  const seat =
-    row.tab === 'url' ? companyFromUrl(row.input) : { company: row.input.trim(), websiteUrl: '' }
-  const cells = parseJson<OgCells>(row.cellsJson) ?? {}
-  const grounding = OG_COLUMNS.filter((c) => c.stage === 1)
-    .map((c) => `${c.label}: ${cells[c.key]?.output ?? '(failed)'}`)
-    .join('\n')
-  const { findCompany } = await import('./context')
-  const register = await findCompany(seat.company).catch(() => null)
-  const to = register?.founderEmail?.trim() || null
-
-  const { createProof, approveProof } = await import('./review')
-  const proof = await createProof({
-    kind: 'email',
-    title: draft.subject || `Reaching Out - ${seat.company} <> FirstMark`,
-    summary: `Cold draft off the OG sheet — ${seat.company}`,
-    body: draft.body,
-    actionType: 'send_email',
-    actionJson: JSON.stringify({ to, subject: draft.subject ?? '' }),
-    grounding,
-    audience: 'founder',
-    mode: 'cold',
-    company: seat.company,
-    websiteUrl: seat.websiteUrl || register?.websiteUrl || undefined,
-    linkedinUrl: register?.linkedinUrl || undefined,
-  })
-  if (!proof) return { ok: false, note: 'Could not stage the proof.' }
+  const staged = await stageOgProof(row)
+  if (!staged) return { ok: false, note: 'Could not stage the proof.' }
+  const { proof, to } = staged
+  const { approveProof } = await import('./review')
   if (!to) {
     return {
       ok: true,
