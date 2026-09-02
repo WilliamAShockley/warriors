@@ -772,16 +772,16 @@ async function draftAndFile(
     ? await runColumn('var2Refine', workflows.var2Refine, { ...stage2Vars, var2Draft })
     : { output: '', provider: workflows.var2Refine.provider }
 
-  // Assembly, in code: paragraph one is greeting + fixed intro + the
-  // three vars; then the ask, the closing, the bare sign-off. Var-2
-  // ships refined; the raw draft steps back in when the refine pass is
-  // off or failed.
+  // Assembly, in code: the greeting stands as its own paragraph; then
+  // fixed intro + the three vars as paragraph one; then the ask, the
+  // closing, the bare sign-off. Var-2 ships refined; the raw draft
+  // steps back in when the refine pass is off or failed.
   const part = (k: string) => cells[k]?.output?.trim() ?? ''
-  const paragraphOne = [part('greeting'), part('fixedIntro'), part('var1'), part('var2Refine') || part('var2'), part('var3')]
+  const paragraphOne = [part('fixedIntro'), part('var1'), part('var2Refine') || part('var2'), part('var3')]
     .filter(Boolean)
     .join(' ')
   const subject = `Reaching Out - ${seat.company} <> FirstMark`
-  const body = [paragraphOne, part('ask'), part('closing'), 'Dez'].filter(Boolean).join('\n\n')
+  const body = [part('greeting'), paragraphOne, part('ask'), part('closing'), 'Dez'].filter(Boolean).join('\n\n')
 
   // The straight-through checks, over the assembled email. Grounding is
   // what stage 1 actually established.
