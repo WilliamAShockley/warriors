@@ -557,7 +557,7 @@ function RowLine({
 }) {
   return (
     <>
-      <tr className="border-b border-hairline align-top transition-colors duration-300 ease-editorial hover:bg-black/[0.02]">
+      <tr className="border-b border-hairline align-top">
         <td className="truncate py-3 pr-4 font-serif text-[15px]" title={row.input}>
           {row.input}
         </td>
@@ -579,7 +579,10 @@ function RowLine({
                   key={c.key}
                   onClick={() => onPick(c.key)}
                   title={cell?.error ?? cell?.output ?? ''}
-                  className={'cursor-pointer py-3 pr-3 font-sans text-[11px] leading-snug' + border}
+                  className={
+                    'cursor-pointer py-3 pr-3 font-sans text-[11px] leading-snug transition-colors duration-300 ease-editorial hover:bg-black/[0.04]' +
+                    border
+                  }
                 >
                   {cell?.error ? (
                     <span className="line-clamp-3 text-faint">✗ {cell.error}</span>
