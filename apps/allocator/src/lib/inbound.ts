@@ -54,9 +54,12 @@ export async function fileEmailTask(input: {
     if (!text) return { filed: false }
 
     const { createTodo, addTodoUpdate, autoTagTodo } = await import('./todos')
+    const { bareUrlInput, seatColdDraftForTodo, runOgRow } = await import('./og')
+    const coldUrl = bareUrlInput(text)
     const todo = await createTodo({
       text,
       meta: input.source === 'mailbox' ? 'Filed by mail' : `Filed by post${input.from ? ` · ${input.from.slice(0, 60)}` : ''}`,
+      ...(coldUrl ? { href: '/og?tab=url' } : {}),
     })
     if (!todo) return { filed: false }
 
@@ -65,12 +68,18 @@ export async function fileEmailTask(input: {
 
     await db.inboundEmail.create({ data: { id: input.messageId, todoId: todo.id } })
 
-    // Same pipeline as filing by hand: classify, and email-shaped items go
-    // to the drafting worker.
-    const cls = await autoTagTodo(todo.id, todo.text)
-    if (cls?.action === 'email') {
-      const { workDocketItem } = await import('./apollo/worker')
-      await workDocketItem(todo.id, todo.text)
+    // Same pipeline as filing by hand: a bare URL commissions a cold draft
+    // through the OG URL sheet; anything else is classified, and
+    // email-shaped items go to the drafting worker.
+    if (coldUrl) {
+      const runId = await seatColdDraftForTodo(todo.id, coldUrl)
+      if (runId) await runOgRow(runId)
+    } else {
+      const cls = await autoTagTodo(todo.id, todo.text)
+      if (cls?.action === 'email') {
+        const { workDocketItem } = await import('./apollo/worker')
+        await workDocketItem(todo.id, todo.text)
+      }
     }
     return { filed: true, todoId: todo.id }
   } catch {

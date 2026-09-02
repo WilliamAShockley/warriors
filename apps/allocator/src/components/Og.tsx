@@ -45,8 +45,8 @@ type Sheet = {
 
 const RUNNING_PHRASES = ['running the research columns…', 'drafting the components…', 'assembling…']
 
-export default function Og() {
-  const [tab, setTab] = useState<OgTab>('name')
+export default function Og({ initialTab = 'name' }: { initialTab?: OgTab }) {
+  const [tab, setTab] = useState<OgTab>(initialTab)
   return (
     <>
       <div className="mt-5 flex gap-2">

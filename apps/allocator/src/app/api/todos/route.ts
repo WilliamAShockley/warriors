@@ -33,7 +33,9 @@ export async function GET() {
 // correction — it re-tags quietly but never re-runs the worker); { id, tag }
 // lets an agent categorize it (infrastructure only — the tag never renders);
 // { id, moveToNotes } closes the item out and files it to The File as a note;
-// { text } files a new one, which the desk classifier tags in the background.
+// { text } files a new one, which the desk classifier tags in the background —
+// unless the text is a bare URL, which commissions a cold draft through the
+// OG URL sheet's workflows instead.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
 
@@ -77,8 +79,29 @@ export async function POST(req: Request) {
   if (!text) {
     return NextResponse.json({ error: 'text required' }, { status: 400 })
   }
-  const todo = await createTodo({ text, meta: String(body?.meta ?? '').trim() })
-  if (todo) {
+  // A bare URL is a cold-draft commission: it routes through the OG URL
+  // sheet's workflows rather than the docket worker, and the item links
+  // to the sheet where the draft builds.
+  const { bareUrlInput, seatColdDraftForTodo } = await import('@/lib/og')
+  const coldUrl = bareUrlInput(text)
+  const todo = await createTodo({
+    text,
+    meta: String(body?.meta ?? '').trim() || (coldUrl ? 'Cold draft · The OG sheet' : ''),
+    ...(coldUrl ? { href: '/og?tab=url' } : {}),
+  })
+  if (todo && coldUrl) {
+    const runId = await seatColdDraftForTodo(todo.id, coldUrl)
+    if (runId) {
+      // The trial runs post-response, workspace pinned first — the
+      // request context is not guaranteed inside after().
+      const { activeWorkspaceId, runAsWorkspace } = await import('@/lib/tenant')
+      const ws = await activeWorkspaceId()
+      after(async () => {
+        const { runOgRow } = await import('@/lib/og')
+        await runAsWorkspace(ws, () => runOgRow(runId))
+      })
+    }
+  } else if (todo) {
     // After the response: classify, and if the item calls for an email,
     // the docket worker drafts it into The Proofs unbidden.
     after(async () => {

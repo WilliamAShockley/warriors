@@ -224,13 +224,14 @@ export async function updateTodoText(id: string, text: string): Promise<boolean>
 export async function createTodo(input: {
   text: string
   meta?: string
+  href?: string
 }): Promise<TodoRecord | null> {
   if (!hasDb()) return null
   try {
     const db = await getDb()
     const row = await db.todo.create({
       // The stored group is vestigial — buckets are derived from createdAt.
-      data: { text: input.text, meta: input.meta ?? '', group: 'Today' },
+      data: { text: input.text, meta: input.meta ?? '', href: input.href ?? null, group: 'Today' },
     })
     return {
       id: row.id,

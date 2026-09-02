@@ -611,6 +611,30 @@ export async function listOg(tab: OgTab): Promise<OgSheet> {
 
 // ── Seating and running a row ─────────────────────────────────────
 
+// A docket item that is nothing but a URL ("stripe.com",
+// "https://www.acme.ai/team") is a cold-draft commission, and this sheet
+// is its process. One token, domain-shaped; an email address — or a
+// sentence that happens to carry a link — is not it.
+export function bareUrlInput(text: string): string | null {
+  const t = text.trim()
+  if (!t || /\s/.test(t) || t.includes('@')) return null
+  const stripped = t.replace(/^https?:\/\//i, '')
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}([/?#]\S*)?$/i.test(stripped) ? t : null
+}
+
+// A bare URL filed on the Docket routes here instead of the Apollo
+// worker: seat it on the URL sheet and mark the to-do so the reader can
+// follow the draft. Seating is the fast part — the caller executes the
+// row itself (post-response from the API, inline from the mail door).
+export async function seatColdDraftForTodo(todoId: string, url: string): Promise<string | null> {
+  const id = await seatOgRun('url', url)
+  if (!id) return null
+  const { tagTodo, addTodoUpdate } = await import('./todos')
+  await tagTodo(todoId, 'email/outreach', 'og-router')
+  await addTodoUpdate(todoId, 'A bare URL — seated on the OG URL sheet, where the cold draft is building.')
+  return id
+}
+
 const companyFromUrl = (input: string): { company: string; websiteUrl: string } => {
   const websiteUrl = /^https?:\/\//.test(input) ? input : `https://${input}`
   const hostname = websiteUrl.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]

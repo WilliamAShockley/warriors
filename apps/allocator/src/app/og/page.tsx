@@ -3,7 +3,14 @@ import Og from '@/components/Og'
 
 export const dynamic = 'force-dynamic'
 
-export default function OgPage() {
+// ?tab=url opens on the URL sheet — where the Docket's bare-URL
+// commissions land, and where their items link back to.
+export default async function OgPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
+  const initialTab = (await searchParams).tab === 'url' ? ('url' as const) : ('name' as const)
   return (
     <main className="pt-14">
       <header>
@@ -27,7 +34,7 @@ export default function OgPage() {
       </header>
 
       {/* The name/URL switch and the masthead rules render inside Og. */}
-      <Og />
+      <Og initialTab={initialTab} />
     </main>
   )
 }
