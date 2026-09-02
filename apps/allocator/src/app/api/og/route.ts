@@ -51,6 +51,13 @@ export async function POST(req: Request) {
     return NextResponse.json(ok ? { ok } : { error: 'Could not save the workflows.' }, ok ? undefined : { status: 500 })
   }
 
+  // The arrow: the row's assembled email goes through the proof
+  // pipeline — staged, checked, and (with a Register address) sent.
+  if (body?.send) {
+    const res = await og.sendOgRow(String(body.send))
+    return NextResponse.json(res)
+  }
+
   if (body?.strike) {
     await og.strikeOgRun(String(body.strike))
     return NextResponse.json({ ok: true })
