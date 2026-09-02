@@ -467,6 +467,7 @@ model OgRun {
   researchJson String? // CompanyResearch — the brief, sources, Dez's Context
   contextJson  String? // OgContext — description, ceo, product, category
   draftJson    String? // OgDraftParts — the CED components + assembly
+  editsJson    String? // OgEditRecord[] — every inline edit's before/after pair, kept for learning
   cellsJson    String? // per-column outputs: {key: {output, error, provider, ms}}
   stpJson      String? // StpResult[] from the straight-through registry
   error        String?
