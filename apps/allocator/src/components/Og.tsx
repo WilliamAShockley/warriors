@@ -85,6 +85,8 @@ function OgSheet({ tab }: { tab: OgTab }) {
   const [input, setInput] = useState('')
   const [note, setNote] = useState('')
   const [open, setOpen] = useState<string | null>(null)
+  // The reading room: one clicked cell, in a popup.
+  const [picked, setPicked] = useState<{ rowId: string; col: string } | null>(null)
   const [phrase, setPhrase] = useState(0)
 
   // The workflow drafts: local edits, re-seeded from the server on save.
@@ -191,6 +193,24 @@ function OgSheet({ tab }: { tab: OgTab }) {
     load()
   }
 
+  // Popup keyboard: Escape closes, arrows page through the row's cells.
+  useEffect(() => {
+    if (!picked) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return setPicked(null)
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      setPicked((cur) => {
+        if (!cur || !sheet) return cur
+        const keys = sheet.columns.map((c) => c.key)
+        const idx = keys.indexOf(cur.col)
+        if (idx < 0) return cur
+        return { ...cur, col: keys[(idx + (e.key === 'ArrowRight' ? 1 : -1) + keys.length) % keys.length] }
+      })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [picked, sheet])
+
   if (!sheet) return <p className="dek mt-6">Dealing the sheet…</p>
 
   return (
@@ -238,6 +258,9 @@ function OgSheet({ tab }: { tab: OgTab }) {
               >
                 Cold Email Draft
               </th>
+              <th className="w-[88px] border-l border-hairline py-1.5 pl-3 font-sans text-[9px] font-medium uppercase tracking-[0.2em] text-faint">
+                Full Email
+              </th>
               <th className="w-12 py-1.5" />
             </tr>
             <tr className="border-b border-ink text-left">
@@ -255,13 +278,16 @@ function OgSheet({ tab }: { tab: OgTab }) {
                   {c.label}
                 </th>
               ))}
+              <th className="border-l border-hairline py-2.5 pl-3 font-sans text-[10px] font-medium uppercase tracking-[0.1em] text-stone">
+                Assembled
+              </th>
               <th className="py-2.5" />
             </tr>
           </thead>
           <tbody>
             {sheet.rows.length === 0 && (
               <tr>
-                <td colSpan={sheet.columns.length + 2} className="dek py-6">
+                <td colSpan={sheet.columns.length + 3} className="dek py-6">
                   No trials yet — seat a {tab === 'name' ? 'company' : 'URL'} above.
                 </td>
               </tr>
@@ -275,11 +301,28 @@ function OgSheet({ tab }: { tab: OgTab }) {
                 phrase={RUNNING_PHRASES[phrase % RUNNING_PHRASES.length]}
                 onToggle={() => setOpen(open === row.id ? null : row.id)}
                 onStrike={() => strike(row.id)}
+                onPick={(col) => setPicked({ rowId: row.id, col })}
               />
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* The reading room: the clicked cell, alone, in a centered popup.
+          ✕ or Escape closes; ‹ › (or arrow keys) page through the row. */}
+      {picked && (
+        <CellPopup
+          sheet={sheet}
+          picked={picked}
+          onClose={() => setPicked(null)}
+          onStep={(dir) => {
+            const keys = sheet.columns.map((c) => c.key)
+            const idx = keys.indexOf(picked.col)
+            if (idx < 0) return
+            setPicked({ ...picked, col: keys[(idx + dir + keys.length) % keys.length] })
+          }}
+        />
+      )}
 
       {/* ── The Column Workflows — one playful row per column: the name,
              the prompt, the color-coded route. Airtable energy, contained
@@ -502,6 +545,7 @@ function RowLine({
   phrase,
   onToggle,
   onStrike,
+  onPick,
 }: {
   row: Row
   columns: ColumnDef[]
@@ -509,70 +553,136 @@ function RowLine({
   phrase: string
   onToggle: () => void
   onStrike: () => void
+  onPick: (col: string) => void
 }) {
   return (
     <>
-      <tr
-        onClick={onToggle}
-        className="cursor-pointer border-b border-hairline align-top transition-colors duration-300 ease-editorial hover:bg-black/[0.02]"
-      >
+      <tr className="border-b border-hairline align-top transition-colors duration-300 ease-editorial hover:bg-black/[0.02]">
         <td className="truncate py-3 pr-4 font-serif text-[15px]" title={row.input}>
           {row.input}
         </td>
         {row.status === 'running' && !Object.keys(row.cells).length ? (
-          <td colSpan={columns.length} className="py-3 pr-3 font-sans text-[12px] text-faint">
+          <td colSpan={columns.length + 1} className="py-3 pr-3 font-sans text-[12px] text-faint">
             {phrase}
           </td>
         ) : row.status === 'failed' ? (
-          <td colSpan={columns.length} className="py-3 pr-3 font-sans text-[12px] text-faint">
+          <td colSpan={columns.length + 1} className="py-3 pr-3 font-sans text-[12px] text-faint">
             failed — {row.error ?? 'unknown'}
           </td>
         ) : (
-          columns.map((c, i) => {
-            const cell = row.cells[c.key]
-            const border = c.stage === 2 && columns[i - 1]?.stage === 1 ? ' border-l border-hairline pl-3' : ''
-            return (
-              <td
-                key={c.key}
-                title={cell?.error ?? cell?.output ?? ''}
-                className={'py-3 pr-3 font-sans text-[11px] leading-snug' + border}
+          <>
+            {columns.map((c, i) => {
+              const cell = row.cells[c.key]
+              const border = c.stage === 2 && columns[i - 1]?.stage === 1 ? ' border-l border-hairline pl-3' : ''
+              return (
+                <td
+                  key={c.key}
+                  onClick={() => onPick(c.key)}
+                  title={cell?.error ?? cell?.output ?? ''}
+                  className={'cursor-pointer py-3 pr-3 font-sans text-[11px] leading-snug' + border}
+                >
+                  {cell?.error ? (
+                    <span className="line-clamp-3 text-faint">✗ {cell.error}</span>
+                  ) : cell?.output ? (
+                    <>
+                      <span className="line-clamp-3 text-stone">{cell.output}</span>
+                      {cell.confidence && <ConfidenceChip level={cell.confidence} />}
+                    </>
+                  ) : row.status === 'running' ? (
+                    <span className="text-faint">·</span>
+                  ) : (
+                    <span className="text-faint">—</span>
+                  )}
+                </td>
+              )
+            })}
+            {/* Full Email — the whimsical little door to the whole thing. */}
+            <td className="border-l border-hairline py-3 pl-3">
+              <button
+                onClick={onToggle}
+                className="rounded-full bg-[#D1FAE5] px-3.5 py-1 font-sans text-[11px] font-semibold text-[#065F46] shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md"
               >
-                {cell?.error ? (
-                  <span className="line-clamp-3 text-faint">✗ {cell.error}</span>
-                ) : cell?.output ? (
-                  <>
-                    <span className="line-clamp-3 text-stone">{cell.output}</span>
-                    {cell.confidence && <ConfidenceChip level={cell.confidence} />}
-                  </>
-                ) : row.status === 'running' ? (
-                  <span className="text-faint">·</span>
-                ) : (
-                  <span className="text-faint">—</span>
-                )}
-              </td>
-            )
-          })
+                {open ? 'Hide' : 'Show'}
+              </button>
+            </td>
+          </>
         )}
         <td className="py-3 text-right">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onStrike()
-            }}
-            className="font-sans text-[11px] text-faint hover:text-ink"
-          >
+          <button onClick={onStrike} className="font-sans text-[11px] text-faint hover:text-ink">
             strike
           </button>
         </td>
       </tr>
       {open && (
         <tr className="border-b border-hairline">
-          <td colSpan={columns.length + 2} className="py-4">
-            <Evidence row={row} />
+          <td colSpan={columns.length + 3} className="py-4">
+            <FullEmail row={row} columns={columns} />
           </td>
         </tr>
       )}
     </>
+  )
+}
+
+// The reading room: one cell's contents, alone. The raw exchange lives
+// in the Full Email drawer — this popup is just what the cell said.
+function CellPopup({
+  sheet,
+  picked,
+  onClose,
+  onStep,
+}: {
+  sheet: Sheet
+  picked: { rowId: string; col: string }
+  onClose: () => void
+  onStep: (dir: 1 | -1) => void
+}) {
+  const row = sheet.rows.find((r) => r.id === picked.rowId)
+  const col = sheet.columns.find((c) => c.key === picked.col)
+  if (!row || !col) return null
+  const cell = row.cells[col.key]
+  const idx = sheet.columns.findIndex((c) => c.key === col.key)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4" onClick={onClose}>
+      <div
+        className="max-h-[82vh] w-full max-w-[640px] overflow-y-auto border border-ink/40 bg-paper p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-baseline justify-between gap-4">
+          <p className="eyebrow text-oxblood">
+            {col.label} on {row.input}
+            <span className="ml-2 text-faint">
+              {idx + 1} of {sheet.columns.length}
+            </span>
+          </p>
+          <div className="flex shrink-0 items-baseline gap-4">
+            <button onClick={() => onStep(-1)} aria-label="Previous cell" title="Previous cell (←)" className="eyebrow text-faint hover:text-ink">
+              ‹ prev
+            </button>
+            <button onClick={() => onStep(1)} aria-label="Next cell" title="Next cell (→)" className="eyebrow text-faint hover:text-ink">
+              next ›
+            </button>
+            <button onClick={onClose} aria-label="Close" title="Close (Esc)" className="font-sans text-[15px] leading-none text-faint hover:text-ink">
+              ✕
+            </button>
+          </div>
+        </div>
+        {cell && (
+          <p className="eyebrow mt-3 text-faint">
+            {cell.provider}
+            {typeof cell.ms === 'number' ? ` · ${(cell.ms / 1000).toFixed(1)}s` : ''}
+            {cell.confidence ? ` · ${cell.confidence} confidence` : ''}
+          </p>
+        )}
+        {cell?.error ? (
+          <p className="mt-3 font-serif text-[14px] italic leading-relaxed text-oxblood">✗ {cell.error}</p>
+        ) : cell?.output ? (
+          <p className="mt-3 whitespace-pre-wrap font-serif text-[15px] leading-relaxed text-ink">{cell.output}</p>
+        ) : (
+          <p className="dek mt-3">Nothing filed on this cell{row.status === 'running' ? ' yet — still running' : ''}.</p>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -596,21 +706,59 @@ function ConfidenceChip({ level }: { level: string }) {
   )
 }
 
-// The evidence: the assembled email, the straight-through verdicts, and
-// every cell's full exchange — the request sent, the response returned,
-// the confidence, the provider, the latency, the error.
-function Evidence({ row }: { row: Row }) {
+// The Full Email drawer: the assembled email with the arrow beside it —
+// the arrow signs it, the email sends through the proof pipeline — then
+// the straight-through verdicts, then every column's response with its
+// raw programmatic exchange a toggle away.
+function FullEmail({ row, columns }: { row: Row; columns: ColumnDef[] }) {
+  const [sendState, setSendState] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [sendNote, setSendNote] = useState('')
+
   if (row.status === 'failed') return <p className="dek">The trial failed: {row.error}</p>
   if (row.status !== 'done') return <p className="dek">Still running…</p>
+
+  const send = async () => {
+    if (sendState === 'sending') return
+    setSendState('sending')
+    setSendNote('')
+    const res = await fetch('/api/og', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ send: row.id }),
+    })
+      .then((r) => r.json())
+      .catch(() => ({ ok: false, note: 'Could not reach the desk.' }))
+    setSendState(res.ok ? 'sent' : 'idle')
+    setSendNote(res.note ?? (res.ok ? 'Sent.' : 'The send did not take.'))
+  }
+
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-6 lg:grid-cols-2">
       <div>
-        <p className="eyebrow mb-1">The assembled email</p>
-        {row.subject && <p className="font-sans text-[12px] font-medium">Subject: {row.subject}</p>}
-        <pre className="mt-1 whitespace-pre-wrap border border-hairline p-3 font-sans text-[12px] leading-relaxed">
-          {row.body ?? '(no draft)'}
-        </pre>
-        <p className="eyebrow mb-1 mt-4">The straight-through checks</p>
+        <p className="eyebrow mb-1">The full email</p>
+        <div className="flex items-start gap-4">
+          <div className="min-w-0 flex-1">
+            {row.subject && <p className="font-sans text-[12px] font-medium">Subject: {row.subject}</p>}
+            <pre className="mt-1 whitespace-pre-wrap border border-hairline p-3 font-sans text-[12px] leading-relaxed">
+              {row.body ?? '(no draft)'}
+            </pre>
+          </div>
+          <div className="flex shrink-0 flex-col items-center gap-1.5 pt-5">
+            <button
+              onClick={send}
+              disabled={sendState !== 'idle' || !row.body}
+              aria-label="The arrow signs it — the email sends"
+              title="The arrow signs it — the email sends to the founder on the Register"
+              className="flex h-12 w-12 items-center justify-center rounded-full border border-ink font-serif text-[20px] leading-none text-ink transition-colors duration-300 ease-editorial hover:bg-ink hover:text-paper disabled:opacity-40"
+            >
+              {sendState === 'sending' ? '·' : sendState === 'sent' ? '✓' : '→'}
+            </button>
+            <span className="eyebrow text-center text-faint">send</span>
+          </div>
+        </div>
+        {sendNote && <p className="dek mt-2 text-[13px]">{sendNote}</p>}
+
+        <p className="eyebrow mb-1 mt-5">The straight-through checks</p>
         <ul className="space-y-1">
           {row.stp.map((s) => (
             <li key={s.id} className="font-sans text-[12px]">
@@ -621,11 +769,44 @@ function Evidence({ row }: { row: Row }) {
           {row.stp.length === 0 && <li className="dek">No checks applied.</li>}
         </ul>
       </div>
+
+      {/* Column by column: the response, with the raw exchange a toggle away. */}
       <div>
-        <p className="eyebrow mb-1">The cells, raw (request · response · confidence · provider · latency)</p>
-        <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap border border-hairline p-3 font-mono text-[11px] leading-relaxed">
-          {JSON.stringify(row.cells, null, 2)}
-        </pre>
+        <p className="eyebrow mb-2">The cells — every column&rsquo;s response</p>
+        <div className="space-y-2">
+          {columns.map((c) => {
+            const cell = row.cells[c.key]
+            return (
+              <div key={c.key} className="border border-hairline p-2.5">
+                <p className="font-sans text-[10px] font-medium uppercase tracking-[0.1em] text-stone">
+                  {c.label}
+                  <span className="ml-2 normal-case tracking-normal text-faint">
+                    {cell?.provider}
+                    {typeof cell?.ms === 'number' ? ` · ${(cell.ms / 1000).toFixed(1)}s` : ''}
+                    {cell?.confidence ? ` · ${cell.confidence} confidence` : ''}
+                  </span>
+                </p>
+                {cell?.error ? (
+                  <p className="mt-1 font-sans text-[12px] leading-snug text-oxblood">✗ {cell.error}</p>
+                ) : (
+                  <p className="mt-1 whitespace-pre-wrap font-sans text-[12px] leading-snug text-ink">
+                    {cell?.output || '—'}
+                  </p>
+                )}
+                {(cell?.request !== undefined || cell?.response !== undefined) && (
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer font-sans text-[11px] text-faint hover:text-ink">
+                      the raw exchange
+                    </summary>
+                    <pre className="mt-1.5 max-h-[16rem] overflow-auto whitespace-pre-wrap border border-hairline bg-black/[0.02] p-2 font-mono text-[10.5px] leading-relaxed">
+                      {JSON.stringify({ request: cell?.request, response: cell?.response, runId: cell?.runId }, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

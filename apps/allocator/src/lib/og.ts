@@ -815,6 +815,60 @@ async function draftAndFile(
 }
 
 /**
+ * The arrow, from the sheet. The row's assembled email goes through the
+ * proof pipeline: staged as an email proof (straight-through checks and
+ * all, so the Record keeps the full trail), then approved on the spot —
+ * which executes the Gmail send to the founder's Register address. With
+ * no address on file the proof stays pending in the Proof Room instead,
+ * where the LinkedIn path lives.
+ */
+export async function sendOgRow(id: string): Promise<{ ok: boolean; note: string }> {
+  if (!hasDb()) return { ok: false, note: 'No database — the OG sheet runs on the live desk.' }
+  const db = await getDb()
+  const row = await db.ogRun.findFirst({ where: { id } })
+  if (!row || row.status !== 'done') return { ok: false, note: 'The row has no finished draft to send.' }
+  const draft = parseJson<{ subject?: string; body?: string }>(row.draftJson)
+  if (!draft?.body) return { ok: false, note: 'The row has no assembled email.' }
+
+  const seat =
+    row.tab === 'url' ? companyFromUrl(row.input) : { company: row.input.trim(), websiteUrl: '' }
+  const cells = parseJson<OgCells>(row.cellsJson) ?? {}
+  const grounding = OG_COLUMNS.filter((c) => c.stage === 1)
+    .map((c) => `${c.label}: ${cells[c.key]?.output ?? '(failed)'}`)
+    .join('\n')
+  const { findCompany } = await import('./context')
+  const register = await findCompany(seat.company).catch(() => null)
+  const to = register?.founderEmail?.trim() || null
+
+  const { createProof, approveProof } = await import('./review')
+  const proof = await createProof({
+    kind: 'email',
+    title: draft.subject || `Reaching Out - ${seat.company} <> FirstMark`,
+    summary: `Cold draft off the OG sheet — ${seat.company}`,
+    body: draft.body,
+    actionType: 'send_email',
+    actionJson: JSON.stringify({ to, subject: draft.subject ?? '' }),
+    grounding,
+    audience: 'founder',
+    mode: 'cold',
+    company: seat.company,
+    websiteUrl: seat.websiteUrl || register?.websiteUrl || undefined,
+    linkedinUrl: register?.linkedinUrl || undefined,
+  })
+  if (!proof) return { ok: false, note: 'Could not stage the proof.' }
+  if (!to) {
+    return {
+      ok: true,
+      note: 'Staged to the Proof Room — no founder email on the Register; the in badge there sends it over LinkedIn.',
+    }
+  }
+  const approved = await approveProof(proof.id)
+  return approved.ok
+    ? { ok: true, note: `Sent to ${to} — filed on the Record.` }
+    : { ok: false, note: `${approved.error ?? 'The send failed'} — the proof waits in the Proof Room.` }
+}
+
+/**
  * The redraft. The web-researched cells (Description · CEO · Product)
  * stay exactly as they were filed; Category re-classifies from them —
  * it's a no-web call, and the taxonomy may have changed since the row
