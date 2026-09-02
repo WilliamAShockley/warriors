@@ -558,6 +558,15 @@ export type OgCell = {
 }
 export type OgCells = Record<string, OgCell>
 
+// One inline edit off the sheet: what the draft said before, what the
+// reader made it say. The pairs accumulate — they're the training set
+// for whatever learns Dez's hand later, so a redraft never erases them.
+export type OgEditRecord = {
+  at: string // ISO timestamp
+  before: { subject: string; body: string }
+  after: { subject: string; body: string }
+}
+
 export type OgRowRecord = {
   id: string
   tab: OgTab
@@ -567,6 +576,7 @@ export type OgRowRecord = {
   cells: OgCells
   subject: string | null
   body: string | null
+  edits: OgEditRecord[]
   stp: StpResult[]
   error: string | null
   ranOn: string | null
@@ -601,6 +611,7 @@ export async function listOg(tab: OgTab): Promise<OgSheet> {
         cells: parseJson<OgCells>(r.cellsJson) ?? {},
         subject: draft?.subject ?? null,
         body: draft?.body ?? null,
+        edits: parseJson<OgEditRecord[]>(r.editsJson) ?? [],
         stp: parseJson<StpResult[]>(r.stpJson) ?? [],
         error: r.error,
         ranOn: r.updatedAt?.toISOString?.() ?? null,
@@ -836,6 +847,65 @@ async function draftAndFile(
       error: null,
     },
   })
+}
+
+/**
+ * The pencil, from the sheet. The reader's inline edit REPLACES the
+ * draft — draftJson is what the arrow sends, so what he typed is what
+ * ships — and the before/after pair files onto the edit trail first,
+ * so nothing the machine drafted is lost. The straight-through checks
+ * re-run over the edited email: the verdicts on the row always describe
+ * the email that would actually go out.
+ */
+export async function editOgRow(
+  id: string,
+  edit: { subject: string; body: string }
+): Promise<{ ok: boolean; note: string }> {
+  if (!hasDb()) return { ok: false, note: 'No database — the OG sheet runs on the live desk.' }
+  const db = await getDb()
+  const row = await db.ogRun.findFirst({ where: { id } })
+  if (!row || row.status !== 'done') return { ok: false, note: 'The row has no finished draft to edit.' }
+  const draft = parseJson<{ subject?: string; body?: string }>(row.draftJson)
+  if (!draft?.body) return { ok: false, note: 'The row has no assembled email.' }
+
+  const subject = edit.subject.replace(/\r\n/g, ' ').trim()
+  const body = edit.body.replace(/\r\n/g, '\n').trimEnd()
+  if (!body.trim()) return { ok: false, note: 'An empty email cannot ship — strike the row instead.' }
+  const before = { subject: draft.subject ?? '', body: draft.body }
+  if (subject === before.subject && body === before.body) return { ok: true, note: 'Nothing changed.' }
+
+  const edits = parseJson<OgEditRecord[]>(row.editsJson) ?? []
+  edits.push({ at: new Date().toISOString(), before, after: { subject, body } })
+
+  const seat =
+    row.tab === 'url' ? companyFromUrl(row.input) : { company: row.input.trim(), websiteUrl: '' }
+  const cells = parseJson<OgCells>(row.cellsJson) ?? {}
+  const grounding = OG_COLUMNS.filter((c) => c.stage === 1)
+    .map((c) => `${c.label}: ${cells[c.key]?.output ?? '(failed)'}`)
+    .join('\n')
+  const { findCompany } = await import('./context')
+  const register = await findCompany(seat.company).catch(() => null)
+  const stp = await runStpChecks({
+    body,
+    subject,
+    to: null,
+    mode: 'cold',
+    audience: 'founder',
+    grounding,
+    register: register
+      ? { founderFirstName: register.founderFirstName ?? null, founderFullName: register.founderFullName ?? null }
+      : null,
+  })
+
+  await db.ogRun.update({
+    where: { id },
+    data: {
+      draftJson: JSON.stringify({ subject, body }),
+      editsJson: JSON.stringify(edits),
+      stpJson: JSON.stringify(stp),
+    },
+  })
+  return { ok: true, note: 'Filed — the edited email is what the arrow sends.' }
 }
 
 /**

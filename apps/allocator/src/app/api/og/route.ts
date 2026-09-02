@@ -51,6 +51,17 @@ export async function POST(req: Request) {
     return NextResponse.json(ok ? { ok } : { error: 'Could not save the workflows.' }, ok ? undefined : { status: 500 })
   }
 
+  // The pencil: an inline edit replaces the row's draft (what the arrow
+  // sends), files the before/after pair on the edit trail, and re-runs
+  // the straight-through checks over the edited email.
+  if (body?.edit) {
+    const res = await og.editOgRow(String(body.edit.id ?? ''), {
+      subject: String(body.edit.subject ?? ''),
+      body: String(body.edit.body ?? ''),
+    })
+    return NextResponse.json(res, res.ok ? undefined : { status: 400 })
+  }
+
   // The arrow: the row's assembled email goes through the proof
   // pipeline — staged, checked, and (with a Register address) sent.
   if (body?.send) {

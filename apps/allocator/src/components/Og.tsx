@@ -20,6 +20,11 @@ type Cell = {
   request?: unknown
   response?: unknown
 }
+type EditRecord = {
+  at: string
+  before: { subject: string; body: string }
+  after: { subject: string; body: string }
+}
 type Row = {
   id: string
   input: string
@@ -28,6 +33,7 @@ type Row = {
   cells: Record<string, Cell>
   subject: string | null
   body: string | null
+  edits: EditRecord[]
   stp: StpResult[]
   error: string | null
 }
@@ -302,6 +308,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
                 onToggle={() => setOpen(open === row.id ? null : row.id)}
                 onStrike={() => strike(row.id)}
                 onPick={(col) => setPicked({ rowId: row.id, col })}
+                onEdited={load}
               />
             ))}
           </tbody>
@@ -546,6 +553,7 @@ function RowLine({
   onToggle,
   onStrike,
   onPick,
+  onEdited,
 }: {
   row: Row
   columns: ColumnDef[]
@@ -554,6 +562,7 @@ function RowLine({
   onToggle: () => void
   onStrike: () => void
   onPick: (col: string) => void
+  onEdited: () => void
 }) {
   return (
     <>
@@ -619,7 +628,7 @@ function RowLine({
       {open && (
         <tr className="border-b border-hairline">
           <td colSpan={columns.length + 3} className="py-4">
-            <FullEmail row={row} columns={columns} />
+            <FullEmail row={row} columns={columns} onEdited={onEdited} />
           </td>
         </tr>
       )}
@@ -709,19 +718,65 @@ function ConfidenceChip({ level }: { level: string }) {
   )
 }
 
-// The Full Email drawer: the assembled email with the arrow beside it —
-// the arrow signs it, the email sends through the proof pipeline — then
-// the straight-through verdicts, then every column's response with its
-// raw programmatic exchange a toggle away.
-function FullEmail({ row, columns }: { row: Row; columns: ColumnDef[] }) {
+// The Full Email drawer: the assembled email — editable in place, the
+// text itself is the field — with the arrow beside it. An edit REPLACES
+// the draft (what you read here is literally what sends) once it's
+// filed; every before/after pair lands on the edit trail, the raw
+// material for teaching the drafting workflows Dez's hand. Then the
+// straight-through verdicts (re-run over the edited text), then every
+// column's response with its raw exchange a toggle away.
+function FullEmail({ row, columns, onEdited }: { row: Row; columns: ColumnDef[]; onEdited: () => void }) {
   const [sendState, setSendState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [sendNote, setSendNote] = useState('')
+
+  // The email under the pencil. Seeded from the row; while the reader's
+  // typing differs from the filed draft the save bar appears and the
+  // arrow waits. A row refreshed under an untouched field re-seeds it —
+  // a redraft landing mid-edit leaves the typing alone (discard resets).
+  const [subj, setSubj] = useState(row.subject ?? '')
+  const [bodyText, setBodyText] = useState(row.body ?? '')
+  const [seed, setSeed] = useState({ s: row.subject ?? '', b: row.body ?? '' })
+  const [editState, setEditState] = useState<'idle' | 'saving'>('idle')
+  const [editNote, setEditNote] = useState('')
+  if (seed.s !== (row.subject ?? '') || seed.b !== (row.body ?? '')) {
+    if (subj === seed.s) setSubj(row.subject ?? '')
+    if (bodyText === seed.b) setBodyText(row.body ?? '')
+    setSeed({ s: row.subject ?? '', b: row.body ?? '' })
+  }
 
   if (row.status === 'failed') return <p className="dek">The trial failed: {row.error}</p>
   if (row.status !== 'done') return <p className="dek">Still running…</p>
 
+  const dirty = subj !== (row.subject ?? '') || bodyText !== (row.body ?? '')
+
+  const saveEdit = async () => {
+    if (editState === 'saving') return
+    // Mirror the desk's normalization so the field settles clean after
+    // the reload instead of hanging dirty on a trailing newline.
+    const subject = subj.replace(/\r\n/g, ' ').trim()
+    const body = bodyText.replace(/\r\n/g, '\n').trimEnd()
+    if (!body.trim()) {
+      setEditNote('An empty email cannot ship — strike the row instead.')
+      return
+    }
+    setSubj(subject)
+    setBodyText(body)
+    setEditState('saving')
+    setEditNote('')
+    const res = await fetch('/api/og', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ edit: { id: row.id, subject, body } }),
+    })
+      .then((r) => r.json())
+      .catch(() => ({ ok: false, note: 'Could not reach the desk.' }))
+    setEditState('idle')
+    setEditNote(res.note ?? (res.ok ? 'Filed.' : 'The edit did not take.'))
+    if (res.ok) onEdited()
+  }
+
   const send = async () => {
-    if (sendState === 'sending') return
+    if (sendState === 'sending' || dirty) return
     setSendState('sending')
     setSendNote('')
     const res = await fetch('/api/og', {
@@ -738,20 +793,42 @@ function FullEmail({ row, columns }: { row: Row; columns: ColumnDef[] }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div>
-        <p className="eyebrow mb-1">The full email</p>
+        <p className="eyebrow mb-1">
+          The full email
+          <span className="ml-2 normal-case tracking-normal text-faint">— editable in place; what you read is what sends</span>
+          {row.edits.length > 0 && (
+            <span className="ml-2 inline-block rounded-full bg-[#FEF3C7] px-2 py-0.5 font-sans text-[10px] font-semibold normal-case tracking-normal text-[#92400E]">
+              edited ×{row.edits.length}
+            </span>
+          )}
+        </p>
         <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
-            {row.subject && <p className="font-sans text-[12px] font-medium">Subject: {row.subject}</p>}
-            <pre className="mt-1 whitespace-pre-wrap border border-hairline p-3 font-sans text-[12px] leading-relaxed">
-              {row.body ?? '(no draft)'}
-            </pre>
+            <div className="flex items-baseline gap-2">
+              <span className="shrink-0 font-sans text-[12px] font-medium">Subject:</span>
+              <input
+                value={subj}
+                onChange={(e) => setSubj(e.target.value)}
+                className="w-full border-b border-transparent bg-transparent font-sans text-[12px] font-medium outline-none transition-colors hover:border-hairline focus:border-ink"
+              />
+            </div>
+            <textarea
+              value={bodyText}
+              onChange={(e) => setBodyText(e.target.value)}
+              rows={Math.max(8, bodyText.split('\n').length + 1)}
+              className="mt-1 w-full resize-y border border-hairline bg-transparent p-3 font-sans text-[12px] leading-relaxed outline-none transition-colors focus:border-ink"
+            />
           </div>
           <div className="flex shrink-0 flex-col items-center gap-1.5 pt-5">
             <button
               onClick={send}
-              disabled={sendState !== 'idle' || !row.body}
+              disabled={sendState !== 'idle' || !row.body || dirty}
               aria-label="The arrow signs it — the email sends"
-              title="The arrow signs it — the email sends to the founder on the Register"
+              title={
+                dirty
+                  ? 'Save the edit first — the arrow sends the filed draft'
+                  : 'The arrow signs it — the email sends to the founder on the Register'
+              }
               className="flex h-12 w-12 items-center justify-center rounded-full border border-ink font-serif text-[20px] leading-none text-ink transition-colors duration-300 ease-editorial hover:bg-ink hover:text-paper disabled:opacity-40"
             >
               {sendState === 'sending' ? '·' : sendState === 'sent' ? '✓' : '→'}
@@ -759,7 +836,61 @@ function FullEmail({ row, columns }: { row: Row; columns: ColumnDef[] }) {
             <span className="eyebrow text-center text-faint">send</span>
           </div>
         </div>
+        {dirty && (
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <button
+              onClick={saveEdit}
+              disabled={editState === 'saving'}
+              className="rounded-full bg-ink px-4 py-1.5 font-sans text-[11px] font-semibold text-paper shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md disabled:translate-y-0 disabled:opacity-80"
+            >
+              {editState === 'saving' ? 'Filing…' : 'Save the edit — it becomes the email'}
+            </button>
+            <button
+              onClick={() => {
+                setSubj(row.subject ?? '')
+                setBodyText(row.body ?? '')
+                setEditNote('')
+              }}
+              className="font-sans text-[11px] text-faint underline decoration-hairline underline-offset-4 hover:text-ink"
+            >
+              discard
+            </button>
+          </div>
+        )}
+        {editNote && <p className="dek mt-2 text-[13px]">{editNote}</p>}
         {sendNote && <p className="dek mt-2 text-[13px]">{sendNote}</p>}
+
+        {row.edits.length > 0 && (
+          <details className="mt-3">
+            <summary className="cursor-pointer font-sans text-[11px] text-faint hover:text-ink">
+              the edit trail — every before/after pair, kept for the learning loop
+            </summary>
+            <div className="mt-2 space-y-3">
+              {row.edits.map((e, i) => (
+                <div key={i} className="border border-hairline p-2.5">
+                  <p className="font-sans text-[10px] font-medium uppercase tracking-[0.1em] text-stone">
+                    edit {i + 1}
+                    <span className="ml-2 normal-case tracking-normal text-faint">{new Date(e.at).toLocaleString()}</span>
+                  </p>
+                  {e.before.subject !== e.after.subject && (
+                    <p className="mt-1.5 font-sans text-[11px] leading-snug">
+                      <span className="text-faint line-through">{e.before.subject}</span>{' '}
+                      <span className="text-ink">→ {e.after.subject}</span>
+                    </p>
+                  )}
+                  <div className="mt-1.5 grid gap-2 md:grid-cols-2">
+                    <pre className="whitespace-pre-wrap bg-black/[0.02] p-2 font-sans text-[11px] leading-snug text-faint">
+                      {e.before.body}
+                    </pre>
+                    <pre className="whitespace-pre-wrap bg-[#ECFDF5] p-2 font-sans text-[11px] leading-snug text-ink">
+                      {e.after.body}
+                    </pre>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
 
         <p className="eyebrow mb-1 mt-5">The straight-through checks</p>
         <ul className="space-y-1">
