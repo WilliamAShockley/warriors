@@ -16,6 +16,10 @@
 //   Stage 2 — the CED components: Greeting · Fixed-Intro · Var-1/2/3 ·
 //     Closing · Ask. Variables: stage 1's plus {description} {ceo}
 //     {ceoFirst} {product} {category} {dezContext}.
+//     Var-2-Refine sits out the fan-out the way Category does in stage
+//     1 — it edits the Var-2 draft, so it runs once that has landed and
+//     also gets {var2Draft}. The email takes the refined line, falling
+//     back to the draft when the refine is off or failed.
 // The email then assembles in code (subject too), the straight-through
 // checks run over it, and every cell files the full exchange on the row
 // for triage: the request sent to the provider, the response that came
@@ -67,6 +71,7 @@ export const OG_COLUMNS: OgColumnDef[] = [
   { key: 'fixedIntro', label: 'CED-Fixed-Intro', stage: 2 },
   { key: 'var1', label: 'CED-Var-1', stage: 2 },
   { key: 'var2', label: 'CED-Var-2', stage: 2 },
+  { key: 'var2Refine', label: 'CED-Var-2-Refine', stage: 2 },
   { key: 'var3', label: 'CED-Var-3', stage: 2 },
   { key: 'closing', label: 'CED-Closing', stage: 2 },
   { key: 'ask', label: 'CED-Ask', stage: 2 },
@@ -85,6 +90,9 @@ export const OG_STAGE2_VARS = [
   '{category}',
   '{dezContext}',
 ]
+// Var-2-Refine runs after the Var-2 draft lands, so the draft is on the
+// table as a variable when its prompt renders.
+export const OG_VAR2_REFINE_VARS = [...OG_STAGE2_VARS, '{var2Draft}']
 
 const DEZ_VOICE_LINE = `Write ONE sentence in Dez's exact cold-email voice: warm, direct, opinionated, contractions, comma splices welcome, spaced hyphens " - " never em dashes, "+" as a connector, nothing corporate. Reply with ONLY the sentence.`
 
@@ -200,11 +208,58 @@ Product: {product}
 
 Prefer a plural space name ("prediction markets", "freight AI agents") so "where they go next" reads naturally; bend to "where it goes next" only when the space is unavoidably singular, and keep the "+" construction either way. If the category name reads awkwardly inside "our ... practice", smooth it minimally - "Built Environment/Compute" becomes "Built Environment + Compute" - never change the practice claim itself.`,
   },
+  // Var-2 is modeled on a thesis sentence Dez actually sent: the prompt
+  // carries that sentence as the gold standard and teaches its anatomy
+  // (reframe → who wins → today-gap → concrete instances) rather than
+  // asking vaguely for "an opinionated view".
   var2: {
     provider: 'claude',
     prompt: `${DEZ_VOICE_LINE}
 
-The sentence is the THESIS LINE of a cold email to {company} ({category}): Dez's dated, opinionated view of the space this company sits in ("I think X is where Y was in 2020/2021" energy). His own standing context, if any - make it sound like HIS current thinking, never quote it as research:
+The sentence is the THESIS LINE of a cold email to {company} ({category}): Dez's specific view of the SPACE this company sits in - not praise for the company itself (that's the next sentence's job).
+
+The gold standard, sent by Dez himself:
+"Long story short is I'm really compelled by the idea of prediction markets acting as an insurance/hedging layer for the long tail of businesses that today have no practical way to protect themselves against macro volatility - rates, fuel, inflation etc."
+
+Match its anatomy, never its words:
+1. THE OPENER - fixed: the sentence ALWAYS begins with the exact words "Long story short is," - comma included, even though the gold standard predates it - then the conviction ("I'm really compelled by the idea of..." energy; vary the conviction phrasing, never the opener).
+2. THE REFRAME - the space recast as doing a bigger, less obvious job than the market gives it credit for ("prediction markets acting as an insurance/hedging layer").
+3. WHO WINS - the underserved group the reframe unlocks ("the long tail of businesses").
+4. THE TODAY-GAP - what that group has no practical way to do today ("...that today have no practical way to protect themselves against macro volatility").
+5. GROUND IT - land on 2-3 concrete instances ("- rates, fuel, inflation etc.").
+
+Match its length too - the gold standard runs ~45 words. When a draft runs past that, cut the weakest clause; one reframe, one beneficiary, one gap, then land it.
+
+Source the thesis in this order:
+- Dez's standing context, when it covers this space - make it sound like HIS current thinking, never quote it as research:
+{dezContext}
+- Otherwise derive the sharpest defensible reframe from the research alone:
+What they do: {description}
+Product: {product}`,
+  },
+  // Var-2-Refine is the edit pass over the Var-2 draft: succinctness,
+  // clarity, simplicity — same thesis, fewer words. It can only cut or
+  // simplify, never elaborate, so it can't drift the opinion.
+  var2Refine: {
+    provider: 'claude',
+    prompt: `You are Dez's edit pass. Below is a DRAFT thesis line for a cold email to {company} ({category}), written to imitate a sentence Dez actually sent. Refine it - keep its thesis, make it read like Dez said it out loud. Reply with ONLY the final sentence - no preamble, no quotes, no notes on what you changed.
+
+The gold standard, sent by Dez himself:
+"Long story short is I'm really compelled by the idea of prediction markets acting as an insurance/hedging layer for the long tail of businesses that today have no practical way to protect themselves against macro volatility - rates, fuel, inflation etc."
+
+Make it tighter, clearer, simpler - same thesis, fewer words, nothing lost. Cut hedges, filler, stacked adjectives, any clause doing no work. If a plain word can replace a fancy one, it does. The result should read effortless, like Dez said it in one breath.
+
+Keep the opener "Long story short is," exactly, keep his punctuation habits (spaced hyphens " - ", "+" as a connector, contractions), and don't add any new claims - editing only, never elaborating.
+
+Do NOT invent a new thesis - the draft's reframe is the reframe; your job is the sentence, not the opinion. If the draft already passes everything, return it word for word.
+
+THE DRAFT
+{var2Draft}
+
+Ground truth:
+What they do: {description}
+Product: {product}
+Dez's standing context:
 {dezContext}`,
   },
   var3: {
@@ -242,6 +297,12 @@ const LEGACY_VAR1_PROMPT = `${DEZ_VOICE_LINE}
 The sentence is the HOOK of a cold email to {ceo} at {company} - why Dez is reaching out to THIS company now ("I came across what you're doing at {company}..." energy), grounded ONLY in this research:
 What they do: {description}
 Product: {product}`
+// Var-2 used to ask vaguely for a "dated, opinionated view" — the only
+// default that shipped yields to the anatomy-taught thesis line.
+const LEGACY_VAR2_PROMPT = `${DEZ_VOICE_LINE}
+
+The sentence is the THESIS LINE of a cold email to {company} ({category}): Dez's dated, opinionated view of the space this company sits in ("I think X is where Y was in 2020/2021" energy). His own standing context, if any - make it sound like HIS current thinking, never quote it as research:
+{dezContext}`
 const LEGACY_PROMPTS: Record<string, Set<string>> = {
   category: new Set([
     LEGACY_CATEGORY_BASE,
@@ -250,6 +311,7 @@ const LEGACY_PROMPTS: Record<string, Set<string>> = {
 ${ANCHOR_LINE}`,
   ]),
   var1: new Set([LEGACY_VAR1_PROMPT]),
+  var2: new Set([LEGACY_VAR2_PROMPT]),
 }
 
 export async function getOgWorkflows(): Promise<OgWorkflows> {
@@ -450,7 +512,10 @@ async function askAnthropicSearch(prompt: string): Promise<ProviderAnswer> {
 async function askClaude(prompt: string): Promise<ProviderAnswer> {
   const requestBody = {
     model: OG_MODEL,
-    max_tokens: 1024,
+    // The cap needs headroom well past the answer: the model sometimes
+    // spends heavily on reasoning blocks first, and a cap it exhausts
+    // mid-think returns no text at all — a flaked, empty cell.
+    max_tokens: 4000,
     messages: [{ role: 'user', content: prompt }],
   }
   const msg: any = await anthropic.messages.create(requestBody as any)
@@ -691,16 +756,28 @@ async function draftAndFile(
     dezContext: dezContext || '(none on file)',
   }
 
-  const stage2 = OG_COLUMNS.filter((c) => c.stage === 2)
+  // Stage 2 fans out — except the Var-2 refine pass, which edits the
+  // Var-2 draft and so runs once that has landed.
+  const stage2 = OG_COLUMNS.filter((c) => c.stage === 2 && c.key !== 'var2Refine')
   const stage2Results = await Promise.all(
     stage2.map((c) => runColumn(c.key, workflows[c.key], stage2Vars))
   )
   stage2.forEach((c, i) => (cells[c.key] = stage2Results[i]))
 
+  // The refine pass, over the draft. No draft (Var-2 off, or failed)
+  // means nothing to refine — the cell files empty rather than letting
+  // the editor invent a sentence from nothing.
+  const var2Draft = cells.var2?.output?.trim() ?? ''
+  cells.var2Refine = var2Draft
+    ? await runColumn('var2Refine', workflows.var2Refine, { ...stage2Vars, var2Draft })
+    : { output: '', provider: workflows.var2Refine.provider }
+
   // Assembly, in code: paragraph one is greeting + fixed intro + the
-  // three vars; then the ask, the closing, the bare sign-off.
+  // three vars; then the ask, the closing, the bare sign-off. Var-2
+  // ships refined; the raw draft steps back in when the refine pass is
+  // off or failed.
   const part = (k: string) => cells[k]?.output?.trim() ?? ''
-  const paragraphOne = [part('greeting'), part('fixedIntro'), part('var1'), part('var2'), part('var3')]
+  const paragraphOne = [part('greeting'), part('fixedIntro'), part('var1'), part('var2Refine') || part('var2'), part('var3')]
     .filter(Boolean)
     .join(' ')
   const subject = `Reaching Out - ${seat.company} <> FirstMark`

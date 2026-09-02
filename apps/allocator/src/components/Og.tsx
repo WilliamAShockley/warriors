@@ -40,7 +40,7 @@ type Sheet = {
   workflows: Record<string, Workflow>
   columns: ColumnDef[]
   providers: Provider[]
-  vars: { stage1: string[]; category: string[]; stage2: string[] }
+  vars: { stage1: string[]; category: string[]; stage2: string[]; var2Refine: string[] }
 }
 
 const RUNNING_PHRASES = ['running the research columns…', 'drafting the components…', 'assembling…']
@@ -222,7 +222,7 @@ function OgSheet({ tab }: { tab: OgTab }) {
 
       {/* The sheet — full-bleed: the trials deserve the whole broadsheet. */}
       <div className="mt-4 overflow-x-auto md:w-[calc(100vw-96px)] md:ml-[calc(50%-50vw+48px)]">
-        <table className="w-full min-w-[1480px] table-fixed">
+        <table className="w-full min-w-[1600px] table-fixed">
           <thead>
             <tr className="border-b border-hairline text-left">
               <th className="w-40 py-1.5 pr-4" />
@@ -302,12 +302,15 @@ function OgSheet({ tab }: { tab: OgTab }) {
                 providers={sheet.providers}
                 vars={
                   // Category runs after the other research columns, so
-                  // their outputs are variables its prompt can use.
+                  // their outputs are variables its prompt can use —
+                  // Var-2-Refine likewise runs after the Var-2 draft.
                   c.key === 'category'
                     ? sheet.vars.category
-                    : c.stage === 1
-                      ? sheet.vars.stage1
-                      : sheet.vars.stage2
+                    : c.key === 'var2Refine'
+                      ? sheet.vars.var2Refine
+                      : c.stage === 1
+                        ? sheet.vars.stage1
+                        : sheet.vars.stage2
                 }
                 onChange={(w) => setDrafts((prev) => ({ ...prev!, [c.key]: w }))}
               />
