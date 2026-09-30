@@ -114,6 +114,10 @@ export async function sendEmail(args: {
   subject: string
   bodyText: string
   threadId?: string | null
+  // RFC 5322 Message-ID of the message being replied to (and the chain
+  // before it) — what makes the recipient's client thread a follow-up.
+  inReplyTo?: string | null
+  references?: string | null
 }): Promise<{ id: string; threadId: string } | null> {
   const gmail = await getGmail()
   if (!gmail) return null
@@ -127,6 +131,10 @@ export async function sendEmail(args: {
       `From: ${fromEmail}`,
       `To: ${args.to}`,
       `Subject: ${args.subject}`,
+      ...(args.inReplyTo ? [`In-Reply-To: ${args.inReplyTo}`] : []),
+      ...(args.references || args.inReplyTo
+        ? [`References: ${args.references || args.inReplyTo}`]
+        : []),
       'Content-Type: text/plain; charset=utf-8',
       '',
       args.bodyText,
@@ -210,5 +218,60 @@ export async function threadHasReply(threadId: string, afterMessageId?: string |
     })
   } catch {
     return false
+  }
+}
+
+export type ThreadMessage = {
+  id: string
+  from: string
+  internalDate: number // ms since epoch
+  messageIdHeader: string
+  references: string
+  bounce: boolean
+  own: boolean
+}
+
+// One sent thread, message by message — enough to tell whether it took a
+// bounce, drew a reply, or had the reader follow up by hand. Null when
+// Gmail is unreachable, so callers can tell "nothing there" from "couldn't
+// look". Only ever asks about the named thread, never the mailbox.
+export async function inspectThread(threadId: string): Promise<ThreadMessage[] | null> {
+  const gmail = await getGmail()
+  if (!gmail) return null
+  try {
+    const { db } = await import('./db')
+    const { activeWorkspaceId } = await import('./tenant')
+    const token = await db.googleToken.findUnique({ where: { id: await activeWorkspaceId() } })
+    const ownEmail = (token?.email ?? '').toLowerCase()
+
+    const thread = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'metadata',
+      metadataHeaders: ['From', 'Subject', 'Message-ID', 'References'],
+    })
+    return (thread.data.messages ?? []).map((m) => {
+      const header = (name: string) =>
+        m.payload?.headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? ''
+      const from = header('From').toLowerCase()
+      const subject = header('Subject').toLowerCase()
+      const bounce =
+        from.includes('mailer-daemon') ||
+        from.includes('postmaster@') ||
+        /delivery status notification|undeliver|delivery (has )?failed|delivery failure|address not found|returned mail|message blocked/.test(
+          subject
+        )
+      return {
+        id: m.id ?? '',
+        from,
+        internalDate: Number(m.internalDate ?? 0),
+        messageIdHeader: header('Message-ID'),
+        references: header('References'),
+        bounce,
+        own: Boolean(ownEmail) && from.includes(ownEmail),
+      }
+    })
+  } catch {
+    return null
   }
 }

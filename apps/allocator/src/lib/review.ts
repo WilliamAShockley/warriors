@@ -327,6 +327,12 @@ export async function approveProof(id: string): Promise<{ ok: boolean; error?: s
       },
     })
 
+    // A signed cold founder email starts its eight-week follow-up cadence.
+    if (sentThreadId) {
+      const { enrollFollowUps } = await import('./followups')
+      await enrollFollowUps(id)
+    }
+
     // Signing the proof completes the work — the Docket item it served
     // clears itself, same as ticking it by hand.
     if (row.todoId) {

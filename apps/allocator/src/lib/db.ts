@@ -33,6 +33,7 @@ const TENANT_MODELS = new Set([
   'MeetingNote',
   'InboundEmail',
   'OgRun',
+  'FollowUpSequence',
 ])
 
 const SCOPE_WHERE = new Set([

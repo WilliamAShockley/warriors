@@ -30,7 +30,7 @@ const PUBLIC_PATHS = new Set([
 // Vercel invokes these with `Authorization: Bearer ${CRON_SECRET}`; the
 // routes themselves verify the secret again. The Apollo export shares the
 // same bearer so traces can be pulled by script.
-const CRON_PATHS = new Set(['/api/cron/brief', '/api/apollo/export'])
+const CRON_PATHS = new Set(['/api/cron/brief', '/api/cron/followups', '/api/apollo/export'])
 
 // Two doors, comma-separated lists in each:
 // APP_PASSWORD        — the reader's own words: full access.
