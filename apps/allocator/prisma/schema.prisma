@@ -70,6 +70,10 @@ model ReaderSetting {
   // the reader-amended prompt and routing per column. No row / null = the
   // house defaults in src/lib/og.ts.
   ogWorkflowsJson String?
+  // The follow-up cadence: what the desk does when a cold email's next
+  // touch comes due. off = nothing; review = draft it into The Proofs
+  // for signature; auto = send it, if every straight-through check clears.
+  followUpMode String @default("review")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -475,4 +479,30 @@ model OgRun {
   updatedAt    DateTime @updatedAt
 
   @@index([workspaceId, tab, createdAt])
+}
+
+// The follow-up cadence: one row per signed cold founder email. Eight
+// weekly touches in all — the cold email, then up to seven follow-ups,
+// each landing 7+ days after the last, at a randomized day and hour. The
+// row only schedules; the sent thread, address and subject are always
+// read live from the proof it serves, so the delivery watch's re-guessed
+// addresses carry through.
+model FollowUpSequence {
+  workspaceId    String    @default("primary")
+  id             String    @id @default(cuid())
+  proofId        String    @unique // the signed cold ReviewItem
+  company        String?
+  status         String    @default("active") // active | replied | bounced | completed | stopped
+  stopReason     String?
+  startedAt      DateTime // when the cold email went out
+  touchesDone    Int       @default(0) // follow-ups sent or skipped, 0..7
+  lastTouchAt    DateTime?
+  nextSendAt     DateTime?
+  pendingProofId String? // a follow-up staged in The Proofs, awaiting signature
+  historyJson    String? // [{n, at, body, messageId, via: auto|proof|skipped}]
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([workspaceId, status, nextSendAt])
 }

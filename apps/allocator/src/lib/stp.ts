@@ -293,6 +293,53 @@ const explicitOutCheck: StpCheck = {
   },
 }
 
+// The follow-up checks: touch 2+ is one short paragraph, never a re-pitch.
+const isFollowUp = (i: StpInput) => i.mode === 'follow_up'
+
+const followUpLengthCheck: StpCheck = {
+  id: 'followup-length',
+  label: 'Follow-up stays short',
+  applies: (i) => founderEmail(i) && isFollowUp(i),
+  run: async (i) => {
+    const body = prose(i.body)
+    const n = words(body)
+    const paras = paragraphs(body)
+    // The greeting line may stand apart from the one-paragraph nudge.
+    const longest = Math.max(0, ...paras.map(words))
+    if (n > 55 || longest > 45) {
+      return { pass: false, detail: `${n} words — a follow-up is 1–2 sentences, 4–15 words of substance.` }
+    }
+    if (paras.length > 3) {
+      return { pass: false, detail: `${paras.length} paragraphs — a follow-up is one.` }
+    }
+    return { pass: true, detail: `${n} words, ${paras.length} paragraph${paras.length === 1 ? '' : 's'}.` }
+  },
+}
+
+const followUpNoRepitchCheck: StpCheck = {
+  id: 'followup-no-repitch',
+  label: 'No re-pitch',
+  applies: (i) => founderEmail(i) && isFollowUp(i),
+  run: async (i) => {
+    const hay = i.body.toLowerCase()
+    const hits = [
+      'pinterest',
+      'shopify',
+      'draftkings',
+      'series a',
+      'early investors',
+      'principal here',
+      'as mentioned',
+      'my last note',
+      'previous email',
+      'my previous',
+    ].filter((p) => hay.includes(p))
+    return hits.length === 0
+      ? { pass: true, detail: 'No restated intro or value prop.' }
+      : { pass: false, detail: `Re-pitches (${hits.map((h) => `"${h}"`).join(', ')}) — touch 2+ never restates context.` }
+  },
+}
+
 // The registry. Order is display order — and the OG sheet's column order.
 export const STP_CHECKS: StpCheck[] = [
   founderNameCheck,
@@ -307,6 +354,8 @@ export const STP_CHECKS: StpCheck[] = [
   minuteQuantifierCheck,
   placeholderCheck,
   explicitOutCheck,
+  followUpLengthCheck,
+  followUpNoRepitchCheck,
 ]
 
 // Run every applicable check; a check that throws files as a failure

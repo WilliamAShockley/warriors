@@ -74,6 +74,31 @@ professional background and best-guess a work email (published address
 or the company's email pattern). Same crowning, tally, and standings
 machinery; People rows don't file to the Register (it holds companies).
 
+## The follow-up cadence (BUILT — on /record)
+
+The owner's words: over an 8-week period, politely follow up with every
+founder he cold-emails — once a week, but it has to feel a little bit
+random: after the first follow-up wait 7+ days, then randomize the timing.
+Follow-ups are very human, clipped, and in his tone.
+
+Built 30 September 2026 (`src/lib/followups.ts`): signing a cold founder
+proof enrolls it (`FollowUpSequence`). Follow-ups run for eight weeks, each
+a random 3-7 days after the last (revised from 7+ at the owner's request),
+any day, at a random minute 6-11 PM in the desk's timezone, at most one
+follow-up per calendar week (Mon-Sun; Friday then Monday is fine); the
+sequence closes when the next touch would pass day 56 (about 10 touches,
+hard cap 12). A cron tick (`/api/cron/followups`, hourly) checks the sent
+thread before every touch - a reply or bounce ends the sequence; a
+follow-up the owner sent by hand counts as a touch and resets the clock.
+Drafting goes through the founder-email skill in `follow_up` mode (hard
+rule: never the Apollo core prompt), with prior touches passed in so
+wording never repeats. Per-workspace mode on `ReaderSetting.followUpMode`,
+switched on the Record page: `off`, `review` (default - each nudge is
+staged in The Proofs, signing sends it in-thread), or `auto` (sent
+in-thread only if every STP check clears, incl. `followup-length` /
+`followup-no-repitch`; a failing draft falls back to The Proofs, never
+sent). Not backfilled: only cold emails signed after this shipped enroll.
+
 ## Other standing intents
 
 - **Open-source release** planned: the app as a clonable "operating

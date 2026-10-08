@@ -1,4 +1,5 @@
 import TheRecord from '@/components/TheRecord'
+import FollowUpCadence from '@/components/FollowUpCadence'
 
 export default function RecordPage() {
   return (
@@ -14,6 +15,10 @@ export default function RecordPage() {
       </header>
 
       <div className="rule-masthead mt-6" />
+
+      <FollowUpCadence />
+
+      <div className="rule mt-10" />
 
       <TheRecord />
     </main>
