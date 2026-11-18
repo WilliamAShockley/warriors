@@ -506,3 +506,45 @@ model FollowUpSequence {
 
   @@index([workspaceId, status, nextSendAt])
 }
+
+// LinkedIn outreach (/linkedin): one row per person the reader wants to
+// meet. The draft, where it stands, and — once the runner on his machine
+// sends it — exactly what went and by which path (connection note or
+// direct message). queued → sending → sent is the runner's; the outcomes
+// after that (accepted, replied, met, passed) are marked by hand.
+model LinkedInProspect {
+  workspaceId   String    @default("primary")
+  id            String    @id @default(cuid())
+  slug          String // the /in/<slug> vanity name, lowercased
+  url           String
+  fullName      String?
+  firstName     String?
+  nameConfirmed Boolean   @default(false) // false = a guess from the slug; the runner reads the real one
+  headline      String?
+  note          String? // why this person — the reader's own
+  status        String    @default("drafted") // drafted | queued | sending | sent | accepted | replied | met | passed | failed
+  message       String // the draft; may carry {firstName}
+  rehearse      Boolean   @default(false) // queued as a rehearsal: everything but the send button
+  sentMessage   String? // verbatim, as typed into LinkedIn
+  channel       String? // connect_note | message | by hand
+  sentAt        DateTime?
+  queuedAt      DateTime?
+  claimedAt     DateTime?
+  error         String?
+  eventsJson    String? // [{at, kind, detail?}] — the row's own log
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, status])
+  @@index([workspaceId, sentAt])
+}
+
+// The standing draft and daily cap for LinkedIn outreach, one row per
+// workspace. No row = the house defaults in src/lib/linkedin/store.ts.
+model LinkedInConfig {
+  workspaceId String   @id @default("primary")
+  template    String?
+  dailyCap    Int?
+  updatedAt   DateTime @updatedAt
+}

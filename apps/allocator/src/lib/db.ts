@@ -34,6 +34,8 @@ const TENANT_MODELS = new Set([
   'InboundEmail',
   'OgRun',
   'FollowUpSequence',
+  'LinkedInProspect',
+  'LinkedInConfig',
 ])
 
 const SCOPE_WHERE = new Set([

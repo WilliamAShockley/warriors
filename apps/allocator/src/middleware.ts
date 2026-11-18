@@ -75,6 +75,13 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
+  // The LinkedIn outreach runner on the reader's own machine: its own
+  // token, good for this one route and nothing else.
+  const runnerToken = (process.env.LINKEDIN_RUNNER_TOKEN ?? '').trim()
+  if (pathname === '/api/linkedin/runner' && runnerToken.length >= 24 && auth === `Bearer ${runnerToken}`) {
+    return NextResponse.next()
+  }
+
   const passwords = appPasswords()
   const guests = guestPasswords()
   if (passwords.length === 0) {

@@ -26,6 +26,12 @@ export default async function BookPage() {
           >
             The companies are in the Register →
           </Link>
+          <Link
+            href="/linkedin"
+            className="eyebrow ml-6 text-faint underline decoration-hairline underline-offset-4"
+          >
+            LinkedIn outreach →
+          </Link>
         </p>
       </header>
 

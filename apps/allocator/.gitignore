@@ -5,3 +5,6 @@
 !.env.example
 tsconfig.tsbuildinfo
 .env*
+
+# Local LinkedIn outreach store (zero-env mode)
+.data/
