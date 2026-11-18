@@ -47,6 +47,7 @@ API = os.environ.get("ALLOCATOR_URL", "http://localhost:5821").rstrip("/")
 TOKEN = os.environ.get("ALLOCATOR_TOKEN", "").strip()
 
 LOGIN_MARKERS = ("/login", "/authwall", "/checkpoint", "/uas/", "/signup")
+WATCHING = False
 NAME_PREFIXES = {"dr", "dr.", "mr", "mr.", "mrs", "mrs.", "ms", "ms.", "prof", "prof."}
 
 
@@ -425,7 +426,9 @@ def run_job(context, job):
         log("ok", "rehearsed" if job.get("rehearse") else "sent", job["slug"], "via", channel)
         return True
     except SessionExpired:
-        report(job, False, requeue=True, error="LinkedIn asked to sign in again. Run save_session.py in apps/linkedin-nav, then press Send once more.")
+        # Draining: hand the job back and stop. Watching: fail it, so an
+        # expired session cannot become a loop of browser launches.
+        report(job, False, requeue=not WATCHING, error="LinkedIn asked to sign in again. Run save_session.py on the sending Mac, then press Send once more.")
         raise
     except JobFailed as e:
         report(job, False, error=str(e), **seen)
@@ -499,6 +502,10 @@ def work(watch, headless):
                     pause(25, 70) if (sent and not job.get("rehearse")) else pause(4, 9)
         except SessionExpired:
             log("session expired — stopping")
+            if watch:
+                save_and_close(browser, context, keep=False)
+                browser = context = None
+                time.sleep(1800)  # launchd restarts us; do not hammer LinkedIn meanwhile
             return 2
         finally:
             save_and_close(browser, context, keep=False)
@@ -548,6 +555,8 @@ def main():
     args = ap.parse_args()
     if args.check:
         return check(args.headless)
+    global WATCHING
+    WATCHING = args.watch
     return work(args.watch, args.headless)
 
 
