@@ -14,6 +14,7 @@ type Prospect = {
   headline: string | null
   note: string | null
   status: Status
+  subject: string | null
   message: string
   rehearse: boolean
   sentMessage: string | null
@@ -26,11 +27,12 @@ type Prospect = {
 
 type Payload = {
   prospects: Prospect[]
-  config: { template: string; dailyCap: number }
+  config: { template: string; subject: string; dailyCap: number }
   sentToday: number
   noteLimit: number
+  subjectLimit: number
   store: 'database' | 'file'
-  runner: { local: boolean; running: boolean; lastExit: string | null }
+  runner: { local: boolean; running: boolean; lastExit: string | null; seenAt: string | null }
 }
 
 const FILTERS: { key: string; label: string; match: (s: Status) => boolean }[] = [
@@ -56,6 +58,7 @@ const STATUS_WORD: Record<Status, string> = {
 }
 
 const CHANNEL_WORD: Record<string, string> = {
+  sales_nav: 'Sales Navigator message',
   connect_note: 'connection request with a note',
   message: 'direct message',
   'by hand': 'sent by hand',
@@ -64,6 +67,15 @@ const CHANNEL_WORD: Record<string, string> = {
 const OUTCOMES: Status[] = ['accepted', 'replied', 'met', 'passed']
 
 const fill = (text: string, firstName: string | null) => text.replace(/\{\s*first_?name\s*\}/gi, (firstName ?? '').trim() || '…')
+
+// How long since the sending machine last asked for work.
+function macLine(seenAt: string | null): { text: string; stale: boolean } {
+  if (!seenAt) return { text: 'Your Mac has not checked in yet', stale: true }
+  const mins = Math.round((Date.now() - new Date(seenAt).getTime()) / 60000)
+  if (mins <= 3) return { text: 'Your Mac is listening', stale: false }
+  const ago = mins < 90 ? `${mins} min` : mins < 2880 ? `${Math.round(mins / 60)} hours` : `${Math.round(mins / 1440)} days`
+  return { text: `Your Mac last checked in ${ago} ago · sends wait until it wakes`, stale: true }
+}
 
 const when = (iso: string | null) => {
   if (!iso) return ''
@@ -118,6 +130,10 @@ export default function Outreach() {
     const t = setInterval(load, 2500)
     return () => clearInterval(t)
   }, [inFlight, load])
+  useEffect(() => {
+    const t = setInterval(load, 60000)
+    return () => clearInterval(t)
+  }, [load])
 
   const counts = useMemo(() => {
     const out: Record<string, number> = {}
@@ -153,6 +169,7 @@ export default function Outreach() {
   if (!data) return <p className="dek mt-6">Opening the file…</p>
 
   const capLeft = Math.max(0, data.config.dailyCap - data.sentToday)
+  const mac = macLine(data.runner.seenAt)
 
   return (
     <section>
@@ -183,12 +200,8 @@ export default function Outreach() {
         <p className="eyebrow">
           {data.sentToday} sent today · {capLeft} left of {data.config.dailyCap}
         </p>
-        <p className="eyebrow text-faint">
-          {data.runner.running
-            ? 'The browser is working'
-            : data.runner.local
-              ? 'Sends from this machine'
-              : 'Queues here · sends from the runner on your machine'}
+        <p className={`eyebrow ${!data.runner.local && mac.stale ? 'text-oxblood' : 'text-faint'}`}>
+          {data.runner.running ? 'The browser is working' : data.runner.local ? 'Sends from this machine' : mac.text}
         </p>
       </div>
       {data.runner.lastExit && data.runner.lastExit !== 'exit 0' && !data.runner.running && (
@@ -230,6 +243,7 @@ export default function Outreach() {
               open={open === p.id}
               onToggle={() => setOpen(open === p.id ? null : p.id)}
               noteLimit={data.noteLimit}
+              defaultSubject={data.config.subject}
               capLeft={capLeft}
               reload={load}
             />
@@ -254,12 +268,13 @@ function StandingDraft({
   onSaved: () => void
 }) {
   const [template, setTemplate] = useState(config.template)
+  const [subject, setSubject] = useState(config.subject)
   const [cap, setCap] = useState(String(config.dailyCap))
   const [saved, setSaved] = useState(false)
-  const dirty = template !== config.template || cap !== String(config.dailyCap)
+  const dirty = template !== config.template || subject !== config.subject || cap !== String(config.dailyCap)
 
   async function save() {
-    await call('/api/linkedin/config', 'POST', { template, dailyCap: Number(cap) })
+    await call('/api/linkedin/config', 'POST', { template, subject, dailyCap: Number(cap) })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     onSaved()
@@ -275,6 +290,14 @@ function StandingDraft({
           <p className="dek text-[13px]">
             Every new person starts from this. {'{firstName}'} fills in per person. Changing it does not touch drafts already filed.
           </p>
+          <label className="eyebrow mt-4 block">
+            Subject
+            <input
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="mt-1 block w-full border-b border-hairline bg-transparent pb-1.5 font-serif text-[15px] normal-case tracking-normal text-ink focus:border-ink focus:outline-none"
+            />
+          </label>
           <textarea
             value={template}
             onChange={(e) => setTemplate(e.target.value)}
@@ -295,7 +318,7 @@ function StandingDraft({
             </label>
           </div>
           <div className="mt-3 flex items-center gap-4">
-            <button type="button" onClick={save} disabled={!dirty || !template.trim()} className={btn}>
+            <button type="button" onClick={save} disabled={!dirty || !template.trim() || !subject.trim()} className={btn}>
               Keep it
             </button>
             {saved && <span className="eyebrow">Kept</span>}
@@ -310,7 +333,7 @@ function Count({ n, limit }: { n: number; limit: number }) {
   return (
     <p className={`eyebrow ${n > limit ? 'text-oxblood' : 'text-faint'}`}>
       {n} / {limit}
-      {n > limit && ' · too long for a connection note'}
+      {n > limit && ' · too long for Sales Navigator'}
     </p>
   )
 }
@@ -320,6 +343,7 @@ function Row({
   open,
   onToggle,
   noteLimit,
+  defaultSubject,
   capLeft,
   reload,
 }: {
@@ -327,10 +351,12 @@ function Row({
   open: boolean
   onToggle: () => void
   noteLimit: number
+  defaultSubject: string
   capLeft: number
   reload: () => void
 }) {
   const [message, setMessage] = useState(p.message)
+  const [subject, setSubject] = useState(p.subject ?? defaultSubject)
   const [firstName, setFirstName] = useState(p.firstName ?? '')
   const [confirming, setConfirming] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -342,8 +368,9 @@ function Row({
   useEffect(() => {
     if (touched.current) return
     setMessage(p.message)
+    setSubject(p.subject ?? defaultSubject)
     setFirstName(p.firstName ?? '')
-  }, [p.message, p.firstName])
+  }, [p.message, p.subject, p.firstName, defaultSubject])
 
   // A note about the last action is stale once the row has moved on.
   useEffect(() => setErr(null), [p.status])
@@ -356,7 +383,7 @@ function Row({
 
   async function save() {
     if (!touched.current) return true
-    const { ok, json } = await call(`/api/linkedin/${p.id}`, 'PATCH', { message, firstName })
+    const { ok, json } = await call(`/api/linkedin/${p.id}`, 'PATCH', { message, subject, firstName })
     if (!ok) {
       setErr(json?.error ?? 'Could not save.')
       return false
@@ -416,7 +443,10 @@ function Row({
               <p className="eyebrow">
                 What was sent · {CHANNEL_WORD[p.channel ?? ''] ?? p.channel ?? 'unknown path'} · {when(p.sentAt)}
               </p>
-              <p className="mt-2 whitespace-pre-wrap border-l border-ink pl-4 font-serif text-[15px] leading-relaxed text-ink">{p.sentMessage}</p>
+              <div className="mt-2 border-l border-ink pl-4">
+                {p.subject && <p className="font-serif text-[15px] font-medium text-ink">{p.subject}</p>}
+                <p className="mt-1 whitespace-pre-wrap font-serif text-[15px] leading-relaxed text-ink">{p.sentMessage}</p>
+              </div>
               <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
                 <span className="eyebrow text-faint">Mark</span>
                 {(['sent', ...OUTCOMES] as Status[]).map((s) => (
@@ -449,6 +479,19 @@ function Row({
                   className="w-44 border-b border-hairline bg-transparent pb-0.5 font-serif text-[14px] normal-case tracking-normal text-ink placeholder:italic placeholder:text-faint focus:border-ink focus:outline-none"
                 />
                 {!p.nameConfirmed && firstName && <span className="normal-case tracking-normal text-faint">a guess · checked against the profile</span>}
+              </label>
+              <label className="eyebrow mt-4 flex items-center gap-3">
+                Subject
+                <input
+                  value={subject}
+                  disabled={!editable}
+                  onChange={(e) => {
+                    touched.current = true
+                    setSubject(e.target.value)
+                  }}
+                  onBlur={save}
+                  className="min-w-0 flex-1 border-b border-hairline bg-transparent pb-0.5 font-serif text-[15px] normal-case tracking-normal text-ink focus:border-ink focus:outline-none disabled:text-stone"
+                />
               </label>
               <textarea
                 value={message}
@@ -492,7 +535,7 @@ function Row({
                   </>
                 ) : (
                   <>
-                    <button type="button" disabled={working || !message.trim() || capLeft === 0} onClick={() => setConfirming(true)} className={btn}>
+                    <button type="button" disabled={working || !message.trim() || !subject.trim() || capLeft === 0} onClick={() => setConfirming(true)} className={btn}>
                       Send
                     </button>
                     <button type="button" disabled={working || !message.trim()} onClick={() => send(true)} className={quiet} title="Runs the browser up to the typed message, then stops without sending">

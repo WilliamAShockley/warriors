@@ -37,7 +37,8 @@ export function runnerStatus(): { local: boolean; running: boolean; lastExit: st
 // the queue is empty, so a row queued while it works is picked up too.
 export function kickRunner(origin: string): { started: boolean; running: boolean; reason?: string } {
   const found = locate()
-  if (!found) return { started: false, running: false, reason: 'no local runner here — run outreach_runner.py --watch on the machine with your LinkedIn session' }
+  // Hosted: nothing to start here. The row waits for the reader's machine.
+  if (!found) return { started: false, running: false }
   if (state.child) return { started: false, running: true }
 
   const token = (process.env.APP_PASSWORD ?? '').split(',')[0]?.trim() ?? ''

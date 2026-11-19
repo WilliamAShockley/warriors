@@ -509,8 +509,7 @@ model FollowUpSequence {
 
 // LinkedIn outreach (/linkedin): one row per person the reader wants to
 // meet. The draft, where it stands, and — once the runner on his machine
-// sends it — exactly what went and by which path (connection note or
-// direct message). queued → sending → sent is the runner's; the outcomes
+// sends it through Sales Navigator — exactly what went. queued → sending → sent is the runner's; the outcomes
 // after that (accepted, replied, met, passed) are marked by hand.
 model LinkedInProspect {
   workspaceId   String    @default("primary")
@@ -523,10 +522,11 @@ model LinkedInProspect {
   headline      String?
   note          String? // why this person — the reader's own
   status        String    @default("drafted") // drafted | queued | sending | sent | accepted | replied | met | passed | failed
+  subject       String? // the InMail subject; may carry {firstName}. After a send: the subject as sent
   message       String // the draft; may carry {firstName}
   rehearse      Boolean   @default(false) // queued as a rehearsal: everything but the send button
   sentMessage   String? // verbatim, as typed into LinkedIn
-  channel       String? // connect_note | message | by hand
+  channel       String? // sales_nav | by hand (earlier: connect_note | message)
   sentAt        DateTime?
   queuedAt      DateTime?
   claimedAt     DateTime?
@@ -545,6 +545,10 @@ model LinkedInProspect {
 model LinkedInConfig {
   workspaceId String   @id @default("primary")
   template    String?
+  subject     String?
   dailyCap    Int?
+  // Only on the instance-wide row (workspaceId "_runner"): when the
+  // sending machine last asked for work.
+  runnerSeenAt DateTime?
   updatedAt   DateTime @updatedAt
 }

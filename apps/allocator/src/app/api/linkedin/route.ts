@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
-import { addProspects, getConfig, listProspects, sentToday, storeKind, NOTE_LIMIT } from '@/lib/linkedin/store'
+import { addProspects, getConfig, listProspects, runnerSeenAt, sentToday, storeKind, NOTE_LIMIT, SUBJECT_LIMIT } from '@/lib/linkedin/store'
 import { runnerStatus } from '@/lib/linkedin/runner'
 
 export const dynamic = 'force-dynamic'
 
 // GET — the whole tracker: every prospect, the standing draft, today's count.
 export async function GET() {
-  const [prospects, config, today] = await Promise.all([listProspects(), getConfig(), sentToday()])
-  return NextResponse.json({ prospects, config, sentToday: today, noteLimit: NOTE_LIMIT, store: storeKind(), runner: runnerStatus() })
+  const [prospects, config, today, seenAt] = await Promise.all([listProspects(), getConfig(), sentToday(), runnerSeenAt()])
+  return NextResponse.json({ prospects, config, sentToday: today, noteLimit: NOTE_LIMIT, subjectLimit: SUBJECT_LIMIT, store: storeKind(), runner: { ...runnerStatus(), seenAt } })
 }
 
 // POST { urls: string | string[], note? } — file one or many profile URLs.

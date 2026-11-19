@@ -103,31 +103,37 @@ sent). Not backfilled: only cold emails signed after this shipped enroll.
 
 The owner's words (18 November 2026): network around and meet a lot of
 people through LinkedIn cold outreach — drop in a profile URL, track the
-status, track what was sent, and have Playwright actually send it.
+status, track what was sent, and have Playwright actually send it. Revised
+19 November: it must go through **Sales Navigator**, not the Connect-with-
+a-note path.
 
-Built 18 November 2026. The page is a queue; the hands are
-`apps/linkedin-nav/outreach_runner.py`, which drives a real Chrome window
-on the owner's machine with his saved LinkedIn session
-(`linkedin_session.json`). Each new URL gets the standing draft
-(`{firstName}` fills per person; edited on the page). Nothing goes out
-without his click on that one person: Send asks once, then queues the row;
-the runner claims it over `/api/linkedin/runner`, sends it as a connection
-request with a note (or a direct message to an existing connection), and
-reports back the verbatim text and path. Rehearse does everything but the
-send button. Rails: a daily cap (default 15), one automated message per
-person ever, a row stuck mid-send is failed with a check-LinkedIn warning
-and never retried on its own. Statuses: drafted → queued → sending → sent,
-then accepted / replied / met / passed by hand. Storage is
-`LinkedInProspect` + `LinkedInConfig` with a database, `.data/linkedin.json` without one (the
-local desk has no database, and the sending has to happen locally anyway).
-On the hosted deployment the app cannot launch a browser: a background
-agent on the owner's Mac runs `outreach_runner.py --watch` against it,
-authenticated by `LINKEDIN_RUNNER_TOKEN` (good for `/api/linkedin/runner`
-only), so he can press Send from anywhere while that Mac is awake. The
-runner claims queued rows across workspaces — correct only while the
-instance has one sender; scope it per workspace before others use it.
-Not built: reply/acceptance detection (marked by hand), per-person
-AI-personalised drafts, follow-ups.
+The page is a queue; the hands are `apps/linkedin-nav/outreach_runner.py`,
+which drives a real Chrome window on the owner's Mac with his saved
+LinkedIn session. Each new URL gets the standing subject and draft
+(`{firstName}` fills per person; both edited on the page). Nothing goes out
+without his click on that one person: Send asks once, then queues the row.
+The runner claims it over `/api/linkedin/runner`, opens the profile, follows
+"View in Sales Navigator" (under More) to the lead page, presses Message,
+types subject and body, sends, and reports back the verbatim text. A send
+to someone he is not connected to spends one InMail credit. Rehearse does
+everything but the send button, then empties and closes the box.
+
+Rails: a daily cap (default 15), one automated message per person ever, a
+row stuck mid-send is failed with a check-LinkedIn warning and never
+retried on its own. Statuses: drafted → queued → sending → sent, then
+accepted / replied / met / passed by hand. Storage is `LinkedInProspect` +
+`LinkedInConfig` with a database, `.data/linkedin.json` without one.
+
+The hosted app cannot launch a browser: a launchd agent on the owner's Mac
+runs `outreach_runner.py --watch` against it, authenticated by
+`LINKEDIN_RUNNER_TOKEN` (good for `/api/linkedin/runner` only), so he can
+press Send from anywhere while that Mac is awake; the page shows when the
+Mac last checked in. The runner claims queued rows across workspaces —
+correct only while the instance has one sender; scope it per workspace
+before others use it.
+
+Not built: reply detection (marked by hand), per-person AI-personalised
+drafts, follow-ups, reading the remaining InMail credit count.
 
 ## Other standing intents
 

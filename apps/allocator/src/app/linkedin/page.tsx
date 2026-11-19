@@ -10,7 +10,7 @@ export default function LinkedInPage() {
         <p className="eyebrow">Cold outreach</p>
         <h1 className="mt-2 font-serif text-[32px] font-semibold leading-none tracking-tight">LinkedIn</h1>
         <p className="dek mt-2">
-          People worth meeting. Paste a profile, read the draft, send it. The browser does the typing; what went out, and when, stays on file here.
+          People worth meeting. Paste a profile, read the draft, send it. It goes as a Sales Navigator message, typed by the browser on your Mac; what went out, and when, stays on file here.
         </p>
         <p className="mt-3">
           <Link href="/book" className="eyebrow text-faint underline decoration-hairline underline-offset-4">

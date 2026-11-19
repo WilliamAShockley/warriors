@@ -34,6 +34,7 @@ export type Prospect = {
   headline: string | null
   note: string | null
   status: Status
+  subject: string | null
   message: string
   rehearse: boolean
   sentMessage: string | null
@@ -47,18 +48,20 @@ export type Prospect = {
   updatedAt: string
 }
 
-export type Config = { template: string; dailyCap: number }
+export type Config = { template: string; subject: string; dailyCap: number }
 
-// A connection request's note is capped by LinkedIn (300 characters; some
-// free accounts get 200). The standing draft stays well inside it.
-export const NOTE_LIMIT = 300
+// Sales Navigator's own limits on a message.
+export const NOTE_LIMIT = 1900
+export const SUBJECT_LIMIT = 200
+
+export const DEFAULT_SUBJECT = 'Reaching out'
 
 // Deliberately says nothing about firm or title: the reader fills that in
 // once, in the standing draft on the page.
 export const DEFAULT_TEMPLATE =
   "Hey {firstName} - I'm Dez. We haven't had a chance to meet, but I've been following your work + would love to connect and compare notes sometime."
 
-export const DEFAULT_CONFIG: Config = { template: DEFAULT_TEMPLATE, dailyCap: 15 }
+export const DEFAULT_CONFIG: Config = { template: DEFAULT_TEMPLATE, subject: DEFAULT_SUBJECT, dailyCap: 15 }
 
 const STALE_CLAIM_MS = 10 * 60 * 1000
 
@@ -167,6 +170,7 @@ function fromRow(r: any): Prospect {
     headline: r.headline ?? null,
     note: r.note ?? null,
     status: r.status as Status,
+    subject: r.subject ?? null,
     message: r.message ?? '',
     rehearse: Boolean(r.rehearse),
     sentMessage: r.sentMessage ?? null,
@@ -219,7 +223,7 @@ export async function getConfig(): Promise<Config> {
   if (hasDb()) {
     const db = await getDb()
     const row = await db.linkedInConfig.findFirst()
-    return { template: row?.template?.trim() || DEFAULT_TEMPLATE, dailyCap: row?.dailyCap ?? DEFAULT_CONFIG.dailyCap }
+    return { template: row?.template?.trim() || DEFAULT_TEMPLATE, subject: row?.subject?.trim() || DEFAULT_SUBJECT, dailyCap: row?.dailyCap ?? DEFAULT_CONFIG.dailyCap }
   }
   return { ...DEFAULT_CONFIG, ...(await readFile()).config }
 }
@@ -227,6 +231,7 @@ export async function getConfig(): Promise<Config> {
 export async function setConfig(patch: Partial<Config>): Promise<Config> {
   const clean: Partial<Config> = {}
   if (typeof patch.template === 'string' && patch.template.trim()) clean.template = patch.template.trim().slice(0, 2000)
+  if (typeof patch.subject === 'string' && patch.subject.trim()) clean.subject = patch.subject.trim().slice(0, SUBJECT_LIMIT)
   if (patch.dailyCap !== undefined && Number.isFinite(Number(patch.dailyCap))) clean.dailyCap = clampCap(patch.dailyCap)
   if (hasDb()) {
     const db = await getDb()
@@ -291,6 +296,7 @@ export async function addProspects(
       headline: null,
       note: note?.trim() || null,
       status: 'drafted',
+      subject: config.subject,
       message: config.template,
       rehearse: false,
       sentMessage: null,
@@ -355,7 +361,7 @@ async function mutate(
 
 export async function editProspect(
   id: string,
-  body: { message?: unknown; firstName?: unknown; fullName?: unknown; note?: unknown; status?: unknown }
+  body: { message?: unknown; subject?: unknown; firstName?: unknown; fullName?: unknown; note?: unknown; status?: unknown }
 ): Promise<{ ok: boolean; prospect?: Prospect; error?: string }> {
   let error = 'not found'
   const prospect = await mutate(id, (p) => {
@@ -369,6 +375,7 @@ export async function editProspect(
       }
       patch.message = body.message.slice(0, 8000)
     }
+    if (typeof body.subject === 'string' && !inFlight && !p.sentAt) patch.subject = body.subject.trim().slice(0, SUBJECT_LIMIT) || null
     if (typeof body.firstName === 'string') {
       patch.firstName = body.firstName.trim().slice(0, 80) || null
       patch.nameConfirmed = Boolean(patch.firstName)
@@ -393,6 +400,7 @@ export async function editProspect(
         if (next === 'sent' && !p.sentAt) {
           patch.sentAt = new Date().toISOString()
           patch.sentMessage = fillTemplate(p.message, p.firstName)
+          patch.subject = p.subject ? fillTemplate(p.subject, p.firstName) : null
           patch.channel = 'by hand'
         }
         log = event(p.status === 'queued' && next === 'drafted' ? 'cancelled' : 'marked', next)
@@ -450,11 +458,13 @@ export type Job = {
   id: string
   url: string
   slug: string
+  subject: string
   message: string
   firstName: string | null
   nameConfirmed: boolean
   rehearse: boolean
   noteLimit: number
+  subjectLimit: number
 }
 
 // The runner's claim: the oldest queued row flips to `sending`, exactly
@@ -481,11 +491,13 @@ export async function claimNext(): Promise<{ job: Job | null; reason?: string }>
         id: claimed.id,
         url: claimed.url,
         slug: claimed.slug,
+        subject: claimed.subject?.trim() || config.subject,
         message: claimed.message,
         firstName: claimed.firstName,
         nameConfirmed: claimed.nameConfirmed,
         rehearse: claimed.rehearse,
         noteLimit: NOTE_LIMIT,
+        subjectLimit: SUBJECT_LIMIT,
       },
     }
   }
@@ -498,6 +510,7 @@ export type Report = {
   rehearse?: boolean
   channel?: string | null
   sentText?: string | null
+  sentSubject?: string | null
   fullName?: string | null
   firstName?: string | null
   headline?: string | null
@@ -536,6 +549,7 @@ export async function reportResult(r: Report): Promise<Prospect | null> {
         status: 'sent',
         sentAt: new Date().toISOString(),
         sentMessage: (r.sentText ?? fillTemplate(p.message, p.firstName)).slice(0, 8000),
+        subject: r.sentSubject?.slice(0, SUBJECT_LIMIT) ?? (p.subject ? fillTemplate(p.subject, p.firstName) : null),
         channel: r.channel ?? null,
         claimedAt: null,
         error: null,
@@ -571,4 +585,34 @@ async function sweepStale(): Promise<void> {
       }
     })
   } catch {}
+}
+
+// ── The sending machine's heartbeat ────────────────────────────────────
+// One instance-wide row, outside any workspace: the runner is a machine,
+// not a tenant. Written at most once a minute per server instance.
+const RUNNER_ROW = '_runner'
+let lastBeat = 0
+
+export async function markRunnerSeen(): Promise<void> {
+  if (!hasDb() || Date.now() - lastBeat < 60_000) return
+  lastBeat = Date.now()
+  try {
+    const { rawDb } = await import('../db')
+    await rawDb.linkedInConfig.upsert({
+      where: { workspaceId: RUNNER_ROW },
+      create: { workspaceId: RUNNER_ROW, runnerSeenAt: new Date() },
+      update: { runnerSeenAt: new Date() },
+    })
+  } catch {}
+}
+
+export async function runnerSeenAt(): Promise<string | null> {
+  if (!hasDb()) return null
+  try {
+    const { rawDb } = await import('../db')
+    const row = await rawDb.linkedInConfig.findUnique({ where: { workspaceId: RUNNER_ROW } })
+    return iso(row?.runnerSeenAt)
+  } catch {
+    return null
+  }
 }

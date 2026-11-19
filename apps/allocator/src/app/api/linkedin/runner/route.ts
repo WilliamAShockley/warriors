@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { claimNext, reportResult } from '@/lib/linkedin/store'
+import { claimNext, markRunnerSeen, reportResult } from '@/lib/linkedin/store'
 import { activeWorkspaceId, runAsWorkspace } from '@/lib/tenant'
 
 export const dynamic = 'force-dynamic'
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
 
   if (body?.action === 'claim') {
+    await markRunnerSeen()
     let reason = 'nothing queued'
     for (const ws of await workspacesWithQueue()) {
       const res = await runAsWorkspace(ws, () => claimNext())
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
         ok: Boolean(body.ok),
         channel: body.channel ?? null,
         sentText: typeof body.sentText === 'string' ? body.sentText : null,
+        sentSubject: typeof body.sentSubject === 'string' ? body.sentSubject : null,
         fullName: typeof body.fullName === 'string' ? body.fullName : null,
         firstName: typeof body.firstName === 'string' ? body.firstName : null,
         headline: typeof body.headline === 'string' ? body.headline : null,
