@@ -544,8 +544,10 @@ model LinkedInProspect {
 // workspace. No row = the house defaults in src/lib/linkedin/store.ts.
 model LinkedInConfig {
   workspaceId String   @id @default("primary")
-  template    String?
+  template    String? // pre-templates single draft; folded into templatesJson on first read
   subject     String?
+  templatesJson     String? // [{id, name, subject, body}] — null = the house templates in code
+  defaultTemplateId String?
   dailyCap    Int?
   // Only on the instance-wide row (workspaceId "_runner"): when the
   // sending machine last asked for work.

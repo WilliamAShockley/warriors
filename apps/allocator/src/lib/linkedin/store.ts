@@ -48,20 +48,73 @@ export type Prospect = {
   updatedAt: string
 }
 
-export type Config = { template: string; subject: string; dailyCap: number }
+export type Template = { id: string; name: string; subject: string; body: string }
+
+export type Config = { templates: Template[]; defaultTemplateId: string; dailyCap: number }
 
 // Sales Navigator's own limits on a message.
 export const NOTE_LIMIT = 1900
 export const SUBJECT_LIMIT = 200
 
-export const DEFAULT_SUBJECT = 'Reaching out'
+// The house templates: what a desk starts with before the reader edits
+// anything on the page. Once he saves there, his list replaces this one.
+const DEPLOYCO_BODY = `Hey man, hope this note finds you well. We haven't had the chance to meet, but I wanted to quickly reach out. My name's Dez, I'm a principal here at FirstMark. We're an early-stage $4bn AUM VC based here in NYC. We are early investors in Pinterest, Shopify, DraftKings, and more recently things like Ramp, Modal, Synthesia, Daytona, others. I help lead up our applied AI strategy from pre-seed through Series B.
 
-// Deliberately says nothing about firm or title: the reader fills that in
-// once, in the standing draft on the page.
-export const DEFAULT_TEMPLATE =
-  "Hey {firstName} - I'm Dez. We haven't had a chance to meet, but I've been following your work + would love to connect and compare notes sometime."
+I run a private networking community called DeployCo, which brings together top investors, founders, and operators at the frontier of AI deployment. I basically run these private, invite only dinners about once a month. Past attendees have come from Ramp, Modal, OpenAI, and others. We're done hosting events for this year but we're opening up the community for a select group of new members to kick things off into 2027. Your background looks interesting given your prior founding experience. Any interest in joining us for events in 2027? Purpose of the community is to A) foster connections B) share best practices on what is working at the frontier today and lastly C) write angel checks together as a group. Lmk what you think, all I need is your email and I can get you added on the list for the events. Talk soon
 
-export const DEFAULT_CONFIG: Config = { template: DEFAULT_TEMPLATE, subject: DEFAULT_SUBJECT, dailyCap: 15 }
+Dez`
+
+export const HOUSE_TEMPLATES: Template[] = [
+  {
+    id: 'deployco',
+    name: 'DeployCo',
+    subject: 'Reaching Out - DeployCo (Private Community for Frontier AI)',
+    body: DEPLOYCO_BODY,
+  },
+  {
+    id: 'intro',
+    name: 'Short intro',
+    subject: 'Reaching out',
+    body: "Hey {firstName} - I'm Dez. We haven't had a chance to meet, but I've been following your work + would love to connect and compare notes sometime.",
+  },
+]
+
+export const DEFAULT_CONFIG: Config = { templates: HOUSE_TEMPLATES, defaultTemplateId: 'deployco', dailyCap: 15 }
+
+export const defaultTemplate = (c: Config): Template => c.templates.find((t) => t.id === c.defaultTemplateId) ?? c.templates[0]
+
+function cleanTemplates(raw: unknown): Template[] | null {
+  if (!Array.isArray(raw)) return null
+  const out: Template[] = []
+  const seen = new Set<string>()
+  for (const t of raw.slice(0, 30)) {
+    const name = String(t?.name ?? '').trim().slice(0, 60)
+    const body = String(t?.body ?? '').trim().slice(0, NOTE_LIMIT)
+    const subject = String(t?.subject ?? '').trim().slice(0, SUBJECT_LIMIT)
+    if (!name || !body || !subject) continue
+    let id = String(t?.id ?? '').trim().slice(0, 40) || crypto.randomUUID().slice(0, 8)
+    while (seen.has(id)) id = crypto.randomUUID().slice(0, 8)
+    seen.add(id)
+    out.push({ id, name, subject, body })
+  }
+  return out.length ? out : null
+}
+
+const clampCap = (n: unknown) => Math.max(0, Math.min(100, Math.round(Number(n))))
+
+function buildConfig(stored: { templates?: unknown; defaultTemplateId?: unknown; dailyCap?: unknown; legacyBody?: string | null; legacySubject?: string | null }): Config {
+  let templates = cleanTemplates(stored.templates)
+  if (!templates) {
+    templates = [...HOUSE_TEMPLATES]
+    // A draft saved before templates existed is kept, not lost.
+    if (stored.legacyBody?.trim()) {
+      templates.push({ id: 'earlier', name: 'Earlier draft', subject: stored.legacySubject?.trim() || 'Reaching out', body: stored.legacyBody.trim() })
+    }
+  }
+  const wanted = typeof stored.defaultTemplateId === 'string' ? stored.defaultTemplateId : DEFAULT_CONFIG.defaultTemplateId
+  const defaultTemplateId = templates.some((t) => t.id === wanted) ? wanted : templates[0].id
+  return { templates, defaultTemplateId, dailyCap: stored.dailyCap != null && Number.isFinite(Number(stored.dailyCap)) ? clampCap(stored.dailyCap) : DEFAULT_CONFIG.dailyCap }
+}
 
 const STALE_CLAIM_MS = 10 * 60 * 1000
 
@@ -116,7 +169,7 @@ export const storeKind = (): 'database' | 'file' => (hasDb() ? 'database' : 'fil
 
 const FILE = () => path.join(process.env.LINKEDIN_DATA_DIR || path.join(process.cwd(), '.data'), 'linkedin.json')
 
-type FileShape = { prospects: Prospect[]; config: Partial<Config> }
+type FileShape = { prospects: Prospect[]; config: Record<string, unknown> }
 
 // One writer at a time: every file mutation runs through this chain, so
 // two requests (or a request and the runner's report) cannot interleave a
@@ -217,30 +270,39 @@ export async function getProspect(id: string): Promise<Prospect | null> {
   return (await readFile()).prospects.find((p) => p.id === id) ?? null
 }
 
-const clampCap = (n: unknown) => Math.max(0, Math.min(100, Math.round(Number(n))))
-
 export async function getConfig(): Promise<Config> {
   if (hasDb()) {
     const db = await getDb()
     const row = await db.linkedInConfig.findFirst()
-    return { template: row?.template?.trim() || DEFAULT_TEMPLATE, subject: row?.subject?.trim() || DEFAULT_SUBJECT, dailyCap: row?.dailyCap ?? DEFAULT_CONFIG.dailyCap }
+    let templates: unknown = null
+    try {
+      templates = row?.templatesJson ? JSON.parse(row.templatesJson) : null
+    } catch {}
+    return buildConfig({ templates, defaultTemplateId: row?.defaultTemplateId, dailyCap: row?.dailyCap, legacyBody: row?.template, legacySubject: row?.subject })
   }
-  return { ...DEFAULT_CONFIG, ...(await readFile()).config }
+  const c = (await readFile()).config as any
+  return buildConfig({ templates: c?.templates, defaultTemplateId: c?.defaultTemplateId, dailyCap: c?.dailyCap, legacyBody: c?.template, legacySubject: c?.subject })
 }
 
-export async function setConfig(patch: Partial<Config>): Promise<Config> {
-  const clean: Partial<Config> = {}
-  if (typeof patch.template === 'string' && patch.template.trim()) clean.template = patch.template.trim().slice(0, 2000)
-  if (typeof patch.subject === 'string' && patch.subject.trim()) clean.subject = patch.subject.trim().slice(0, SUBJECT_LIMIT)
-  if (patch.dailyCap !== undefined && Number.isFinite(Number(patch.dailyCap))) clean.dailyCap = clampCap(patch.dailyCap)
+export async function setConfig(patch: { templates?: unknown; defaultTemplateId?: unknown; dailyCap?: unknown }): Promise<Config> {
+  const templates = patch.templates !== undefined ? cleanTemplates(patch.templates) : null
+  const defaultTemplateId = typeof patch.defaultTemplateId === 'string' ? patch.defaultTemplateId.slice(0, 40) : undefined
+  const dailyCap = patch.dailyCap !== undefined && Number.isFinite(Number(patch.dailyCap)) ? clampCap(patch.dailyCap) : undefined
   if (hasDb()) {
     const db = await getDb()
+    const data: Record<string, unknown> = {}
+    if (templates) data.templatesJson = JSON.stringify(templates)
+    if (defaultTemplateId !== undefined) data.defaultTemplateId = defaultTemplateId
+    if (dailyCap !== undefined) data.dailyCap = dailyCap
     // Scoped to the active workspace by the db layer; one row each.
-    const res = await db.linkedInConfig.updateMany({ data: clean })
-    if (res.count === 0) await db.linkedInConfig.create({ data: clean as any })
+    const res = await db.linkedInConfig.updateMany({ data })
+    if (res.count === 0) await db.linkedInConfig.create({ data: data as any })
   } else {
-    await mutateFile((data) => {
-      data.config = { ...data.config, ...clean }
+    await mutateFile((d) => {
+      const c = d.config as any
+      if (templates) c.templates = templates
+      if (defaultTemplateId !== undefined) c.defaultTemplateId = defaultTemplateId
+      if (dailyCap !== undefined) c.dailyCap = dailyCap
     })
   }
   return getConfig()
@@ -263,9 +325,11 @@ const event = (kind: string, detail?: string): ProspectEvent => ({ at: new Date(
 
 export async function addProspects(
   rawUrls: string[],
-  note?: string | null
+  note?: string | null,
+  templateId?: string | null
 ): Promise<{ added: Prospect[]; duplicates: string[]; invalid: string[] }> {
   const config = await getConfig()
+  const tpl = config.templates.find((t) => t.id === templateId) ?? defaultTemplate(config)
   const added: Prospect[] = []
   const duplicates: string[] = []
   const invalid: string[] = []
@@ -296,8 +360,8 @@ export async function addProspects(
       headline: null,
       note: note?.trim() || null,
       status: 'drafted',
-      subject: config.subject,
-      message: config.template,
+      subject: tpl.subject,
+      message: tpl.body,
       rehearse: false,
       sentMessage: null,
       channel: null,
@@ -491,7 +555,7 @@ export async function claimNext(): Promise<{ job: Job | null; reason?: string }>
         id: claimed.id,
         url: claimed.url,
         slug: claimed.slug,
-        subject: claimed.subject?.trim() || config.subject,
+        subject: claimed.subject?.trim() || defaultTemplate(config).subject,
         message: claimed.message,
         firstName: claimed.firstName,
         nameConfirmed: claimed.nameConfirmed,

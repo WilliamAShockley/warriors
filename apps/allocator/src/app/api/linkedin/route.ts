@@ -10,13 +10,13 @@ export async function GET() {
   return NextResponse.json({ prospects, config, sentToday: today, noteLimit: NOTE_LIMIT, subjectLimit: SUBJECT_LIMIT, store: storeKind(), runner: { ...runnerStatus(), seenAt } })
 }
 
-// POST { urls: string | string[], note? } — file one or many profile URLs.
+// POST { urls: string | string[], note?, templateId? } — file one or many profile URLs.
 // A pasted block is split on whitespace and commas.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const raw: string[] = Array.isArray(body?.urls) ? body.urls.map(String) : String(body?.urls ?? body?.url ?? '').split(/[\s,]+/)
   const urls = raw.map((s) => s.trim()).filter(Boolean).slice(0, 200)
   if (urls.length === 0) return NextResponse.json({ error: 'paste a LinkedIn profile URL' }, { status: 400 })
-  const result = await addProspects(urls, typeof body?.note === 'string' ? body.note : null)
+  const result = await addProspects(urls, typeof body?.note === 'string' ? body.note : null, typeof body?.templateId === 'string' ? body.templateId : null)
   return NextResponse.json({ ok: result.added.length > 0, ...result })
 }

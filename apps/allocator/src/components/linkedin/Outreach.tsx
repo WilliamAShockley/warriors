@@ -25,9 +25,11 @@ type Prospect = {
   createdAt: string
 }
 
+type Template = { id: string; name: string; subject: string; body: string }
+
 type Payload = {
   prospects: Prospect[]
-  config: { template: string; subject: string; dailyCap: number }
+  config: { templates: Template[]; defaultTemplateId: string; dailyCap: number }
   sentToday: number
   noteLimit: number
   subjectLimit: number
@@ -103,6 +105,7 @@ export default function Outreach() {
   const [data, setData] = useState<Payload | null>(null)
   const [urls, setUrls] = useState('')
   const [why, setWhy] = useState('')
+  const [templateId, setTemplateId] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [filter, setFilter] = useState('all')
   const [open, setOpen] = useState<string | null>(null)
@@ -150,7 +153,7 @@ export default function Outreach() {
     e.preventDefault()
     if (!urls.trim() || busy) return
     setBusy(true)
-    const { ok, json } = await call('/api/linkedin', 'POST', { urls, note: why })
+    const { ok, json } = await call('/api/linkedin', 'POST', { urls, note: why, templateId: templateId ?? data?.config.defaultTemplateId })
     setBusy(false)
     const bits: string[] = []
     if (json?.added?.length) bits.push(`${json.added.length} filed`)
@@ -188,6 +191,25 @@ export default function Outreach() {
         {urls.trim() && (
           <input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why them (for your eyes only, optional)" className={`${field} mt-3 text-[14px]`} />
         )}
+        {data.config.templates.length > 1 && (
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+            <span className="eyebrow text-faint">Template</span>
+            {data.config.templates.map((t) => {
+              const on = (templateId ?? data.config.defaultTemplateId) === t.id
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTemplateId(t.id)}
+                  aria-pressed={on}
+                  className={on ? 'eyebrow-ink underline decoration-ink underline-offset-4' : 'eyebrow text-faint hover:text-ink'}
+                >
+                  {t.name}
+                </button>
+              )
+            })}
+          </div>
+        )}
         <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
           <button type="submit" disabled={!urls.trim() || busy} className={btn}>
             File it
@@ -210,7 +232,7 @@ export default function Outreach() {
         </p>
       )}
 
-      <StandingDraft
+      <Templates
         open={draftOpen}
         onToggle={() => setDraftOpen((v) => !v)}
         config={data.config}
@@ -243,7 +265,8 @@ export default function Outreach() {
               open={open === p.id}
               onToggle={() => setOpen(open === p.id ? null : p.id)}
               noteLimit={data.noteLimit}
-              defaultSubject={data.config.subject}
+              templates={data.config.templates}
+              defaultSubject={(data.config.templates.find((t) => t.id === data.config.defaultTemplateId) ?? data.config.templates[0]).subject}
               capLeft={capLeft}
               reload={load}
             />
@@ -254,7 +277,7 @@ export default function Outreach() {
   )
 }
 
-function StandingDraft({
+function Templates({
   open,
   onToggle,
   config,
@@ -267,46 +290,86 @@ function StandingDraft({
   noteLimit: number
   onSaved: () => void
 }) {
-  const [template, setTemplate] = useState(config.template)
-  const [subject, setSubject] = useState(config.subject)
+  const [list, setList] = useState<Template[]>(config.templates)
+  const [defaultId, setDefaultId] = useState(config.defaultTemplateId)
+  const [current, setCurrent] = useState(config.defaultTemplateId)
   const [cap, setCap] = useState(String(config.dailyCap))
   const [saved, setSaved] = useState(false)
-  const dirty = template !== config.template || subject !== config.subject || cap !== String(config.dailyCap)
+
+  const serverKey = JSON.stringify([config.templates, config.defaultTemplateId, config.dailyCap])
+  const dirty = JSON.stringify([list, defaultId, Number(cap)]) !== serverKey
+  const t = list.find((x) => x.id === current) ?? list[0]
+  const complete = list.every((x) => x.name.trim() && x.subject.trim() && x.body.trim())
+
+  const edit = (patch: Partial<Template>) => setList((l) => l.map((x) => (x.id === t.id ? { ...x, ...patch } : x)))
+
+  function add() {
+    const id = Math.random().toString(36).slice(2, 10)
+    setList((l) => [...l, { id, name: 'New template', subject: '', body: '' }])
+    setCurrent(id)
+  }
+
+  function remove() {
+    const rest = list.filter((x) => x.id !== t.id)
+    setList(rest)
+    setCurrent(rest[0].id)
+    if (defaultId === t.id) setDefaultId(rest[0].id)
+  }
 
   async function save() {
-    await call('/api/linkedin/config', 'POST', { template, subject, dailyCap: Number(cap) })
+    await call('/api/linkedin/config', 'POST', { templates: list, defaultTemplateId: defaultId, dailyCap: Number(cap) })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     onSaved()
   }
 
+  const line =
+    'mt-1 block w-full border-b border-hairline bg-transparent pb-1.5 font-serif text-[15px] normal-case tracking-normal text-ink focus:border-ink focus:outline-none'
+
   return (
     <div className="mt-4">
       <button type="button" onClick={onToggle} aria-expanded={open} className={quiet}>
-        The standing draft {open ? '−' : '+'}
+        Templates {open ? '−' : '+'}
       </button>
-      {open && (
+      {open && t && (
         <div className="mt-3">
           <p className="dek text-[13px]">
-            Every new person starts from this. {'{firstName}'} fills in per person. Changing it does not touch drafts already filed.
+            Each new person starts from the template you pick. {'{firstName}'} fills in per person. Editing a template does not touch drafts already filed.
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+            {list.map((x) => (
+              <button
+                key={x.id}
+                type="button"
+                onClick={() => setCurrent(x.id)}
+                aria-pressed={x.id === t.id}
+                className={x.id === t.id ? 'eyebrow-ink underline decoration-ink underline-offset-4' : 'eyebrow text-faint hover:text-ink'}
+              >
+                {x.name || 'Untitled'}
+                {x.id === defaultId ? ' · default' : ''}
+              </button>
+            ))}
+            <button type="button" onClick={add} className={quiet}>
+              New +
+            </button>
+          </div>
+          <label className="eyebrow mt-4 block">
+            Name
+            <input value={t.name} onChange={(e) => edit({ name: e.target.value })} className={line} />
+          </label>
           <label className="eyebrow mt-4 block">
             Subject
-            <input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="mt-1 block w-full border-b border-hairline bg-transparent pb-1.5 font-serif text-[15px] normal-case tracking-normal text-ink focus:border-ink focus:outline-none"
-            />
+            <input value={t.subject} onChange={(e) => edit({ subject: e.target.value })} className={line} />
           </label>
           <textarea
-            value={template}
-            onChange={(e) => setTemplate(e.target.value)}
-            rows={5}
-            aria-label="Standing draft"
-            className="mt-3 w-full border border-hairline bg-transparent p-3 font-serif text-[15px] leading-relaxed text-ink focus:border-ink focus:outline-none"
+            value={t.body}
+            onChange={(e) => edit({ body: e.target.value })}
+            rows={Math.min(18, Math.max(5, Math.ceil(t.body.length / 80) + 2))}
+            aria-label={`Body of ${t.name}`}
+            className="mt-4 w-full border border-hairline bg-transparent p-3 font-serif text-[15px] leading-relaxed text-ink focus:border-ink focus:outline-none"
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-            <Count n={template.length} limit={noteLimit} />
+            <Count n={t.body.length} limit={noteLimit} />
             <label className="eyebrow flex items-center gap-2">
               Daily cap
               <input
@@ -317,11 +380,22 @@ function StandingDraft({
               />
             </label>
           </div>
-          <div className="mt-3 flex items-center gap-4">
-            <button type="button" onClick={save} disabled={!dirty || !template.trim() || !subject.trim()} className={btn}>
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+            <button type="button" onClick={save} disabled={!dirty || !complete} className={btn}>
               Keep it
             </button>
+            {t.id !== defaultId && (
+              <button type="button" onClick={() => setDefaultId(t.id)} className={quiet}>
+                Make default
+              </button>
+            )}
+            {list.length > 1 && (
+              <button type="button" onClick={remove} className={`${quiet} hover:text-oxblood`}>
+                Remove template
+              </button>
+            )}
             {saved && <span className="eyebrow">Kept</span>}
+            {dirty && !complete && <span className="font-serif text-[13px] italic text-stone">Every template needs a name, subject and body.</span>}
           </div>
         </div>
       )}
@@ -343,6 +417,7 @@ function Row({
   open,
   onToggle,
   noteLimit,
+  templates,
   defaultSubject,
   capLeft,
   reload,
@@ -351,6 +426,7 @@ function Row({
   open: boolean
   onToggle: () => void
   noteLimit: number
+  templates: Template[]
   defaultSubject: string
   capLeft: number
   reload: () => void
@@ -480,6 +556,28 @@ function Row({
                 />
                 {!p.nameConfirmed && firstName && <span className="normal-case tracking-normal text-faint">a guess · checked against the profile</span>}
               </label>
+              {editable && (
+                <p className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+                  <span className="eyebrow text-faint">Use template</span>
+                  {templates.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        touched.current = true
+                        setSubject(t.subject)
+                        setMessage(t.body)
+                        void call(`/api/linkedin/${p.id}`, 'PATCH', { message: t.body, subject: t.subject }).then(() => {
+                          touched.current = false
+                        })
+                      }}
+                      className={message === t.body && subject === t.subject ? 'eyebrow-ink underline decoration-ink underline-offset-4' : quiet}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </p>
+              )}
               <label className="eyebrow mt-4 flex items-center gap-3">
                 Subject
                 <input
@@ -501,7 +599,7 @@ function Row({
                   setMessage(e.target.value)
                 }}
                 onBlur={save}
-                rows={5}
+                rows={Math.min(18, Math.max(5, Math.ceil(message.length / 80) + 2))}
                 aria-label={`Draft for ${name}`}
                 className="mt-3 w-full border border-hairline bg-transparent p-3 font-serif text-[15px] leading-relaxed text-ink focus:border-ink focus:outline-none disabled:text-stone"
               />
@@ -558,7 +656,7 @@ function Row({
                   </>
                 )}
               </div>
-              {capLeft === 0 && !moving && <p className="mt-2 font-serif text-[13px] italic text-stone">Today&rsquo;s cap is spent. Raise it in the standing draft, or send tomorrow.</p>}
+              {capLeft === 0 && !moving && <p className="mt-2 font-serif text-[13px] italic text-stone">Today&rsquo;s cap is spent. Raise it under Templates, or send tomorrow.</p>}
             </div>
           )}
 

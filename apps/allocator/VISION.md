@@ -109,8 +109,10 @@ a-note path.
 
 The page is a queue; the hands are `apps/linkedin-nav/outreach_runner.py`,
 which drives a real Chrome window on the owner's Mac with his saved
-LinkedIn session. Each new URL gets the standing subject and draft
-(`{firstName}` fills per person; both edited on the page). Nothing goes out
+LinkedIn session. Each new URL starts from a named template the owner
+picks (subject + body, `{firstName}` fills per person). Templates are
+edited on the page; the house set in code is DeployCo (the default, his
+words of 19 November 2026) and a short intro. Nothing goes out
 without his click on that one person: Send asks once, then queues the row.
 The runner claims it over `/api/linkedin/runner`, opens the profile, follows
 "View in Sales Navigator" (under More) to the lead page, presses Message,
